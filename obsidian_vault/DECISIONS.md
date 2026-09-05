@@ -66,5 +66,5 @@
 
 **Date:** 2026-09-05
 **Context:** Different tasks require different levels of reasoning, and users may prefer different LLM ecosystems (OpenAI, Anthropic, Google) depending on their available budgets and keys.
-**Decision:** Implement a multi-provider strategy in the Infrastructure layer. The Domain `Agent` entity will hold a `model_tier` configuration, explicitly defined by the user. The Application layer will route the prompt to the appropriate LLM adapter based on this user configuration.
+**Decision:** The Domain `Agent` entity will hold `provider` and `model_name` as string fields dynamically configured by the user. The Application layer will route the prompt accordingly.
 **Consequences:** Gives the user absolute control over API costs and privacy tiers, though it requires building an initial settings interface in the UI to map agents to models.

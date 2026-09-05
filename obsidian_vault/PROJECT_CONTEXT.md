@@ -16,9 +16,7 @@ This local AI system acts as an expert software architecture team under a **Supe
 
 ## Multi-Provider Support & Privacy
 
-The system supports multiple LLM providers (Google Gemini, Anthropic Claude, OpenAI ChatGPT) via user-provided API keys.
-
-- **User-Defined Routing:** The user (system owner) has full control to assign specific models and tiers to each agent (e.g., assigning a heavy `PRO` model to the Architects, and a fast, cheap `FLASH` model to the Annotator) based on their provided API keys.
+- **User-Defined Routing:** The system owner has full control to explicitly assign a specific `provider` and `model_name` (e.g., `openai` / `gpt-4o`) to each agent based on their configured API keys.
 - **Privacy Warning:** The UI will evaluate the provided API keys. If standard (non-Enterprise) keys are used, the system will explicitly warn the user that strict data privacy (zero-training retention) cannot be guaranteed by the provider.
 
 ## Human-in-the-Loop (HITL)

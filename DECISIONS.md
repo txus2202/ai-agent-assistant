@@ -61,3 +61,10 @@
 **Context:** The system must be accessible for individual development while supporting strict corporate privacy requirements.
 **Decision:** The Infrastructure layer must support both Google AI Studio (Gemini Pro) for individual users and Vertex AI (Gemini Enterprise) for corporate deployments.
 **Consequences:** Requires clear documentation warning users that the free tier of AI Studio does not guarantee data privacy, while the architecture remains robust enough to swap endpoints via `.env` variables for Enterprise environments.
+
+## ADR 010: Multi-Provider LLM & User-Defined Routing
+
+**Date:** 2026-09-05
+**Context:** Different tasks require different levels of reasoning, and users may prefer different LLM ecosystems (OpenAI, Anthropic, Google) depending on their available budgets and keys.
+**Decision:** Implement a multi-provider strategy in the Infrastructure layer. The Domain `Agent` entity will hold a `model_tier` configuration, explicitly defined by the user. The Application layer will route the prompt to the appropriate LLM adapter based on this user configuration.
+**Consequences:** Gives the user absolute control over API costs and privacy tiers, though it requires building an initial settings interface in the UI to map agents to models.

@@ -4,11 +4,16 @@
 
 The system uses a **Modular Monolith** architecture based on **Clean Architecture** (Hexagonal Architecture / Ports and Adapters). The goal is to isolate business logic from implementation details (UI, Databases, External APIs).
 
+# System Architecture
+
 ## Application Layers
 
-1. **Domain:** Core entities (`ArchitectureSolution`, `Task`, `Agent`) and abstract interfaces (Ports). Zero framework dependencies.
-2. **Application:** Use Cases (`GenerateArchitectureDesign`, `ProcessVoiceCommand`). Coordinates business logic.
-3. **Infrastructure:** Implements domain interfaces (Adapters). Includes Google ADK, ChromaDB, Obsidian, Trello API, Whisper.cpp, Piper, and the Gemini API adapter (compatible with both AI Studio and Vertex AI).
+1. **Domain:** Core entities (`ArchitectureSolution`, `Task`, `Agent`) and abstract interfaces (Ports like `ILLMProvider`). Zero framework dependencies.
+2. **Application:** Use Cases (`GenerateArchitectureDesign`). Coordinates business logic.
+3. **Infrastructure:** Implements domain interfaces. Includes adapters for:
+   - AI Providers: `GeminiAdapter`, `OpenAIAdapter`, `AnthropicAdapter` (routed via Google ADK / Langchain abstractions).
+   - Databases: ChromaDB, Obsidian Local File System.
+   - Voice: Whisper.cpp, Piper.
 4. **Presentation:** FastAPI controllers, WebSockets, Typer CLI, and the Vue 3 web client.
 
 ## Multimodal RAG Strategy

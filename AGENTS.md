@@ -23,6 +23,7 @@ You are an expert programming assistant specializing in Python, Vue 3, and Clean
 - Ensure all AI orchestrations use Google ADK and follow the Supervisor pattern with Human-in-the-Loop support.
 - Always use environment variables (`.env`) for secrets and paths.
 - All code (classes, variables, methods) and markdown documentation must be written in English.
+- Communication Language: While all codebase elements, variables, commit messages, and markdown documentation must be strictly in English, your conversational responses, explanations, and direct chat interactions with the user MUST always be in Spanish.
 
 ## 4. Tech Stack
 

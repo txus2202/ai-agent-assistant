@@ -2,16 +2,24 @@
 
 ## Overview
 
-This local AI system acts as an expert software architecture team under a **Supervisor Agent Pattern**. It uses its own project repository as the initial Obsidian knowledge vault (Dogfooding) to learn and establish structural indexes (MOCs - Maps of Content).
+This local AI system acts as an expert software architecture team under a **Supervisor Agent Pattern**. It uses its own project repository as the initial Obsidian knowledge vault (Dogfooding) to learn and establish structural indexes (MOCs).
 
 ## AI Team Topology (Sub-Agents)
 
-- **Natural Language Interpreter:** Translates ambiguous user requests into strict technical prompts.
-- **Innovator Architect:** Proposes cutting-edge, modern architectural solutions.
-- **Senior Architect:** Adheres strictly to the company's approved tech stack, legacy tools, and in-house patterns.
-- **The Judge (Devil's Advocate):** Actively searches for vulnerabilities, bottlenecks, and flaws in the architects' proposals.
-- **DevOps & SecOps Agent:** Focuses on deployment, CI/CD pipelines, containerization (Docker), and network security, translating architectural decisions into infrastructure as code.
-- **Annotator Agent:** Automatically updates the Obsidian vault, generating ADRs and structural MOCs when new decisions are made.
+- **Natural Language Interpreter:** Translates ambiguous requests into strict technical prompts.
+- **Innovator Architect:** Proposes cutting-edge architectural solutions.
+- **Senior Architect:** Adheres strictly to approved tech stacks and in-house patterns.
+- **The Judge (Devil's Advocate):** Actively searches for vulnerabilities in proposals.
+- **DevOps & SecOps Agent:** Focuses on deployment, CI/CD, and network security.
+- **Diagrammer Agent:** Specialized in generating accurate Mermaid.js diagrams from architectural descriptions.
+- **Annotator Agent:** Automatically updates the Obsidian vault, generating ADRs and structural MOCs.
+
+## Multi-Provider Support & Privacy
+
+The system supports multiple LLM providers (Google Gemini, Anthropic Claude, OpenAI ChatGPT) via user-provided API keys.
+
+- **User-Defined Routing:** The user (system owner) has full control to assign specific models and tiers to each agent (e.g., assigning a heavy `PRO` model to the Architects, and a fast, cheap `FLASH` model to the Annotator) based on their provided API keys.
+- **Privacy Warning:** The UI will evaluate the provided API keys. If standard (non-Enterprise) keys are used, the system will explicitly warn the user that strict data privacy (zero-training retention) cannot be guaranteed by the provider.
 
 ## Human-in-the-Loop (HITL)
 

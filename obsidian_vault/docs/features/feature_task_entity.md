@@ -4,7 +4,7 @@ updated: 2026-09-06
 type: spec
 phase: 1
 layer: domain
-status: draft
+status: implemented
 tags: [entity, task, domain]
 ---
 

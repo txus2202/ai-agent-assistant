@@ -13,13 +13,8 @@ from src.domain.entities.task import Task, TaskStatus
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Local fixtures (task-specific)
 # ---------------------------------------------------------------------------
-
-@pytest.fixture()
-def agent_id() -> uuid.UUID:
-    return uuid.uuid4()
-
 
 @pytest.fixture()
 def valid_task(agent_id: uuid.UUID) -> Task:

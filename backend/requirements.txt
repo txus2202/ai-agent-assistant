@@ -1,0 +1,10 @@
+# Runtime dependencies
+# Install with: pip install -r requirements.txt
+#
+# Phase 2+ will add:
+#   fastapi>=0.115
+#   uvicorn[standard]>=0.30
+#   chromadb>=0.5
+#   google-generativeai>=0.7    # Gemini adapter
+#   openai>=1.40                # OpenAI adapter
+#   anthropic>=0.30             # Anthropic adapter

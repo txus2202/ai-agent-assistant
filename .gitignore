@@ -26,3 +26,6 @@ __pycache__/
 
 # OS
 .DS_Store
+
+# Obsidian internal metadata (plugins, local config, cache)
+obsidian_vault/.obsidian/

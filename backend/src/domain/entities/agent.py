@@ -100,3 +100,6 @@ class Agent:
         if not isinstance(other, Agent):
             return NotImplemented
         return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)

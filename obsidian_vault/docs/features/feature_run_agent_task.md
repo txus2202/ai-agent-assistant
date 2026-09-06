@@ -1,10 +1,10 @@
 ---
 created: 2026-09-05
-updated: 2026-09-05
+updated: 2026-09-06
 type: spec
 phase: 1
 layer: application
-status: draft
+status: implemented
 tags: [use-case, agent, task, application]
 ---
 
@@ -105,6 +105,15 @@ And   no exception propagates to the caller
 Given a saved Agent
 When  RunAgentTask(agent_id=agent.id, prompt="   ") is executed
 Then  a ValueError is raised with message "Prompt cannot be empty"
+```
+
+### Scenario 5: Provider not registered (gap detected during implementation)
+
+```
+Given a saved Agent with provider="openai"
+And   only a "gemini" adapter is registered in the provider registry
+When  RunAgentTask(agent_id=agent.id, prompt="Hello") is executed
+Then  a ValueError is raised with message "No LLM provider registered for 'openai'"
 ```
 
 ## Implementation Notes

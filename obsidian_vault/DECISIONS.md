@@ -68,3 +68,14 @@
 **Context:** Different tasks require different levels of reasoning, and users may prefer different LLM ecosystems (OpenAI, Anthropic, Google) depending on their available budgets and keys.
 **Decision:** The Domain `Agent` entity will hold `provider` and `model_name` as string fields dynamically configured by the user. The Application layer will route the prompt accordingly.
 **Consequences:** Gives the user absolute control over API costs and privacy tiers, though it requires building an initial settings interface in the UI to map agents to models.
+
+## ADR 011: SQLite as Persistent Storage for Domain Entities
+
+**Date:** 2026-09-06
+**Context:** Phase 1 uses `InMemoryAgentRepository` for tests and development. However, an end-user running the application locally needs `Agent` configurations and `Task` history to survive process restarts. ChromaDB (ADR-002) is exclusively for vector embeddings (RAG over Obsidian notes) and is not a substitute for structured entity storage. No persistent adapter for domain entities was explicitly planned in the initial roadmap — this is a gap detected during Phase 1 implementation.
+**Decision:** Implement `SQLiteAgentRepository` and `SQLiteTaskRepository` in Phase 2 as the default persistent adapters for local execution. The `sqlite3` standard library module will be used directly to keep the dependency footprint at zero. The database file will be stored at a user-configurable path via the `DB_PATH` environment variable, defaulting to `~/.ai-agent-assistant/data.db`.
+**Consequences:**
+- Agent and Task data persists across sessions with no external server required.
+- Aligns with the local-first, privacy-first philosophy (ADR-002).
+- Swapping to PostgreSQL in a future multi-user deployment requires only a new Infrastructure adapter — Domain and Application layers remain untouched (ADR-004).
+- Introduces a DB schema migration concern; a minimal migration strategy (e.g., versioned `CREATE TABLE IF NOT EXISTS`) must be defined in Phase 2.

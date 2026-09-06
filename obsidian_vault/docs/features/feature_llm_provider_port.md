@@ -1,10 +1,10 @@
 ---
 created: 2026-09-05
-updated: 2026-09-05
+updated: 2026-09-06
 type: spec
 phase: 1
 layer: domain
-status: draft
+status: implemented
 tags: [port, llm, domain, interface]
 ---
 
@@ -28,10 +28,10 @@ complete(prompt: str, model_name: str) -> str
 
 ### Parameters
 
-| Parameter    | Type  | Constraint                                      |
-|:------------ |:----- |:----------------------------------------------- |
+| Parameter    | Type  | Constraint                                                           |
+| :----------- | :---- | :------------------------------------------------------------------- |
 | `prompt`     | `str` | Non-empty string. Validated by the Application layer before calling. |
-| `model_name` | `str` | Non-empty string. Free-form; chosen by the user per ADR-010. |
+| `model_name` | `str` | Non-empty string. Free-form; chosen by the user per ADR-010.         |
 
 ### Return value
 
@@ -39,9 +39,9 @@ A non-empty `str` containing the LLM's textual response.
 
 ### Exceptions
 
-| Exception             | When                                                 |
-|:--------------------- |:---------------------------------------------------- |
-| `LLMProviderError`    | Any provider-level failure (network, quota, invalid key). Must be defined in the Domain as a plain Python exception subclassing `Exception`. |
+| Exception          | When                                                                                                                                         |
+| :----------------- | :------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LLMProviderError` | Any provider-level failure (network, quota, invalid key). Must be defined in the Domain as a plain Python exception subclassing `Exception`. |
 
 > **Note:** `LLMProviderError` lives in `src/domain/exceptions.py`. Infrastructure adapters **must** catch their SDK-specific exceptions and re-raise them as `LLMProviderError` to preserve the anti-corruption layer.
 

@@ -1,3 +1,12 @@
+---
+created: 2026-09-05
+updated: 2026-09-06
+phase: 1
+layer: domain
+status: draft
+tags: [entity, task, domain]
+---
+
 # Feature: Core Entity - Task
 
 **As a** system developer
@@ -14,6 +23,7 @@ A `Task` in our domain must contain:
 - `result`: The textual output produced by the Agent upon completion. `None` by default. Can only be set when `status` is `COMPLETED` or `FAILED`.
 - `agent_id`: UUID of the Agent assigned to execute this task. Cannot be null.
 - `created_at`: UTC timestamp of task creation. Auto-assigned; immutable after creation.
+- `dependencies`: A list of `Task` UUIDs that must be completed before this task can start. Defaults to an empty list.
 
 ## State Transitions
 

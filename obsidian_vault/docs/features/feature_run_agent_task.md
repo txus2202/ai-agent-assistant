@@ -1,6 +1,7 @@
 ---
 created: 2026-09-05
 updated: 2026-09-05
+type: spec
 phase: 1
 layer: application
 status: draft

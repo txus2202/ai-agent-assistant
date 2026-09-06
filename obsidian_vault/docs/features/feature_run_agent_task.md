@@ -1,3 +1,12 @@
+---
+created: 2026-09-05
+updated: 2026-09-05
+phase: 1
+layer: application
+status: draft
+tags: [use-case, agent, task, application]
+---
+
 # Feature: Use Case - RunAgentTask
 
 **As a** CLI user

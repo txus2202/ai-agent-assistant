@@ -1,3 +1,12 @@
+---
+created: 2026-09-05
+updated: 2026-09-05
+phase: 1
+layer: domain
+status: draft
+tags: [port, llm, domain, interface]
+---
+
 # Feature: Domain Port - ILLMProvider
 
 **As a** system developer

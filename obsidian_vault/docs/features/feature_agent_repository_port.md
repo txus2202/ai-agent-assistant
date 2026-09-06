@@ -1,3 +1,12 @@
+---
+created: 2026-09-05
+updated: 2026-09-05
+phase: 1
+layer: domain
+status: draft
+tags: [port, repository, agent, domain, interface]
+---
+
 # Feature: Domain Port - IAgentRepository
 
 **As a** system developer

@@ -1,8 +1,10 @@
-# Project Context: AI Software Architecture Assistant
+# Project Context: ATENEA
+
+**(Asistente Técnica y Evaluadora de Nuevas Estructuras y Arquitecturas)**
 
 ## Overview
 
-This local AI system acts as an expert software architecture team under a **Supervisor Agent Pattern**. It uses its own project repository as the initial Obsidian knowledge vault (Dogfooding) to learn and establish structural indexes (MOCs).
+**ATENEA** is a local AI system designed to act as an expert software architecture team under a **Supervisor Agent Pattern**. It uses its own project repository as the initial Obsidian knowledge vault (Dogfooding) to learn and establish structural indexes (MOCs).
 
 ## AI Team Topology (Sub-Agents)
 

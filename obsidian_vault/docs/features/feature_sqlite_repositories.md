@@ -1,10 +1,10 @@
 ---
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-08
 type: spec
 phase: 2
 layer: infrastructure
-status: draft
+status: implemented
 tags: [sqlite, repository, agent, task, infrastructure, persistence]
 ---
 

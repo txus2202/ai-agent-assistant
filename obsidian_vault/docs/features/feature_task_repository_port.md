@@ -1,10 +1,10 @@
 ---
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-08
 type: spec
 phase: 2
 layer: domain
-status: draft
+status: implemented
 tags: [port, repository, task, domain, interface]
 ---
 

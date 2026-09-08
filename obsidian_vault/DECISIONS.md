@@ -79,3 +79,18 @@
 - Aligns with the local-first, privacy-first philosophy (ADR-002).
 - Swapping to PostgreSQL in a future multi-user deployment requires only a new Infrastructure adapter — Domain and Application layers remain untouched (ADR-004).
 - Introduces a DB schema migration concern; a minimal migration strategy (e.g., versioned `CREATE TABLE IF NOT EXISTS`) must be defined in Phase 2.
+
+## ADR 012: RAG Pipeline Architecture — Chunking, Embedding and Document Store Strategy
+
+**Date:** 2026-09-08
+**Context:** Phase 2 requires building a Retrieval-Augmented Generation (RAG) pipeline to allow ATENEA agents to query the Obsidian knowledge vault semantically. Three decisions must be fixed before implementation: (1) embedding model, (2) chunking strategy, and (3) ChromaDB collection schema. An additional design constraint emerged: the vault will grow well beyond project specs and ADRs — a future Apprentice/Learning Agent will generate `.md` files from external sources (PDFs, images, web URLs), triggering the same ingestion pipeline. The chunking and embedding strategy must be generic enough to handle heterogeneous document types.
+**Decisions:**
+1. **Embedding model: sentence-transformers `all-MiniLM-L6-v2` (local, via ChromaDB default).** Requires no external API key, runs entirely on-device, and aligns with ADR-002 (local-first, privacy-first). Can be swapped for a higher-quality API-based model (e.g., `text-embedding-004`) in Phase 4+ via the `IDocumentStore` port without touching business logic.
+2. **Chunking strategy: section-based (H2/H3 boundaries).** Each Markdown document is split at H2/H3 headers; each resulting section becomes one ChromaDB document. YAML frontmatter is parsed as metadata (not embedded as text), enabling precise `where`-clause filters (e.g., `{"type": "spec", "status": "implemented"}`). This strategy is generic enough for any well-structured `.md` file, regardless of origin.
+3. **ChromaDB collection: single collection `vault_docs`.** One collection with rich metadata per chunk (`type`, `phase`, `layer`, `status`, `tags`, `file_path`, `heading`). Multi-collection architecture is deferred until volume justifies it.
+4. **Ingestion trigger: manual CLI script in Phase 2.** File-system watching (inotify/FSEvents) and git hooks are deferred to Phase 3.
+**Consequences:**
+- Zero API cost for the embedding step. Embedding quality is good (not state-of-the-art) for technical text.
+- Section-based chunks produce semantically coherent units for architecture docs. For future free-form documents (Learning Agent output), this requires generated `.md` files to use consistent H2/H3 structure.
+- Metadata filtering in ChromaDB allows targeted retrieval without re-ranking (Phase 2). Cross-encoder re-ranking is deferred to Phase 4.
+- The Learning Agent (Phase 3) must commit to generating `.md` files with YAML frontmatter and H2/H3 structure to be compatible with this ingestion pipeline.

@@ -1,10 +1,10 @@
 ---
 created: 2026-09-08
-updated: 2026-09-08
+updated: 2026-09-09
 type: spec
 phase: 2
 layer: domain
-status: draft
+status: implemented
 tags: [port, rag, document-store, domain, interface, vector-search]
 ---
 

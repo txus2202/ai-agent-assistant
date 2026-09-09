@@ -1,10 +1,10 @@
 ---
 created: 2026-09-08
-updated: 2026-09-08
+updated: 2026-09-09
 type: spec
 phase: 2
 layer: infrastructure
-status: draft
+status: implemented
 tags: [parser, obsidian, markdown, chunking, frontmatter, infrastructure]
 ---
 

@@ -37,9 +37,12 @@ def _make_chunk(chunk_id: str, content: str, doc_type: str = "spec") -> Document
 def chroma_store() -> ChromaDBDocumentStore:
     """
     Returns a ChromaDBDocumentStore backed by an EphemeralClient.
-    Each test gets a fresh, isolated instance.
+    Each test gets a unique collection name to guarantee isolation —
+    EphemeralClient shares state across collections within the same process.
     """
-    return ChromaDBDocumentStore(ephemeral=True)
+    import uuid
+    unique_collection = f"test_{uuid.uuid4().hex}"
+    return ChromaDBDocumentStore(ephemeral=True, collection_name=unique_collection)
 
 
 # ---------------------------------------------------------------------------

@@ -1,1 +1,33 @@
-.idea
+# Virtual Environment
+venv/
+.venv/
+env/
+env.bak/
+ENV/
+
+# Dependencies
+node_modules/
+
+# IDE & System
+.idea/
+.vscode/
+.DS_Store
+
+# Python Cache & Packaging
+__pycache__/
+*.pyc
+*.egg-info/
+*.egg
+
+# Environment Variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# OS
+.DS_Store
+
+# Obsidian internal metadata (plugins, local config, cache)
+obsidian_vault/.obsidian/

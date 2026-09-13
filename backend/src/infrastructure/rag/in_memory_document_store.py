@@ -9,8 +9,12 @@ No embeddings — purely lexical. Use ChromaDBDocumentStore for semantic search.
 """
 from __future__ import annotations
 
+import os
+
 from src.domain.ports.document_store import IDocumentStore
 from src.domain.value_objects.document_chunk import DocumentChunk, SearchFilter
+
+_DEFAULT_TOP_K = 5
 
 
 class InMemoryDocumentStore(IDocumentStore):
@@ -32,9 +36,12 @@ class InMemoryDocumentStore(IDocumentStore):
     def search(
         self,
         query: str,
-        top_k: int = 5,
+        top_k: int | None = None,
         filter: SearchFilter | None = None,
     ) -> list[DocumentChunk]:
+        resolved_top_k = top_k if top_k is not None else int(
+            os.getenv("RAG_TOP_K", str(_DEFAULT_TOP_K))
+        )
         candidates = list(self._store.values())
 
         if filter is not None:
@@ -51,7 +58,7 @@ class InMemoryDocumentStore(IDocumentStore):
         ranked = sorted(candidates, key=_overlap_score, reverse=True)
 
         results: list[DocumentChunk] = []
-        for chunk in ranked[:top_k]:
+        for chunk in ranked[:resolved_top_k]:
             score = _overlap_score(chunk)
             results.append(
                 DocumentChunk(

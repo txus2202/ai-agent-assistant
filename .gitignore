@@ -13,9 +13,11 @@ node_modules/
 .vscode/
 .DS_Store
 
-# Python Cache
+# Python Cache & Packaging
 __pycache__/
 *.pyc
+*.egg-info/
+*.egg
 
 # Environment Variables
 .env

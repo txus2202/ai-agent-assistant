@@ -30,14 +30,20 @@ class IDocumentStore(ABC):
     def search(
         self,
         query: str,
-        top_k: int = 5,
+        top_k: int | None = None,
         filter: SearchFilter | None = None,
     ) -> list[DocumentChunk]:
         """
-        Return the ``top_k`` most relevant chunks for ``query``.
+        Return the most relevant chunks for ``query``.
+
+        Args:
+            query:  Natural language query to embed and search.
+            top_k:  Maximum number of results. When ``None``, implementations
+                    must read the ``RAG_TOP_K`` environment variable
+                    (default: 5).
+            filter: Optional metadata filter to narrow results.
 
         Returned chunks must have ``score`` set (float in [0, 1]).
-        If ``filter`` is provided, only matching chunks are considered.
         Returns an empty list when the store is empty.
         """
 

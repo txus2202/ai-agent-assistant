@@ -25,6 +25,7 @@ from src.domain.value_objects.document_chunk import DocumentChunk, SearchFilter
 _DEFAULT_CHROMA_PATH = os.path.expanduser("~/.ai-agent-assistant/chroma")
 _COLLECTION_NAME = "vault_docs"
 _EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+_DEFAULT_TOP_K = 5
 
 
 class ChromaDBDocumentStore(IDocumentStore):
@@ -78,14 +79,17 @@ class ChromaDBDocumentStore(IDocumentStore):
     def search(
         self,
         query: str,
-        top_k: int = 5,
+        top_k: int | None = None,
         filter: SearchFilter | None = None,
     ) -> list[DocumentChunk]:
+        resolved_top_k = top_k if top_k is not None else int(
+            os.getenv("RAG_TOP_K", str(_DEFAULT_TOP_K))
+        )
         total = self._collection.count()
         if total == 0:
             return []
 
-        n_results = min(top_k, total)
+        n_results = min(resolved_top_k, total)
         where = self._build_where(filter) if filter else None
 
         kwargs: dict = {

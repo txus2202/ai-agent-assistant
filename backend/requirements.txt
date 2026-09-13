@@ -1,0 +1,17 @@
+# =============================================================================
+# Runtime dependencies — install with: pip install -r requirements.txt
+# =============================================================================
+
+# Phase 2: RAG pipeline
+chromadb>=0.5              # Vector store
+sentence-transformers>=3.0 # Local embedding model (all-MiniLM-L6-v2); not bundled with chromadb >= 0.4
+PyYAML>=6.0                # Obsidian frontmatter parsing
+
+# Phase 2+: LLM adapters (uncomment when implementing)
+# google-generativeai>=0.7    # Gemini (Vertex AI or AI Studio)
+# openai>=1.40                # OpenAI
+# anthropic>=0.30             # Anthropic
+
+# Phase 3+: (to be defined)
+# fastapi>=0.115
+# uvicorn[standard]>=0.30

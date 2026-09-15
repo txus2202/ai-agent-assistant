@@ -12,6 +12,7 @@ Usage:
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -32,7 +33,11 @@ class IngestVault:
     """Stateless ingestion orchestrator."""
 
     @staticmethod
-    def run(vault_root: Path, document_store: IDocumentStore) -> IngestResult:
+    def run(
+        vault_root: Path,
+        document_store: IDocumentStore,
+        on_file: Callable[[Path, int], None] | None = None,
+    ) -> IngestResult:
         """
         Ingest all Markdown files under ``vault_root`` into ``document_store``.
 
@@ -42,6 +47,10 @@ class IngestVault:
         Args:
             vault_root:     Root directory of the Obsidian vault.
             document_store: Target document store (ChromaDB or InMemory).
+            on_file:        Optional callback invoked after each file is parsed
+                            successfully. Signature: ``(file_path, n_chunks) -> None``.
+                            Useful for progress reporting in CLI and other
+                            presentation layers — keeps them DRY.
 
         Returns:
             ``IngestResult`` with counts of files, chunks, and any errors.
@@ -49,17 +58,19 @@ class IngestVault:
         result = IngestResult()
         all_chunks = []
 
-        md_files = [
+        md_files = sorted(
             f for f in vault_root.rglob("*.md")
             # Skip any path component that is a hidden directory (starts with ".")
             if not any(part.startswith(".") for part in f.relative_to(vault_root).parts)
-        ]
+        )
 
         for md_file in md_files:
             try:
                 chunks = ObsidianParser.parse(md_file, vault_root=vault_root)
                 all_chunks.extend(chunks)
                 result.files_processed += 1
+                if on_file is not None:
+                    on_file(md_file, len(chunks))
             except Exception as exc:  # noqa: BLE001
                 result.errors.append(f"{md_file.relative_to(vault_root)}: {exc}")
 

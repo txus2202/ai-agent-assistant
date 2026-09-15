@@ -33,7 +33,7 @@ def _make_chunk(chunk_id: str, content: str, doc_type: str = "spec") -> Document
 # Fixture: ephemeral (in-memory) ChromaDB store — no disk I/O
 # ---------------------------------------------------------------------------
 
-@pytest.fixture()
+@pytest.fixture
 def chroma_store() -> ChromaDBDocumentStore:
     """
     Returns a ChromaDBDocumentStore backed by an EphemeralClient.

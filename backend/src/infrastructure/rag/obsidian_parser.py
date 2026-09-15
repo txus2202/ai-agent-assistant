@@ -25,13 +25,13 @@ import yaml
 from src.domain.value_objects.document_chunk import DocumentChunk
 
 # Matches the YAML frontmatter block at the start of the file
-_FRONTMATTER_RE = re.compile(r"^\s*---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+_FRONTMATTER_RE = re.compile(r"^[ \t]*---[ \t]*\n(.*?)\n---[ \t]*\n", re.DOTALL)
 
 # Matches H2 or H3 headers (## or ###) at line start
-_HEADER_RE = re.compile(r"^(#{2,3})\s+(.+)$", re.MULTILINE)
+_HEADER_RE = re.compile(r"^(#{2,3})[ \t]+(\S.*)$", re.MULTILINE)
 
 # Matches H1 headers — stripped from the intro block
-_H1_RE = re.compile(r"^#\s+.+\n?", re.MULTILINE)
+_H1_RE = re.compile(r"^#[ \t]+.+\n?", re.MULTILINE)
 
 
 class ObsidianParser:

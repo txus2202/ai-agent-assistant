@@ -35,7 +35,7 @@ def _make_chunk(
 # Fixtures
 # ---------------------------------------------------------------------------
 
-@pytest.fixture()
+@pytest.fixture
 def store() -> InMemoryDocumentStore:
     return InMemoryDocumentStore()
 

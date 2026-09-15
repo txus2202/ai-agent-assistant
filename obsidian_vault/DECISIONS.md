@@ -94,3 +94,33 @@
 - Section-based chunks produce semantically coherent units for architecture docs. For future free-form documents (Learning Agent output), this requires generated `.md` files to use consistent H2/H3 structure.
 - Metadata filtering in ChromaDB allows targeted retrieval without re-ranking (Phase 2). Cross-encoder re-ranking is deferred to Phase 4.
 - The Learning Agent (Phase 3) must commit to generating `.md` files with YAML frontmatter and H2/H3 structure to be compatible with this ingestion pipeline.
+
+## ADR 013: LLM Provider Registry Pattern
+
+**Date:** 2026-09-15
+**Context:** Phase 3 introduces three concrete LLM adapters (Gemini, OpenAI, Anthropic). The `RunAgentTask` use case already routes by `agent.provider` string (ADR-010), but needs a runtime map from that string to an `ILLMProvider` instance. The registry must live in Application, not Infrastructure, to avoid inverting the dependency direction.
+**Decision:** Implement `LLMProviderRegistry` in `src/application/services/llm_provider_registry.py`. It is a mutable singleton configured at startup (e.g., in `main.py`). It raises `ProviderNotFoundError` (domain exception) for unknown provider names, keeping the error vocabulary in the domain.
+**Consequences:** Adding a new LLM provider requires only a new Infrastructure adapter + one `registry.register()` call — no changes to Domain or Application business logic.
+
+## ADR 014: Learning Agent Pipeline & Storage Convention
+
+**Date:** 2026-09-15
+**Context:** The Learning Agent generates `.md` files from external sources and must store them in a location that is (a) clearly separated from hand-written vault content, (b) automatically picked up by the ingestion pipeline, and (c) sortable by date.
+**Decision:**
+1. Generated files are saved to `obsidian_vault/learned/{date}_{slug}.md` — a dedicated subdirectory, never mixed with `docs/`.
+2. Filename format: `YYYY-MM-DD_{slug}.md` — sortable and human-readable.
+3. Image source support (via Gemini Vision or similar) is deferred to Phase 4 — Phase 3 handles PDF and URL only.
+4. `PyMuPDF`, `httpx`, and `beautifulsoup4` are added to `requirements.txt`.
+5. `ExtractionError` is added to `src/domain/exceptions.py` as the anti-corruption exception for extractor failures.
+**Consequences:** The `learned/` directory is automatically indexed by `ingest_vault.py`. Re-learning the same source overwrites the file (same slug) and is idempotent due to ChromaDB's upsert-by-ID semantics.
+
+## ADR 015: Supervisor Pattern, HITL Design & ADK Deferral
+
+**Date:** 2026-09-15
+**Context:** ADR-005 selected Google ADK as the orchestration framework. However, integrating ADK in Phase 3 would introduce a third-party dependency into the Application orchestration layer, complicating TDD and coupling the debate flow to a specific SDK before the core logic is validated.
+**Decision:**
+1. Phase 3 implements the Supervisor Agent as a pure Python generator (`Generator[SupervisorEvent, None, None]`) in the Application layer. No ADK dependency.
+2. Google ADK is introduced in Phase 4 as an Infrastructure adapter that wraps the Supervisor, delegating to the same Application service. This preserves ADR-004 (Clean Architecture).
+3. HITL checkpoints are modelled as synchronous `Callable[[SupervisorEvent], HITLResponse]` in Phase 3. Phase 4 replaces this with an `asyncio.Queue` or WebSocket send/receive without changing the Supervisor's internal logic.
+4. The event model (`SupervisorEvent`, `EventType`, `HITLDecision`) lives in `src/domain/agents/supervisor_events.py` — it is infrastructure-agnostic.
+**Consequences:** Full TDD coverage of the debate flow in Phase 3. Phase 4 ADK integration only requires a thin adapter, not a rewrite.

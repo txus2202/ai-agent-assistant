@@ -65,17 +65,26 @@ class ObsidianParser:
         headers = list(_HEADER_RE.finditer(raw))
         chunks: list[DocumentChunk] = []
 
+        # Track used slugs within this file to deduplicate IDs
+        # (e.g. two "## Acceptance Criteria" → #acceptance-criteria and #acceptance-criteria-2)
+        slug_counts: dict[str, int] = {}
+
+        def _unique_slug(base_slug: str) -> str:
+            count = slug_counts.get(base_slug, 0) + 1
+            slug_counts[base_slug] = count
+            return base_slug if count == 1 else f"{base_slug}-{count}"
+
         if not headers:
             # No headers → whole file is one intro chunk
             text = _H1_RE.sub("", raw).strip()
             if text:
-                chunks.append(cls._make_chunk(relative_path, "", text, metadata))
+                chunks.append(cls._make_chunk(relative_path, "", text, metadata, "intro"))
             return chunks
 
         # ── 3. Intro chunk (before first H2/H3) ──────────────────────────
         intro_text = _H1_RE.sub("", raw[: headers[0].start()]).strip()
         if intro_text:
-            chunks.append(cls._make_chunk(relative_path, "", intro_text, metadata))
+            chunks.append(cls._make_chunk(relative_path, "", intro_text, metadata, "intro"))
 
         # ── 4. Section chunks ─────────────────────────────────────────────
         for idx, header in enumerate(headers):
@@ -87,7 +96,8 @@ class ObsidianParser:
             if not section_text:
                 continue  # discard empty sections (Scenario 5)
 
-            chunks.append(cls._make_chunk(relative_path, heading, section_text, metadata))
+            slug = _unique_slug(cls._slugify(heading))
+            chunks.append(cls._make_chunk(relative_path, heading, section_text, metadata, slug))
 
         return chunks
 
@@ -101,9 +111,15 @@ class ObsidianParser:
         heading: str,
         content: str,
         metadata: dict[str, str],
+        slug: str | None = None,
     ) -> DocumentChunk:
-        slug = ObsidianParser._slugify(heading) if heading else "intro"
-        chunk_id = f"{relative_path}#{slug}"
+        if slug is not None:
+            resolved_slug = slug
+        elif heading:
+            resolved_slug = ObsidianParser._slugify(heading)
+        else:
+            resolved_slug = "intro"
+        chunk_id = f"{relative_path}#{resolved_slug}"
         return DocumentChunk(
             id=chunk_id,
             content=content,

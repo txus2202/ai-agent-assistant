@@ -70,10 +70,14 @@ class ChromaDBDocumentStore(IDocumentStore):
     def upsert(self, chunks: list[DocumentChunk]) -> None:
         if not chunks:
             return
+        # ChromaDB requires non-empty metadata dicts.
+        # We always include _file_path for provenance tracking and to
+        # guarantee at least one field even on files with no frontmatter.
+        metadatas = [{"_file_path": c.file_path, **c.metadata} for c in chunks]
         self._collection.upsert(
             ids=[c.id for c in chunks],
             documents=[c.content for c in chunks],
-            metadatas=[c.metadata for c in chunks],
+            metadatas=metadatas,
         )
 
     def search(

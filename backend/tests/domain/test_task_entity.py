@@ -16,7 +16,7 @@ from src.domain.entities.task import Task, TaskStatus
 # Local fixtures (task-specific)
 # ---------------------------------------------------------------------------
 
-@pytest.fixture()
+@pytest.fixture
 def valid_task(agent_id: uuid.UUID) -> Task:
     return Task(prompt="Describe the system architecture.", agent_id=agent_id)
 

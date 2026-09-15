@@ -79,8 +79,9 @@ def test_run_agent_task_raises_when_agent_not_found() -> None:
     )
     unknown_id = uuid.uuid4()
 
+    input_dto = RunAgentTaskInput(agent_id=unknown_id, prompt="Hello")
     with pytest.raises(AgentNotFoundError) as exc_info:
-        use_case.execute(RunAgentTaskInput(agent_id=unknown_id, prompt="Hello"))
+        use_case.execute(input_dto)
 
     assert str(unknown_id) in str(exc_info.value)
 
@@ -105,8 +106,9 @@ def test_run_agent_task_returns_failed_output_on_llm_error() -> None:
 def test_run_agent_task_raises_on_empty_prompt() -> None:
     use_case, agent = _make_use_case()
 
+    input_dto = RunAgentTaskInput(agent_id=agent.id, prompt="   ")
     with pytest.raises(ValueError, match="Prompt cannot be empty"):
-        use_case.execute(RunAgentTaskInput(agent_id=agent.id, prompt="   "))
+        use_case.execute(input_dto)
 
 
 # ---------------------------------------------------------------------------
@@ -128,8 +130,9 @@ def test_run_agent_task_raises_when_provider_not_registered() -> None:
         llm_providers={"gemini": FixedResponseProvider("irrelevant")},  # openai missing
     )
 
+    input_dto = RunAgentTaskInput(agent_id=agent.id, prompt="Hello")
     with pytest.raises(ProviderNotRegisteredError) as exc_info:
-        use_case.execute(RunAgentTaskInput(agent_id=agent.id, prompt="Hello"))
+        use_case.execute(input_dto)
 
     assert exc_info.value.provider == "openai"
     assert "gemini" in exc_info.value.available

@@ -27,7 +27,7 @@ def _write_md(path: Path, content: str) -> None:
 # Fixtures
 # ---------------------------------------------------------------------------
 
-@pytest.fixture()
+@pytest.fixture
 def store() -> InMemoryDocumentStore:
     return InMemoryDocumentStore()
 

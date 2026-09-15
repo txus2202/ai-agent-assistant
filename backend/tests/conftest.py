@@ -34,25 +34,25 @@ def make_agent(
 # Pytest fixtures (auto-discovered — no import needed in test files)
 # ---------------------------------------------------------------------------
 
-@pytest.fixture()
+@pytest.fixture
 def agent_id() -> uuid.UUID:
     """A random UUID for use as an agent identifier in tests."""
     return uuid.uuid4()
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_agent() -> Agent:
     """A pre-built valid Agent with fake provider defaults."""
     return make_agent()
 
 
-@pytest.fixture()
+@pytest.fixture
 def empty_agent_repo() -> InMemoryAgentRepository:
     """An empty InMemoryAgentRepository."""
     return InMemoryAgentRepository()
 
 
-@pytest.fixture()
+@pytest.fixture
 def populated_agent_repo(sample_agent: Agent) -> InMemoryAgentRepository:
     """An InMemoryAgentRepository with one agent already saved."""
     repo = InMemoryAgentRepository()

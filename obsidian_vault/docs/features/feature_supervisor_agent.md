@@ -143,8 +143,19 @@ Then len(list(events)) >= 12  (2 per agent × 6 agents + 2 HITL + 1 DONE)
 ## Implementation Notes
 
 - `SupervisorEvent`, `EventType`, `HITLDecision`, `HITLResponse` → `src/domain/agents/supervisor_events.py`
-- `SupervisorAgent` → `src/application/services/supervisor_agent.py`
-- Tests use `SubAgentRunner` mocked at the boundary — Supervisor is tested in isolation
+- `SupervisorAgent` → `src/application/agents/supervisor_agent.py` (consistent with SubAgentRunner)
+- Tests use `SubAgentRunner.run` mocked at the module level via `monkeypatch`
 - The `hitl_callback` in tests returns `HITLResponse(decision=APPROVE)` by default
 - Phase 4 will replace the synchronous callback with an `asyncio.Queue` or WebSocket send/receive
 - Consolidation in the `DONE` event is done by a final LLM call with all agent outputs as context
+
+### REJECT vs REFINE semantics
+
+| Decision | At HITL ① | At HITL ② |
+|---|---|---|
+| `APPROVE` | Continue to DIAGRAMMER + DEVOPS | Continue to consolidation |
+| `REJECT` | Re-run INNOVATOR + SENIOR + JUDGE (unlimited retries) | Re-run DIAGRAMMER + DEVOPS (unlimited retries) |
+| `REFINE` | Carry feedback forward to DIAGRAMMER + DEVOPS (no re-run of architects) | Carry feedback forward to consolidation |
+
+No retry cap — the debate continues until the user is satisfied.
+Timeout management is deferred to the presentation layer (WebSocket/Phase 4).

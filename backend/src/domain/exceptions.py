@@ -42,3 +42,13 @@ class ProviderNotRegisteredError(Exception):
         )
         self.provider = provider
         self.available = available
+
+
+class ExtractionError(Exception):
+    """
+    Raised when a source extractor (PDF, URL, Image) fails to extract text.
+
+    Infrastructure adapters (PDFExtractor, URLExtractor) must catch their
+    internal exceptions (PyMuPDF errors, httpx errors, etc.) and re-raise
+    them as ExtractionError to preserve the anti-corruption layer (ADR-004).
+    """

@@ -1,0 +1,199 @@
+"""
+RED Tests — SubAgentRunner (Feature: feature_sub_agents.md)
+
+Layer: Application
+
+Scenarios:
+  1. NL_INTERPRETER returns response without calling RAG
+  2. SENIOR_ARCHITECT retrieves RAG filtered by status=implemented
+  3. SubAgentRunner builds prompt including context block
+  + additional edge cases
+"""
+from __future__ import annotations
+
+from unittest.mock import MagicMock, call
+
+import pytest
+
+from src.domain.ports.llm_provider import ILLMProvider
+from src.domain.value_objects.document_chunk import DocumentChunk, SearchFilter
+from src.infrastructure.rag.in_memory_document_store import InMemoryDocumentStore
+
+
+# ---------------------------------------------------------------------------
+# Test doubles
+# ---------------------------------------------------------------------------
+
+class FakeLLM(ILLMProvider):
+    def __init__(self, response: str = "LLM response"):
+        self._response = response
+        self.received_prompts: list[str] = []
+
+    def complete(self, prompt: str, model_name: str) -> str:
+        self.received_prompts.append(prompt)
+        return self._response
+
+
+def _chunk(chunk_id: str, content: str, metadata: dict | None = None) -> DocumentChunk:
+    return DocumentChunk(
+        id=chunk_id,
+        content=content,
+        file_path="doc.md",
+        heading="Section",
+        metadata=metadata or {},
+        score=None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+class TestSubAgentRunner:
+    def test_nl_interpreter_returns_response(self):
+        from src.domain.agents.agent_role import AgentRole
+        from src.application.agents.sub_agent_runner import SubAgentRunner
+
+        llm = FakeLLM("Formalized: use hexagonal architecture")
+        store = InMemoryDocumentStore()
+
+        response = SubAgentRunner.run(
+            role=AgentRole.NL_INTERPRETER,
+            user_request="make it cleaner",
+            llm_provider=llm,
+            document_store=store,
+            model_name="gemini-1.5-flash",
+        )
+
+        assert response.content == "Formalized: use hexagonal architecture"
+
+    def test_nl_interpreter_does_not_call_rag(self):
+        from src.domain.agents.agent_role import AgentRole
+        from src.application.agents.sub_agent_runner import SubAgentRunner
+
+        llm = FakeLLM()
+        store = InMemoryDocumentStore()
+        store.upsert([_chunk("doc#s", "some content")])
+
+        response = SubAgentRunner.run(
+            role=AgentRole.NL_INTERPRETER,
+            user_request="help me",
+            llm_provider=llm,
+            document_store=store,
+            model_name="gemini-1.5-flash",
+        )
+
+        assert response.context_chunks == []
+
+    def test_senior_architect_retrieves_rag_with_implemented_filter(self):
+        from src.domain.agents.agent_role import AgentRole
+        from src.application.agents.sub_agent_runner import SubAgentRunner
+
+        store = InMemoryDocumentStore()
+        store.upsert([
+            _chunk("spec#impl", "implemented feature A", metadata={"status": "implemented"}),
+            _chunk("spec#draft", "draft feature B", metadata={"status": "draft"}),
+        ])
+
+        response = SubAgentRunner.run(
+            role=AgentRole.SENIOR_ARCHITECT,
+            user_request="review the codebase",
+            llm_provider=FakeLLM(),
+            document_store=store,
+            model_name="gemini-1.5-flash",
+        )
+
+        assert len(response.context_chunks) >= 1
+        for chunk in response.context_chunks:
+            assert chunk.metadata.get("status") == "implemented"
+
+    def test_innovator_retrieves_rag_with_spec_filter(self):
+        from src.domain.agents.agent_role import AgentRole
+        from src.application.agents.sub_agent_runner import SubAgentRunner
+
+        store = InMemoryDocumentStore()
+        store.upsert([
+            _chunk("spec#s", "architecture spec content", metadata={"type": "spec"}),
+            _chunk("adr#a", "decision record content", metadata={"type": "adr"}),
+        ])
+
+        response = SubAgentRunner.run(
+            role=AgentRole.INNOVATOR,
+            user_request="propose something new",
+            llm_provider=FakeLLM(),
+            document_store=store,
+            model_name="gemini-1.5-flash",
+        )
+
+        assert len(response.context_chunks) >= 1
+        for chunk in response.context_chunks:
+            assert chunk.metadata.get("type") == "spec"
+
+    def test_prompt_includes_system_prompt(self):
+        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import get_profile
+        from src.application.agents.sub_agent_runner import SubAgentRunner
+
+        llm = FakeLLM()
+        profile = get_profile(AgentRole.NL_INTERPRETER)
+
+        SubAgentRunner.run(
+            role=AgentRole.NL_INTERPRETER,
+            user_request="test request",
+            llm_provider=llm,
+            document_store=InMemoryDocumentStore(),
+            model_name="gemini-1.5-flash",
+        )
+
+        sent_prompt = llm.received_prompts[0]
+        # System prompt content should appear in the prompt sent to LLM
+        assert profile.system_prompt[:30] in sent_prompt
+
+    def test_prompt_includes_context_when_rag_used(self):
+        from src.domain.agents.agent_role import AgentRole
+        from src.application.agents.sub_agent_runner import SubAgentRunner
+
+        llm = FakeLLM()
+        store = InMemoryDocumentStore()
+        store.upsert([
+            _chunk("spec#s", "unique_rag_content_xyz", metadata={"type": "spec"}),
+        ])
+
+        SubAgentRunner.run(
+            role=AgentRole.INNOVATOR,
+            user_request="propose something",
+            llm_provider=llm,
+            document_store=store,
+            model_name="gemini-1.5-flash",
+        )
+
+        sent_prompt = llm.received_prompts[0]
+        assert "unique_rag_content_xyz" in sent_prompt
+
+    def test_response_role_matches_requested_role(self):
+        from src.domain.agents.agent_role import AgentRole
+        from src.application.agents.sub_agent_runner import SubAgentRunner
+
+        response = SubAgentRunner.run(
+            role=AgentRole.DIAGRAMMER,
+            user_request="draw a diagram",
+            llm_provider=FakeLLM(),
+            document_store=InMemoryDocumentStore(),
+            model_name="gemini-1.5-flash",
+        )
+
+        assert response.role == AgentRole.DIAGRAMMER
+
+    def test_response_content_is_llm_output(self):
+        from src.domain.agents.agent_role import AgentRole
+        from src.application.agents.sub_agent_runner import SubAgentRunner
+
+        response = SubAgentRunner.run(
+            role=AgentRole.THE_JUDGE,
+            user_request="critique this",
+            llm_provider=FakeLLM("This is flawed because..."),
+            document_store=InMemoryDocumentStore(),
+            model_name="gemini-1.5-flash",
+        )
+
+        assert response.content == "This is flawed because..."

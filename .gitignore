@@ -26,6 +26,10 @@ __pycache__/
 .env.test.local
 .env.production.local
 
+# Design exports (not tracked in git)
+frontend/stitch-export.zip
+frontend/stitch-export/
+
 # OS
 .DS_Store
 

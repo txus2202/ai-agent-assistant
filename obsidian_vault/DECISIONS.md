@@ -124,3 +124,31 @@
 3. HITL checkpoints are modelled as synchronous `Callable[[SupervisorEvent], HITLResponse]` in Phase 3. Phase 4 replaces this with an `asyncio.Queue` or WebSocket send/receive without changing the Supervisor's internal logic.
 4. The event model (`SupervisorEvent`, `EventType`, `HITLDecision`) lives in `src/domain/agents/supervisor_events.py` — it is infrastructure-agnostic.
 **Consequences:** Full TDD coverage of the debate flow in Phase 3. Phase 4 ADK integration only requires a thin adapter, not a rewrite.
+
+## ADR 016: SupervisorAgent Async Migration for WebSocket Streaming
+
+**Date:** 2026-09-17
+**Context:** Phase 3 implemented `SupervisorAgent.run()` as a synchronous generator with a synchronous `hitl_callback`. Phase 4 requires real-time WebSocket streaming and HITL via WebSocket receive — both are inherently async. Running a sync generator inside `asyncio.to_thread()` while communicating HITL decisions back via thread-safe queues is technically possible but complex and fragile.
+**Decision:**
+1. Convert `SupervisorAgent.run()` from `def` + `Generator` to `async def` + `AsyncGenerator`. Business logic is identical — only `yield` semantics change.
+2. Convert `SubAgentRunner.run()` to `async def` accordingly.
+3. The `hitl_callback` parameter type changes from `Callable[[SupervisorEvent], HITLResponse]` to `Callable[[SupervisorEvent], Awaitable[HITLResponse]]`.
+4. Existing Phase 3 tests are updated: sync callbacks wrapped with `asyncio.run()` or `pytest-anyio`.
+5. The WebSocket handler injects the callback directly: `async def hitl_callback(event) → HITLResponse: await ws.send_json(...); raw = await ws.receive_json(); return HITLResponse(...)`.
+**Consequences:** WebSocket handler is clean and simple. No thread pools or queues needed. Phase 3 test suite requires minor adaptation (async fixtures). The business logic itself is unchanged.
+
+## ADR 017: Phase 4 Frontend & Backend Stack
+
+**Date:** 2026-09-17
+**Context:** Phase 4 introduces a user-facing interface. The project is local-first, Python-first, with a small team. The frontend prototype is designed in Google Stitch.
+**Decision:**
+1. **Frontend:** Vue 3 + Vite + TypeScript. Chosen over React (team familiarity, Composition API ergonomics) and vanilla JS (maintainability at scale).
+2. **State management:** Pinia (Vue 3 native, simpler than Vuex).
+3. **Routing:** Vue Router in hash mode (no server-side routing needed for local SPA).
+4. **Markdown rendering:** `marked` + `DOMPurify` + `mermaid` (for DIAGRAMMER output).
+5. **Backend:** FastAPI + Uvicorn. WebSocket support is first-class. Pydantic v2 models align with existing domain value objects.
+6. **API contract:** REST for CRUD (settings, history, learn), WebSocket for debate streaming.
+7. **Development proxy:** Vite dev server proxies `/api` and `/ws` to `localhost:8000` — no CORS issues in development.
+8. **No authentication in Phase 4.** Local-only. Auth deferred to a future phase.
+9. **Frontend location:** `frontend/` directory at repo root (sibling to `backend/`).
+**Consequences:** Clean separation of concerns. The FastAPI server is a thin presentation layer — all business logic stays in `backend/src/`. The Vue SPA can be served as static files by Uvicorn in production (`StaticFiles` mount), eliminating the need for a separate web server.

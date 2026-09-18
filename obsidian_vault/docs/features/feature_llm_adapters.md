@@ -4,7 +4,7 @@ updated: 2026-09-15
 type: spec
 phase: 3
 layer: infrastructure
-status: draft
+status: implemented
 tags: [llm, adapters, gemini, openai, anthropic, provider, registry, infrastructure]
 ---
 

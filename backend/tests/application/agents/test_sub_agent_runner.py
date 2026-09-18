@@ -1,7 +1,9 @@
 """
-RED Tests — SubAgentRunner (Feature: feature_sub_agents.md)
+Tests — SubAgentRunner (Feature: feature_sub_agents.md)
 
 Layer: Application
+
+ADR-016: SubAgentRunner.run() is now async. Tests use @pytest.mark.anyio.
 
 Scenarios:
   1. NL_INTERPRETER returns response without calling RAG
@@ -10,8 +12,6 @@ Scenarios:
   + additional edge cases
 """
 from __future__ import annotations
-
-from unittest.mock import MagicMock, call
 
 import pytest
 
@@ -50,14 +50,15 @@ def _chunk(chunk_id: str, content: str, metadata: dict | None = None) -> Documen
 # ---------------------------------------------------------------------------
 
 class TestSubAgentRunner:
-    def test_nl_interpreter_returns_response(self):
+    @pytest.mark.anyio
+    async def test_nl_interpreter_returns_response(self):
         from src.domain.agents.agent_role import AgentRole
         from src.application.agents.sub_agent_runner import SubAgentRunner
 
         llm = FakeLLM("Formalized: use hexagonal architecture")
         store = InMemoryDocumentStore()
 
-        response = SubAgentRunner.run(
+        response = await SubAgentRunner.run(
             role=AgentRole.NL_INTERPRETER,
             user_request="make it cleaner",
             llm_provider=llm,
@@ -67,7 +68,8 @@ class TestSubAgentRunner:
 
         assert response.content == "Formalized: use hexagonal architecture"
 
-    def test_nl_interpreter_does_not_call_rag(self):
+    @pytest.mark.anyio
+    async def test_nl_interpreter_does_not_call_rag(self):
         from src.domain.agents.agent_role import AgentRole
         from src.application.agents.sub_agent_runner import SubAgentRunner
 
@@ -75,7 +77,7 @@ class TestSubAgentRunner:
         store = InMemoryDocumentStore()
         store.upsert([_chunk("doc#s", "some content")])
 
-        response = SubAgentRunner.run(
+        response = await SubAgentRunner.run(
             role=AgentRole.NL_INTERPRETER,
             user_request="help me",
             llm_provider=llm,
@@ -85,7 +87,8 @@ class TestSubAgentRunner:
 
         assert response.context_chunks == []
 
-    def test_senior_architect_retrieves_rag_with_implemented_filter(self):
+    @pytest.mark.anyio
+    async def test_senior_architect_retrieves_rag_with_implemented_filter(self):
         from src.domain.agents.agent_role import AgentRole
         from src.application.agents.sub_agent_runner import SubAgentRunner
 
@@ -95,7 +98,7 @@ class TestSubAgentRunner:
             _chunk("spec#draft", "draft feature B", metadata={"status": "draft"}),
         ])
 
-        response = SubAgentRunner.run(
+        response = await SubAgentRunner.run(
             role=AgentRole.SENIOR_ARCHITECT,
             user_request="review the codebase",
             llm_provider=FakeLLM(),
@@ -107,7 +110,8 @@ class TestSubAgentRunner:
         for chunk in response.context_chunks:
             assert chunk.metadata.get("status") == "implemented"
 
-    def test_innovator_retrieves_rag_with_spec_filter(self):
+    @pytest.mark.anyio
+    async def test_innovator_retrieves_rag_with_spec_filter(self):
         from src.domain.agents.agent_role import AgentRole
         from src.application.agents.sub_agent_runner import SubAgentRunner
 
@@ -117,7 +121,7 @@ class TestSubAgentRunner:
             _chunk("adr#a", "decision record content", metadata={"type": "adr"}),
         ])
 
-        response = SubAgentRunner.run(
+        response = await SubAgentRunner.run(
             role=AgentRole.INNOVATOR,
             user_request="propose something new",
             llm_provider=FakeLLM(),
@@ -129,7 +133,8 @@ class TestSubAgentRunner:
         for chunk in response.context_chunks:
             assert chunk.metadata.get("type") == "spec"
 
-    def test_prompt_includes_system_prompt(self):
+    @pytest.mark.anyio
+    async def test_prompt_includes_system_prompt(self):
         from src.domain.agents.agent_role import AgentRole
         from src.domain.agents.sub_agent_profiles import get_profile
         from src.application.agents.sub_agent_runner import SubAgentRunner
@@ -137,7 +142,7 @@ class TestSubAgentRunner:
         llm = FakeLLM()
         profile = get_profile(AgentRole.NL_INTERPRETER)
 
-        SubAgentRunner.run(
+        await SubAgentRunner.run(
             role=AgentRole.NL_INTERPRETER,
             user_request="test request",
             llm_provider=llm,
@@ -146,10 +151,10 @@ class TestSubAgentRunner:
         )
 
         sent_prompt = llm.received_prompts[0]
-        # System prompt content should appear in the prompt sent to LLM
         assert profile.system_prompt[:30] in sent_prompt
 
-    def test_prompt_includes_context_when_rag_used(self):
+    @pytest.mark.anyio
+    async def test_prompt_includes_context_when_rag_used(self):
         from src.domain.agents.agent_role import AgentRole
         from src.application.agents.sub_agent_runner import SubAgentRunner
 
@@ -159,7 +164,7 @@ class TestSubAgentRunner:
             _chunk("spec#s", "unique_rag_content_xyz", metadata={"type": "spec"}),
         ])
 
-        SubAgentRunner.run(
+        await SubAgentRunner.run(
             role=AgentRole.INNOVATOR,
             user_request="propose something",
             llm_provider=llm,
@@ -170,11 +175,12 @@ class TestSubAgentRunner:
         sent_prompt = llm.received_prompts[0]
         assert "unique_rag_content_xyz" in sent_prompt
 
-    def test_response_role_matches_requested_role(self):
+    @pytest.mark.anyio
+    async def test_response_role_matches_requested_role(self):
         from src.domain.agents.agent_role import AgentRole
         from src.application.agents.sub_agent_runner import SubAgentRunner
 
-        response = SubAgentRunner.run(
+        response = await SubAgentRunner.run(
             role=AgentRole.DIAGRAMMER,
             user_request="draw a diagram",
             llm_provider=FakeLLM(),
@@ -184,11 +190,12 @@ class TestSubAgentRunner:
 
         assert response.role == AgentRole.DIAGRAMMER
 
-    def test_response_content_is_llm_output(self):
+    @pytest.mark.anyio
+    async def test_response_content_is_llm_output(self):
         from src.domain.agents.agent_role import AgentRole
         from src.application.agents.sub_agent_runner import SubAgentRunner
 
-        response = SubAgentRunner.run(
+        response = await SubAgentRunner.run(
             role=AgentRole.THE_JUDGE,
             user_request="critique this",
             llm_provider=FakeLLM("This is flawed because..."),

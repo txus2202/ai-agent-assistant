@@ -4,7 +4,7 @@ updated: 2026-09-15
 type: spec
 phase: 3
 layer: domain
-status: draft
+status: implemented
 tags: [agents, roles, sub-agents, system-prompt, rag, domain]
 ---
 

@@ -4,7 +4,7 @@ updated: 2026-09-15
 type: spec
 phase: 3
 layer: application
-status: draft
+status: implemented
 tags: [supervisor, hitl, orchestration, multi-agent, events, application]
 ---
 

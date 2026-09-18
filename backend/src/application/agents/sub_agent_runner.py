@@ -8,10 +8,14 @@ Executes a single specialized sub-agent:
   4. Call llm_provider.complete()
   5. Return SubAgentResponse
 
-Lives in application/agents/ alongside the Supervisor (Feature 5).
+ADR-016: Converted to async def to support WebSocket streaming in Phase 4.
+Business logic is unchanged — the only difference is `await` on the LLM call.
+The ILLMProvider.complete() interface remains synchronous; it is called via
+asyncio.to_thread() here so the event loop is not blocked.
 """
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 
 from src.application.services.query_vault import QueryVault
@@ -32,10 +36,10 @@ class SubAgentResponse:
 
 
 class SubAgentRunner:
-    """Stateless runner for a single sub-agent invocation."""
+    """Stateless async runner for a single sub-agent invocation."""
 
     @staticmethod
-    def run(
+    async def run(
         role: AgentRole,
         user_request: str,
         llm_provider: ILLMProvider,
@@ -43,7 +47,10 @@ class SubAgentRunner:
         model_name: str,
     ) -> SubAgentResponse:
         """
-        Run a sub-agent for the given role.
+        Run a sub-agent for the given role (async, ADR-016).
+
+        The ILLMProvider.complete() is synchronous; it is offloaded to a
+        thread pool via asyncio.to_thread() to avoid blocking the event loop.
 
         Args:
             role:           The AgentRole determining which profile and prompts to use.
@@ -77,8 +84,8 @@ class SubAgentRunner:
 
         prompt = "\n\n".join(parts)
 
-        # ── 3. LLM call ───────────────────────────────────────────────────
-        content = llm_provider.complete(prompt, model_name)
+        # ── 3. LLM call (offloaded to thread pool — ILLMProvider is sync) ─
+        content = await asyncio.to_thread(llm_provider.complete, prompt, model_name)
 
         return SubAgentResponse(
             role=role,

@@ -28,7 +28,7 @@ async def get_all_debates(repo: SqliteDebateRepository = Depends(get_debate_repo
         })
     return result
 
-@router.get("/{debate_id}")
+@router.get("/{debate_id}", responses={404: {"description": "Debate not found"}})
 async def get_debate(debate_id: str, repo: SqliteDebateRepository = Depends(get_debate_repo)) -> Dict[str, Any]:
     """
     Returns a specific debate by ID.

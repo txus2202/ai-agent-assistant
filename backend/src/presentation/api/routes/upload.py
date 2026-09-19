@@ -31,9 +31,13 @@ async def upload_file(file: Annotated[UploadFile, File(...)]) -> Dict[str, str]:
     # Create temporary directory if it doesn't exist
     os.makedirs(TEMP_UPLOAD_DIR, exist_ok=True)
 
-    # Generate a unique filename to prevent collisions
-    file_ext = os.path.splitext(file.filename)[1]
-    unique_filename = f"{uuid.uuid4()}{file_ext}"
+    import re
+
+    # Generate a unique filename and sanitize the extension to prevent Path Traversal
+    raw_ext = os.path.splitext(file.filename)[1]
+    safe_ext = re.sub(r'[^a-zA-Z0-9.]', '', raw_ext)
+    
+    unique_filename = f"{uuid.uuid4()}{safe_ext}"
     file_path = os.path.join(TEMP_UPLOAD_DIR, unique_filename)
 
     # Save the file (we read in chunks to avoid loading large files in memory,

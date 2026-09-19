@@ -53,14 +53,45 @@ describe('useDebateStore', () => {
     
     // Set connected so it proceeds to send
     store.isConnected = true
-    store.startDebate('test task')
+    store.startDebate('test task', 'learning', '/tmp/file.pdf')
     
     expect(store.isDebating).toBe(true)
     expect(store.messages).toHaveLength(1)
     expect(store.messages[0].content).toBe('test task')
     expect(store.messages[0].role).toBe('user')
     // We can verify send was called on the mocked ws
-    expect(store.ws?.send).toHaveBeenCalledWith(JSON.stringify({ type: 'start', user_request: 'test task' }))
+    expect(store.ws?.send).toHaveBeenCalledWith(JSON.stringify({ 
+      type: 'start', 
+      user_request: 'test task',
+      target_agent: 'learning',
+      attachments: ['/tmp/file.pdf']
+    }))
+  })
+
+  it('handles startDebate with defaults', () => {
+    const store = useDebateStore()
+    store.isConnected = true
+    store.startDebate('test task')
+    expect(store.ws?.send).toHaveBeenCalledWith(JSON.stringify({ 
+      type: 'start', 
+      user_request: 'test task',
+      target_agent: 'supervisor',
+      attachments: []
+    }))
+  })
+
+  it('handles uploadFile', async () => {
+    const store = useDebateStore()
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ path: '/tmp/test.pdf' })
+    })
+
+    const file = new File([''], 'test.pdf')
+    const path = await store.uploadFile(file)
+
+    expect(path).toBe('/tmp/test.pdf')
+    expect(global.fetch).toHaveBeenCalled()
   })
 
   it('handles HITL_REQUIRED event', () => {

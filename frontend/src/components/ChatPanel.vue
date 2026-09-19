@@ -1,23 +1,39 @@
 <script setup lang="ts">
 import { ref, nextTick, watch } from 'vue'
-import { SendHorizontal } from 'lucide-vue-next'
+import { SendHorizontal, Paperclip } from 'lucide-vue-next'
+import { useDebateStore } from '../stores/debate'
 
 const props = defineProps<{
   messages: Array<{ role: 'user' | 'assistant', content: string }>
   isDebating: boolean
 }>()
 
-const emit = defineEmits<{
-  (e: 'submit', request: string): void
-}>()
+const store = useDebateStore()
 
 const inputMsg = ref('')
+const selectedAgent = ref('supervisor')
+const selectedFile = ref<File | null>(null)
 const chatScroll = ref<HTMLElement | null>(null)
 
-const onSubmit = () => {
+const handleFileChange = (e: Event) => {
+  const target = e.target as HTMLInputElement
+  if (target.files && target.files.length > 0) {
+    selectedFile.value = target.files[0]
+  }
+}
+
+const onSubmit = async () => {
   if (!inputMsg.value.trim() || props.isDebating) return
-  emit('submit', inputMsg.value)
+  
+  let attachmentUrl = null
+  if (selectedFile.value) {
+    attachmentUrl = await store.uploadFile(selectedFile.value)
+  }
+
+  store.startDebate(inputMsg.value, selectedAgent.value, attachmentUrl)
+  
   inputMsg.value = ''
+  selectedFile.value = null
 }
 
 // Auto-scroll to bottom when messages change
@@ -65,18 +81,42 @@ watch(() => props.messages.length, async () => {
 
     <!-- Input -->
     <div class="p-4 border-t border-space-800">
-      <form @submit.prevent="onSubmit" class="relative">
-        <input 
+      <form @submit.prevent="onSubmit" class="flex flex-col gap-2 relative">
+        <div class="flex items-center gap-2">
+          <select 
+            v-model="selectedAgent"
+            data-test="target-agent-select"
+            class="bg-space-950 border border-space-700 rounded px-2 py-1.5 text-xs font-mono text-slate-300 focus:outline-none focus:border-neon-cyan"
+          >
+            <option value="supervisor">Supervisor (Full Debate)</option>
+            <option value="nl_interpreter">NL Interpreter</option>
+            <option value="innovator_architect">Innovator Architect</option>
+            <option value="senior_architect">Senior Architect</option>
+            <option value="the_judge">The Judge</option>
+            <option value="diagrammer">Diagrammer</option>
+            <option value="devops_secops">DevOps & SecOps</option>
+            <option value="learning">Learning Agent</option>
+          </select>
+          <label class="cursor-pointer text-space-400 hover:text-neon-cyan transition-colors flex items-center justify-center p-2 rounded hover:bg-space-800">
+            <input type="file" @change="handleFileChange" class="hidden" data-test="file-input" />
+            <Paperclip class="w-4 h-4" />
+          </label>
+          <span v-if="selectedFile" class="text-xs text-neon-cyan truncate max-w-[150px] font-mono">
+            {{ selectedFile.name }}
+          </span>
+        </div>
+        <textarea 
           v-model="inputMsg"
-          type="text"
           placeholder="Enter directive..."
-          class="w-full bg-space-950 border border-space-700 rounded-lg px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-neon-cyan focus:ring-1 focus:ring-neon-cyan transition-all placeholder-space-700 font-mono"
+          rows="3"
+          class="w-full bg-space-950 border border-space-700 rounded-lg px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-neon-cyan focus:ring-1 focus:ring-neon-cyan transition-all placeholder-space-700 font-mono resize-none custom-scrollbar"
           :disabled="isDebating"
-        />
+          @keydown.enter.prevent="onSubmit"
+        ></textarea>
         <button 
           type="submit"
           :disabled="!inputMsg.trim() || isDebating"
-          class="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-space-700 hover:text-neon-cyan disabled:opacity-50 transition-colors"
+          class="absolute bottom-4 right-4 p-2 text-space-700 hover:text-neon-cyan disabled:opacity-50 transition-colors bg-space-900 rounded-full"
         >
           <SendHorizontal class="w-5 h-5" />
         </button>

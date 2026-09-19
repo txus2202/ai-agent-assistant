@@ -5,9 +5,13 @@ import ChatPanel from './ChatPanel.vue'
 import ParticleOrb from './ParticleOrb.vue'
 import AgentTopology from './AgentTopology.vue'
 import HITLActionButton from './HITLActionButton.vue'
+import EventStream from './EventStream.vue'
 import { AGENT_THEME, DEFAULT_AGENT_THEME } from '../config/agentTheme'
+import { History } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
 
 const store = useDebateStore()
+const router = useRouter()
 
 const activeAgentColor = computed(() => {
   const activeAgent = store.agents.find(a => a.state === 'ACTIVE')
@@ -58,6 +62,17 @@ const handleHitlAction = (decision: 'approve' | 'refine' | 'reject') => {
           Autonomous Agentic Architecture
         </p>
       </div>
+
+      <!-- Header actions -->
+      <div class="absolute top-6 right-6 z-10">
+        <button 
+          @click="router.push('/history')"
+          class="flex items-center space-x-2 px-3 py-2 bg-space-800/80 hover:bg-space-700 border border-space-600 rounded text-space-300 hover:text-neon-cyan transition-colors backdrop-blur font-mono text-xs"
+        >
+          <History class="w-4 h-4" />
+          <span>HISTORY</span>
+        </button>
+      </div>
       
       <ParticleOrb 
         :active-agent-color="activeAgentColor"
@@ -66,8 +81,8 @@ const handleHitlAction = (decision: 'approve' | 'refine' | 'reject') => {
     </div>
 
     <!-- Right Column: Agent Topology & Orchestration -->
-    <div class="w-full md:w-1/3 lg:w-[400px] h-1/2 md:h-full z-10 bg-space-900/50 backdrop-blur-md">
-      <AgentTopology :agents="store.agents">
+    <div class="w-full md:w-1/3 lg:w-[400px] h-1/2 md:h-full z-10 bg-space-900/50 backdrop-blur-md flex flex-col">
+      <AgentTopology class="flex-1" :agents="store.agents">
         <template #orchestration>
           <div class="flex flex-col space-y-3">
             <h3 class="text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-1">
@@ -117,6 +132,11 @@ const handleHitlAction = (decision: 'approve' | 'refine' | 'reject') => {
           </div>
         </template>
       </AgentTopology>
+
+      <!-- NEW OBSERVABILITY PANEL -->
+      <div class="h-64 border-t border-space-800 bg-space-950 flex flex-col">
+        <EventStream :events="store.rawEvents" />
+      </div>
     </div>
 
   </div>

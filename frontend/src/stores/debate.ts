@@ -20,6 +20,7 @@ export const useDebateStore = defineStore('debate', () => {
   const isHitlRequired = ref(false)
   const hitlCheckpoint = ref<string | null>(null)
   const messages = ref<ChatMessage[]>([])
+  const rawEvents = ref<any[]>([])
   
   const agents = ref<Agent[]>([])
   const isAgentsLoaded = ref(false)
@@ -74,6 +75,11 @@ export const useDebateStore = defineStore('debate', () => {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
+        // Add timestamp to raw event if not present
+        if (!data.timestamp) {
+          data.timestamp = new Date().toISOString()
+        }
+        rawEvents.value.push(data)
         handleSupervisorEvent(data)
       } catch (e) {
         console.error('[WS] Failed to parse message', event.data)
@@ -108,7 +114,24 @@ export const useDebateStore = defineStore('debate', () => {
     }, delay)
   }
 
-  function startDebate(userRequest: string) {
+  async function uploadFile(file: File): Promise<string> {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const response = await fetch('/api/upload', {
+      method: 'POST',
+      body: formData
+    })
+
+    if (!response.ok) {
+      throw new Error('Upload failed')
+    }
+
+    const data = await response.json()
+    return data.path
+  }
+
+  function startDebate(userRequest: string, targetAgent: string = 'supervisor', attachmentUrl: string | null = null) {
     if (!isConnected.value || !ws) {
       messages.value.push({ role: 'assistant', content: 'Error: Cannot start debate, disconnected from server. Trying to reconnect...' })
       connect()
@@ -116,9 +139,20 @@ export const useDebateStore = defineStore('debate', () => {
     }
 
     isDebating.value = true
-    messages.value.push({ role: 'user', content: userRequest })
+    messages.value.push({
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: userRequest,
+      timestamp: new Date().toISOString()
+    })
     
-    ws.send(JSON.stringify({ type: 'start', user_request: userRequest }))
+    const payload = {
+      type: 'start',
+      user_request: userRequest,
+      target_agent: targetAgent,
+      attachments: attachmentUrl ? [attachmentUrl] : []
+    }
+    ws.send(JSON.stringify(payload))
   }
 
   function handleSupervisorEvent(event: any) {
@@ -165,11 +199,13 @@ export const useDebateStore = defineStore('debate', () => {
     isHitlRequired,
     hitlCheckpoint,
     messages,
+    rawEvents,
     agents,
     isAgentsLoaded,
     loadAgents,
     connect,
     startDebate,
+    uploadFile,
     handleSupervisorEvent,
     submitHitlDecision,
     get ws() { return ws } // Getter for testing purposes

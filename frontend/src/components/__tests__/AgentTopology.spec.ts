@@ -1,11 +1,23 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import AgentTopology from '../AgentTopology.vue'
+
+vi.mock('../../stores/config', () => ({
+  useConfigStore: () => ({
+    agentsConfig: [],
+    updateAgentConfig: vi.fn()
+  })
+}))
 
 // Mocking Element.scrollIntoView since JSDOM doesn't implement it
 Element.prototype.scrollIntoView = vi.fn()
 
 describe('AgentTopology.vue', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   it('renders a scrollable container for agents', () => {
     const wrapper = mount(AgentTopology, {
       props: {

@@ -1,6 +1,15 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AgentCard from '../AgentCard.vue'
+
+const mockUpdateAgentConfig = vi.fn()
+
+vi.mock('../../stores/config', () => ({
+  useConfigStore: () => ({
+    agentsConfig: [{ id: 'THE_JUDGE', provider: 'gemini', model_name: 'gemini-1.5-flash' }, { id: 'the_judge', provider: 'gemini', model_name: 'gemini-1.5-flash' }],
+    updateAgentConfig: mockUpdateAgentConfig
+  })
+}))
 
 describe('AgentCard.vue', () => {
   it('renders agent role and dot color based on state', () => {
@@ -63,5 +72,31 @@ describe('AgentCard.vue', () => {
 
     const progressBar = wrapper.find('[data-test="progress-bar"]')
     expect(progressBar.exists()).toBe(false)
+  })
+
+  it('renders provider and model selects and updates config store', async () => {
+    const { useConfigStore } = await import('../../stores/config')
+    const store = useConfigStore()
+
+    const wrapper = mount(AgentCard, {
+      props: {
+        role: 'the_judge',
+        state: 'STANDBY',
+        colorClass: 'text-rose-400',
+        glowClass: 'glow-red'
+      }
+    })
+
+    const providerSelect = wrapper.find('[data-test="provider-select"]')
+    const modelSelect = wrapper.find('[data-test="model-select"]')
+    
+    expect(providerSelect.exists()).toBe(true)
+    expect(modelSelect.exists()).toBe(true)
+    
+    expect((providerSelect.element as HTMLSelectElement).value).toBe('gemini')
+    expect((modelSelect.element as HTMLSelectElement).value).toBe('gemini-1.5-flash')
+
+    await providerSelect.setValue('openai')
+    expect(mockUpdateAgentConfig).toHaveBeenCalledWith('the_judge', 'openai', 'gpt-4o-mini')
   })
 })

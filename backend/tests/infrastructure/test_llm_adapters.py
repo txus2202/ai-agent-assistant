@@ -26,10 +26,15 @@ from src.domain.exceptions import LLMProviderError
 # Helpers
 # ===========================================================================
 
+class DummyCountResp:
+    total_tokens = 100
+
 def _make_genai_mock(response_text: str = "Gemini response") -> MagicMock:
-    """Build a mock google.generativeai module that returns response_text."""
+    """Build a mock google.genai module that returns response_text."""
     mock = MagicMock()
-    mock.GenerativeModel.return_value.generate_content.return_value.text = response_text
+    mock.Client.return_value.models.generate_content.return_value.text = response_text
+    
+    mock.Client.return_value.models.count_tokens.return_value = DummyCountResp()
     return mock
 
 
@@ -58,17 +63,17 @@ def _make_anthropic_mock(response_text: str = "Anthropic response") -> MagicMock
 class TestGeminiAdapter:
     @pytest.fixture(autouse=True)
     def mock_genai(self, monkeypatch):
-        """Inject mock google.generativeai before each test."""
+        """Inject mock google.genai before each test."""
         mock = _make_genai_mock()
-        monkeypatch.setitem(sys.modules, "google", MagicMock(generativeai=mock))
-        monkeypatch.setitem(sys.modules, "google.generativeai", mock)
+        monkeypatch.setitem(sys.modules, "google", MagicMock(genai=mock))
+        monkeypatch.setitem(sys.modules, "google.genai", mock)
         self._mock_genai = mock
 
     def test_complete_returns_string(self):
         from src.infrastructure.llm.gemini_adapter import GeminiAdapter
 
         adapter = GeminiAdapter(api_key="test-key")
-        result = adapter.complete("Hello", "gemini-1.5-flash")
+        result = adapter.complete("Hello", "gemini-3.6-flash")
 
         assert isinstance(result, str)
         assert result == "Gemini response"
@@ -76,22 +81,26 @@ class TestGeminiAdapter:
     def test_complete_wraps_sdk_exception_as_llm_provider_error(self):
         from src.infrastructure.llm.gemini_adapter import GeminiAdapter
 
-        self._mock_genai.GenerativeModel.return_value.generate_content.side_effect = RuntimeError("quota exceeded")
+        self._mock_genai.Client.return_value.models.generate_content.side_effect = RuntimeError("quota exceeded")
 
         adapter = GeminiAdapter(api_key="test-key")
         with pytest.raises(LLMProviderError, match="quota exceeded"):
-            adapter.complete("Hello", "gemini-1.5-flash")
+            adapter.complete("Hello", "gemini-3.6-flash")
 
     def test_missing_api_key_raises_llm_provider_error(self, monkeypatch):
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         from src.infrastructure.llm.gemini_adapter import GeminiAdapter
+        
+        # When no API key is provided, the code tries _genai.Client().
+        # We need the mock to raise an exception here to simulate no ADC auth.
+        self._mock_genai.Client.side_effect = Exception("No auth")
 
-        with pytest.raises(LLMProviderError, match="GEMINI_API_KEY"):
+        with pytest.raises(LLMProviderError, match="No auth configured"):
             GeminiAdapter()  # no key passed, no env var
 
     def test_missing_sdk_raises_llm_provider_error(self, monkeypatch):
-        """If google-generativeai is not installed, construction raises LLMProviderError."""
-        monkeypatch.delitem(sys.modules, "google.generativeai", raising=False)
+        """If google-genai is not installed, construction raises LLMProviderError."""
+        monkeypatch.delitem(sys.modules, "google.genai", raising=False)
         monkeypatch.delitem(sys.modules, "google", raising=False)
 
         # Cause the import to fail
@@ -110,7 +119,7 @@ class TestGeminiAdapter:
         import importlib
         importlib.reload(gemini_adapter)
 
-        with pytest.raises(LLMProviderError, match="google-generativeai"):
+        with pytest.raises(LLMProviderError, match="google-genai"):
             gemini_adapter.GeminiAdapter(api_key="test-key")
 
 

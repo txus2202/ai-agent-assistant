@@ -85,7 +85,7 @@ class LearnFromSource:
         llm_provider: ILLMProvider,
         document_store: IDocumentStore,
         vault_root: Path,
-        model_name: str = "gemini-1.5-flash",
+        model_name: str = "gemini-3.6-flash",
     ) -> LearnResult:
         """
         Learn from an external source and update the knowledge vault.

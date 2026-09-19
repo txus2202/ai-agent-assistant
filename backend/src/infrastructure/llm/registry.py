@@ -26,9 +26,12 @@ def get_llm_provider(name: str) -> ILLMProvider:
     settings = get_settings()
     
     if name == "gemini":
-        if not settings.gemini_api_key:
-            raise ValueError("GEMINI_API_KEY is not configured")
-        return GeminiAdapter(api_key=settings.gemini_api_key)
+        # Do not fail early; GeminiAdapter has fallback logic for Vertex AI and Gemini CLI
+        return GeminiAdapter(
+            api_key=settings.gemini_api_key,
+            project=settings.google_cloud_project,
+            location=settings.google_cloud_location
+        )
         
     elif name == "openai":
         if not settings.openai_api_key:

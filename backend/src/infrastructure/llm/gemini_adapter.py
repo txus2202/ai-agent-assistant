@@ -23,31 +23,64 @@ from src.domain.ports.llm_provider import ILLMProvider
 
 
 class GeminiAdapter(ILLMProvider):
-    """ILLMProvider backed by google-generativeai (Gemini)."""
+    """ILLMProvider backed by google-genai (Gemini)."""
 
-    def __init__(self, api_key: str | None = None) -> None:
+    def __init__(self, api_key: str | None = None, project: str | None = None, location: str = "europe-west1") -> None:
         try:
-            import google.generativeai as _genai  # noqa: PLC0415 — intentional lazy import
+            from google import genai as _genai  # noqa: PLC0415 — intentional lazy import
         except ImportError as exc:
             raise LLMProviderError(
-                "google-generativeai package is not installed. "
-                "Run: pip install google-generativeai"
+                "google-genai package is not installed. "
+                "Run: pip install google-genai"
             ) from exc
 
-        key = api_key or os.getenv("GEMINI_API_KEY")
-        if not key:
-            raise LLMProviderError(
-                "GEMINI_API_KEY environment variable is not set. "
-                "Set it in your .env file or pass api_key= explicitly."
-            )
-
-        _genai.configure(api_key=key)
-        self._genai = _genai
+        if project:
+            # Requires Application Default Credentials (gcloud auth application-default login)
+            self._client = _genai.Client(vertexai=True, project=project, location=location)
+        else:
+            # Fallback to AI Studio (API Key or Gemini CLI OAuth)
+            key = api_key or os.getenv("GEMINI_API_KEY")
+            if key:
+                self._client = _genai.Client(api_key=key)
+            else:
+                try:
+                    # Let the SDK try to find ADC (e.g., from Gemini CLI or gcloud)
+                    self._client = _genai.Client()
+                except Exception as exc:
+                    raise LLMProviderError(
+                        "No auth configured. Set GEMINI_API_KEY, GOOGLE_CLOUD_PROJECT, "
+                        "or authenticate using the Gemini CLI."
+                    ) from exc
 
     def complete(self, prompt: str, model_name: str) -> str:
         try:
-            model = self._genai.GenerativeModel(model_name=model_name)
-            response = model.generate_content(prompt)
+            # Gemini Context Caching requires >= 32768 tokens.
+            # We count tokens first to decide whether to cache.
+            token_count_resp = self._client.models.count_tokens(
+                model=model_name,
+                contents=prompt,
+            )
+            
+            if token_count_resp.total_tokens >= 32768:
+                # Use explicit context caching
+                cache = self._client.caches.create(
+                    model=model_name,
+                    contents=prompt,
+                    config={'ttl': '3600s'} # 1 hour
+                )
+                response = self._client.models.generate_content(
+                    model=model_name,
+                    contents="", # The prompt is entirely in the cache
+                    config={'cached_content': cache.name}
+                )
+                # Cleanup cache after use to save costs (since this is per-agent specific)
+                self._client.caches.delete(name=cache.name)
+            else:
+                # Normal request for smaller contexts
+                response = self._client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                )
             return response.text
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc

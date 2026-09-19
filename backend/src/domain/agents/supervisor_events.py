@@ -54,6 +54,9 @@ class HITLResponse:
     Attributes:
         decision: APPROVE / REJECT / REFINE.
         feedback: Required when decision == REFINE. Appended to subsequent agent prompts.
+        selected_options: Identifiers of the solutions selected by the user for the next phase.
     """
     decision: HITLDecision
     feedback: str = ""
+    selected_options: list[str] = field(default_factory=list)
+

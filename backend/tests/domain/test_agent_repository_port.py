@@ -29,7 +29,7 @@ def _make_agent(name: str = "Annotator") -> Agent:
         name=name,
         role="Documentation specialist",
         provider="gemini",
-        model_name="gemini-1.5-flash",
+        model_name="gemini-3.6-flash",
     )
 
 

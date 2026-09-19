@@ -7,12 +7,12 @@ def test_should_create_valid_agent():
         name="Annotator", 
         role="Documentation specialist", 
         provider="gemini", 
-        model_name="gemini-1.5-flash"
+        model_name="gemini-3.6-flash"
     )
     assert isinstance(agent.id, UUID)
     assert agent.name == "Annotator"
     assert agent.provider == "gemini"
-    assert agent.model_name == "gemini-1.5-flash"
+    assert agent.model_name == "gemini-3.6-flash"
     assert agent.status == AgentStatus.IDLE
 
 def test_should_fail_when_provider_is_empty():

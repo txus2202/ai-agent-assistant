@@ -63,7 +63,7 @@ class TestSubAgentRunner:
             user_request="make it cleaner",
             llm_provider=llm,
             document_store=store,
-            model_name="gemini-1.5-flash",
+            model_name="gemini-3.6-flash",
         )
 
         assert response.content == "Formalized: use hexagonal architecture"
@@ -82,7 +82,7 @@ class TestSubAgentRunner:
             user_request="help me",
             llm_provider=llm,
             document_store=store,
-            model_name="gemini-1.5-flash",
+            model_name="gemini-3.6-flash",
         )
 
         assert response.context_chunks == []
@@ -103,7 +103,7 @@ class TestSubAgentRunner:
             user_request="review the codebase",
             llm_provider=FakeLLM(),
             document_store=store,
-            model_name="gemini-1.5-flash",
+            model_name="gemini-3.6-flash",
         )
 
         assert len(response.context_chunks) >= 1
@@ -126,7 +126,7 @@ class TestSubAgentRunner:
             user_request="propose something new",
             llm_provider=FakeLLM(),
             document_store=store,
-            model_name="gemini-1.5-flash",
+            model_name="gemini-3.6-flash",
         )
 
         assert len(response.context_chunks) >= 1
@@ -147,7 +147,7 @@ class TestSubAgentRunner:
             user_request="test request",
             llm_provider=llm,
             document_store=InMemoryDocumentStore(),
-            model_name="gemini-1.5-flash",
+            model_name="gemini-3.6-flash",
         )
 
         sent_prompt = llm.received_prompts[0]
@@ -169,7 +169,7 @@ class TestSubAgentRunner:
             user_request="propose something",
             llm_provider=llm,
             document_store=store,
-            model_name="gemini-1.5-flash",
+            model_name="gemini-3.6-flash",
         )
 
         sent_prompt = llm.received_prompts[0]
@@ -185,7 +185,7 @@ class TestSubAgentRunner:
             user_request="draw a diagram",
             llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
-            model_name="gemini-1.5-flash",
+            model_name="gemini-3.6-flash",
         )
 
         assert response.role == AgentRole.DIAGRAMMER
@@ -200,7 +200,7 @@ class TestSubAgentRunner:
             user_request="critique this",
             llm_provider=FakeLLM("This is flawed because..."),
             document_store=InMemoryDocumentStore(),
-            model_name="gemini-1.5-flash",
+            model_name="gemini-3.6-flash",
         )
 
         assert response.content == "This is flawed because..."

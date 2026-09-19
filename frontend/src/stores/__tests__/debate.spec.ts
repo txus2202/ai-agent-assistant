@@ -1,10 +1,25 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useDebateStore } from '../debate'
 
 describe('useDebateStore', () => {
+  let originalWebSocket: typeof WebSocket
+
   beforeEach(() => {
     setActivePinia(createPinia())
+    originalWebSocket = global.WebSocket
+    global.WebSocket = vi.fn().mockImplementation(function(this: any) {
+      this.readyState = WebSocket.OPEN
+      this.send = vi.fn()
+      this.close = vi.fn()
+      this.addEventListener = vi.fn()
+      this.removeEventListener = vi.fn()
+    }) as any
+  })
+
+  afterEach(() => {
+    global.WebSocket = originalWebSocket
+    vi.restoreAllMocks()
   })
 
   it('initializes with default state', () => {
@@ -35,15 +50,17 @@ describe('useDebateStore', () => {
 
   it('handles startDebate by setting states appropriately', () => {
     const store = useDebateStore()
-    // Mock WebSocket send
-    store.ws = { send: () => {} } as any
     
+    // Set connected so it proceeds to send
+    store.isConnected = true
     store.startDebate('test task')
     
     expect(store.isDebating).toBe(true)
     expect(store.messages).toHaveLength(1)
     expect(store.messages[0].content).toBe('test task')
     expect(store.messages[0].role).toBe('user')
+    // We can verify send was called on the mocked ws
+    expect(store.ws?.send).toHaveBeenCalledWith(JSON.stringify({ type: 'start', user_request: 'test task' }))
   })
 
   it('handles HITL_REQUIRED event', () => {

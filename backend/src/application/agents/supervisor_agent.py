@@ -59,11 +59,11 @@ class SupervisorAgent:
     """Stateless async orchestrator for the ATENEA multi-agent debate."""
 
     @staticmethod
-    async def run(
+    def run(
         user_request: str,
-        llm_provider: ILLMProvider,
         document_store: IDocumentStore,
-        model_name: str,
+        agent_config_repo: Any, # We'll use duck typing or import it if needed
+        llm_factory: Callable[[str], ILLMProvider],
         hitl_callback: Callable[[SupervisorEvent], Awaitable[HITLResponse]],
     ) -> AsyncGenerator[SupervisorEvent, None]:
         """
@@ -71,9 +71,9 @@ class SupervisorAgent:
 
         Args:
             user_request:   The user's architectural question or problem.
-            llm_provider:   ILLMProvider for all LLM calls (agents + consolidation).
             document_store: IDocumentStore for RAG retrieval by sub-agents.
-            model_name:     Model used for all LLM calls.
+            agent_config_repo: Repository to lookup agent-specific models.
+            llm_factory:    Callable to get the ILLMProvider given a provider name.
             hitl_callback:  Async callable invoked at each HITL checkpoint.
                             Returns HITLResponse(decision, feedback).
 
@@ -82,119 +82,171 @@ class SupervisorAgent:
         """
         return _debate_generator(
             user_request=user_request,
-            llm_provider=llm_provider,
             document_store=document_store,
-            model_name=model_name,
+            agent_config_repo=agent_config_repo,
+            llm_factory=llm_factory,
             hitl_callback=hitl_callback,
         )
 
 
 async def _debate_generator(
     user_request: str,
-    llm_provider: ILLMProvider,
     document_store: IDocumentStore,
-    model_name: str,
+    agent_config_repo: Any,
+    llm_factory: Callable[[str], ILLMProvider],
     hitl_callback: Callable[[SupervisorEvent], Awaitable[HITLResponse]],
 ) -> AsyncGenerator[SupervisorEvent, None]:
-    # ── Phase A: NL_INTERPRETER ───────────────────────────────────────
-    yield SupervisorEvent(type=EventType.AGENT_STARTED, role=AgentRole.NL_INTERPRETER, content="")
-    nl_resp = await SubAgentRunner.run(
-        role=AgentRole.NL_INTERPRETER,
-        user_request=user_request,
-        llm_provider=llm_provider,
-        document_store=document_store,
-        model_name=model_name,
-    )
-    yield SupervisorEvent(
-        type=EventType.AGENT_COMPLETED,
-        role=AgentRole.NL_INTERPRETER,
-        content=nl_resp.content,
-    )
-    formalized = nl_resp.content
-    refinement = ""
+    
+    # Setup global defaults if config not found
+    from src.presentation.api.config import get_settings
+    settings = get_settings()
 
-    # ── Phase A: Architect loop (REJECT loops, REFINE breaks with feedback)
-    agent_outputs: dict[str, str] = {}
-
-    while True:
-        augmented = formalized + (f"\n\n## User Refinement\n{refinement}" if refinement else "")
-
-        for role in (AgentRole.INNOVATOR, AgentRole.SENIOR_ARCHITECT, AgentRole.THE_JUDGE):
-            yield SupervisorEvent(type=EventType.AGENT_STARTED, role=role, content="")
-            resp = await SubAgentRunner.run(
-                role=role,
-                user_request=augmented,
-                llm_provider=llm_provider,
-                document_store=document_store,
-                model_name=model_name,
-            )
-            agent_outputs[role.value] = resp.content
-            yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=role, content=resp.content)
-
-        # HITL ①
-        hitl1_content = (
-            f"## {AgentRole.INNOVATOR.value}\n{agent_outputs[AgentRole.INNOVATOR.value]}\n\n"
-            f"## {AgentRole.SENIOR_ARCHITECT.value}\n{agent_outputs[AgentRole.SENIOR_ARCHITECT.value]}\n\n"
-            f"## {AgentRole.THE_JUDGE.value}\n{agent_outputs[AgentRole.THE_JUDGE.value]}"
+    async def run_role(r: AgentRole, req: str) -> tuple[AgentRole, str]:
+        # Lookup configuration for this specific role
+        config = agent_config_repo.find_by_role(r.value)
+        
+        provider_name = config.provider if config else settings.default_provider
+        model_name = config.model_name if config else settings.default_model
+        
+        # Instantiate the correct provider for this agent
+        llm_provider = llm_factory(provider_name)
+        
+        resp = await SubAgentRunner.run(
+            role=r,
+            user_request=req,
+            llm_provider=llm_provider,
+            document_store=document_store,
+            model_name=model_name,
         )
+        return r, resp.content
+
+    agent_outputs: dict[str, str] = {}
+    
+    # ── Phase 1: Interpretation ───────────────────────────────────────
+    refinement_1 = ""
+    while True:
+        req_1 = user_request + (f"\n\n## User Refinement\n{refinement_1}" if refinement_1 else "")
+        yield SupervisorEvent(type=EventType.AGENT_STARTED, role=AgentRole.NL_INTERPRETER, content="")
+        _, nl_content = await run_role(AgentRole.NL_INTERPRETER, req_1)
+        agent_outputs[AgentRole.NL_INTERPRETER.value] = nl_content
+        yield SupervisorEvent(
+            type=EventType.AGENT_COMPLETED,
+            role=AgentRole.NL_INTERPRETER,
+            content=nl_content,
+        )
+        
         hitl1_event = SupervisorEvent(
             type=EventType.HITL_REQUIRED,
             role=None,
-            content=hitl1_content,
-            metadata={"checkpoint": "1"},
+            content=f"## Interpretation\n{nl_content}",
+            metadata={"checkpoint": "1_interpreter"},
         )
         yield hitl1_event
         hitl1 = await hitl_callback(hitl1_event)
 
         if hitl1.decision == HITLDecision.APPROVE:
+            formalized = nl_content
             break
         elif hitl1.decision == HITLDecision.REFINE:
-            refinement = hitl1.feedback
-            break
-        # else REJECT: loop — re-run architects
+            refinement_1 = hitl1.feedback
+        # else REJECT: loop
 
-    # ── Phase B: Implementation loop ─────────────────────────────────
-    impl_request = formalized + (f"\n\n## User Refinement\n{refinement}" if refinement else "")
-
+    # ── Phase 2: Ideation ──────────────────────────────────────────────
+    refinement_2 = ""
+    selected_solutions = []
     while True:
-        for role in (AgentRole.DIAGRAMMER, AgentRole.DEVOPS_SECOPS):
+        req_2 = formalized + (f"\n\n## User Refinement\n{refinement_2}" if refinement_2 else "")
+        roles_step2 = (AgentRole.INNOVATOR, AgentRole.SENIOR_ARCHITECT)
+        for role in roles_step2:
             yield SupervisorEvent(type=EventType.AGENT_STARTED, role=role, content="")
-            resp = await SubAgentRunner.run(
-                role=role,
-                user_request=impl_request,
-                llm_provider=llm_provider,
-                document_store=document_store,
-                model_name=model_name,
-            )
-            agent_outputs[role.value] = resp.content
-            yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=role, content=resp.content)
+            
+        results_step2 = await asyncio.gather(*(run_role(r, req_2) for r in roles_step2))
+        
+        for role, content in results_step2:
+            agent_outputs[role.value] = content
+            yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=role, content=content)
 
-        # HITL ②
         hitl2_content = (
-            f"## {AgentRole.DIAGRAMMER.value}\n{agent_outputs[AgentRole.DIAGRAMMER.value]}\n\n"
-            f"## {AgentRole.DEVOPS_SECOPS.value}\n{agent_outputs[AgentRole.DEVOPS_SECOPS.value]}"
+            f"## {AgentRole.INNOVATOR.value}\n{agent_outputs[AgentRole.INNOVATOR.value]}\n\n"
+            f"## {AgentRole.SENIOR_ARCHITECT.value}\n{agent_outputs[AgentRole.SENIOR_ARCHITECT.value]}"
         )
         hitl2_event = SupervisorEvent(
             type=EventType.HITL_REQUIRED,
             role=None,
             content=hitl2_content,
-            metadata={"checkpoint": "2"},
+            metadata={"checkpoint": "2_architects"},
         )
         yield hitl2_event
         hitl2 = await hitl_callback(hitl2_event)
 
         if hitl2.decision == HITLDecision.APPROVE:
+            selected_solutions = hitl2.selected_options
             break
         elif hitl2.decision == HITLDecision.REFINE:
-            impl_request += f"\n\n## User Refinement\n{hitl2.feedback}"
+            refinement_2 = hitl2.feedback
+        # else REJECT: loop
+
+    # ── Phase 3: Critique ──────────────────────────────────────────────
+    refinement_3 = ""
+    final_solutions = []
+    
+    # Extract only the selected options or fallback to all proposals
+    proposals_text = ""
+    if selected_solutions:
+        proposals_text = "The user has selected the following options to review:\n" + ", ".join(selected_solutions)
+        proposals_text += "\n\nRefer to the architecture proposals above and ONLY critique the selected ones."
+    else:
+        proposals_text = "Review the following proposals:\n\n" + hitl2_content
+
+    while True:
+        req_3 = formalized + "\n\n" + proposals_text + (f"\n\n## User Refinement\n{refinement_3}" if refinement_3 else "")
+        yield SupervisorEvent(type=EventType.AGENT_STARTED, role=AgentRole.THE_JUDGE, content="")
+        _, judge_content = await run_role(AgentRole.THE_JUDGE, req_3)
+        agent_outputs[AgentRole.THE_JUDGE.value] = judge_content
+        yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=AgentRole.THE_JUDGE, content=judge_content)
+
+        hitl3_event = SupervisorEvent(
+            type=EventType.HITL_REQUIRED,
+            role=None,
+            content=f"## {AgentRole.THE_JUDGE.value}\n{judge_content}",
+            metadata={"checkpoint": "3_judge"},
+        )
+        yield hitl3_event
+        hitl3 = await hitl_callback(hitl3_event)
+
+        if hitl3.decision == HITLDecision.APPROVE:
+            final_solutions = hitl3.selected_options or selected_solutions
             break
-        # else REJECT: loop — re-run diagrammer + devops
+        elif hitl3.decision == HITLDecision.REFINE:
+            refinement_3 = hitl3.feedback
+        # else REJECT: loop
+
+    # ── Phase 4: Implementation ────────────────────────────────────────
+    refinement_4 = ""
+    while True:
+        impl_context = "Selected Final Solutions:\n" + ", ".join(final_solutions) if final_solutions else hitl2_content
+        req_4 = formalized + "\n\n" + impl_context + (f"\n\n## User Refinement\n{refinement_4}" if refinement_4 else "")
+        
+        roles_impl = (AgentRole.DIAGRAMMER, AgentRole.DEVOPS_SECOPS)
+        for role in roles_impl:
+            yield SupervisorEvent(type=EventType.AGENT_STARTED, role=role, content="")
+            
+        results_impl = await asyncio.gather(*(run_role(r, req_4) for r in roles_impl))
+        
+        for role, content in results_impl:
+            agent_outputs[role.value] = content
+            yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=role, content=content)
+
+        break # No HITL here, just proceed to consolidation
 
     # ── Consolidation ─────────────────────────────────────────────────
     debate_context = "\n\n".join(
         f"### {role}\n{content}" for role, content in agent_outputs.items()
     )
     consolidation_prompt = _CONSOLIDATION_PROMPT.format(debate_context=debate_context)
-    final_response = await asyncio.to_thread(llm_provider.complete, consolidation_prompt, model_name)
+    
+    # Consolidation uses the default model
+    default_provider = llm_factory(settings.default_provider)
+    final_response = await asyncio.to_thread(default_provider.complete, consolidation_prompt, settings.default_model)
 
     yield SupervisorEvent(type=EventType.DONE, role=None, content=final_response)

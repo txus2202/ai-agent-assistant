@@ -19,6 +19,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.presentation.api.config import get_settings
+from src.infrastructure.persistence.sqlite_agent_config_repository import SqliteAgentConfigRepository
+from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
 
 
 @asynccontextmanager
@@ -27,7 +29,13 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
     settings = get_settings()
     # Validate config early (will raise if default_provider is invalid)
     _ = settings.default_provider
-    # Future: ChromaDB, SQLite connection pool, LLMProviderRegistry init
+    
+    # Initialize SQLite repositories to ensure schemas are created
+    db_path = str(settings.sqlite_db_path)
+    SqliteAgentConfigRepository(db_path)
+    SqliteDebateRepository(db_path)
+    
+    # Future: ChromaDB, LLMProviderRegistry init
     yield
     # ── Shutdown ─────────────────────────────────────────────────────────
     # Future: close DB connections
@@ -53,12 +61,14 @@ def create_app() -> FastAPI:
     )
 
     # ── Routers ──────────────────────────────────────────────────────────
-    from src.presentation.api.routes import health, config
+    from src.presentation.api.routes import health, config, upload, history
     from src.presentation.api.ws import debate
 
     # Register routes
     app.include_router(health.router)
     app.include_router(config.router)
+    app.include_router(upload.router)
+    app.include_router(history.router)
     app.include_router(debate.router)
     
     # Future routers registered here as they are implemented:

@@ -40,4 +40,8 @@ def dict_to_hitl_response(raw: dict) -> HITLResponse:
         decision = HITLDecision.APPROVE
 
     feedback = raw.get("feedback", "") or ""
-    return HITLResponse(decision=decision, feedback=feedback)
+    selected_options = raw.get("selected_options", [])
+    if not isinstance(selected_options, list):
+        selected_options = []
+        
+    return HITLResponse(decision=decision, feedback=feedback, selected_options=selected_options)

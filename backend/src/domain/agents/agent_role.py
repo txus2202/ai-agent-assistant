@@ -17,3 +17,4 @@ class AgentRole(Enum):
     THE_JUDGE        = "the_judge"
     DEVOPS_SECOPS    = "devops_secops"
     DIAGRAMMER       = "diagrammer"
+    LEARNING         = "learning"

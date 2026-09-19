@@ -30,8 +30,10 @@ async def _fake_debate_generator(*args, **kwargs):
     """
     Mocks SupervisorAgent.run to yield:
       1. AGENT_STARTED (NL_INTERPRETER)
-      2. HITL_REQUIRED
-      3. DONE
+      2. HITL_REQUIRED (1_interpreter)
+      3. HITL_REQUIRED (2_architects)
+      4. HITL_REQUIRED (3_judge)
+      5. DONE
     """
     hitl_callback = kwargs.get("hitl_callback")
     
@@ -42,24 +44,41 @@ async def _fake_debate_generator(*args, **kwargs):
         content="starting"
     )
     
-    # Event 2: HITL
-    hitl_event = SupervisorEvent(
+    # Event 2: HITL 1
+    hitl1_event = SupervisorEvent(
         type=EventType.HITL_REQUIRED,
         role=None,
-        content="Please review",
-        metadata={"checkpoint": "1"}
+        content="Please review interpretation",
+        metadata={"checkpoint": "1_interpreter"}
     )
-    yield hitl_event
+    yield hitl1_event
+    hitl1_resp = await hitl_callback(hitl1_event)
     
-    # The real Supervisor blocks awaiting hitl_callback.
-    # Our mock simulates this by calling it.
-    hitl_resp = await hitl_callback(hitl_event)
+    # Event 3: HITL 2
+    hitl2_event = SupervisorEvent(
+        type=EventType.HITL_REQUIRED,
+        role=None,
+        content="Please review architects",
+        metadata={"checkpoint": "2_architects"}
+    )
+    yield hitl2_event
+    hitl2_resp = await hitl_callback(hitl2_event)
+
+    # Event 4: HITL 3
+    hitl3_event = SupervisorEvent(
+        type=EventType.HITL_REQUIRED,
+        role=None,
+        content="Please review judge",
+        metadata={"checkpoint": "3_judge"}
+    )
+    yield hitl3_event
+    hitl3_resp = await hitl_callback(hitl3_event)
     
-    # Event 3: DONE (we inject the decision into the content to verify it passed through)
+    # Event 5: DONE
     yield SupervisorEvent(
         type=EventType.DONE,
         role=None,
-        content=f"Decision was {hitl_resp.decision.value}"
+        content=f"Decision was {hitl3_resp.decision.value}, Options: {hitl2_resp.selected_options}"
     )
 
 
@@ -71,8 +90,8 @@ async def _fake_debate_generator(*args, **kwargs):
 def ws_client(monkeypatch):
     """Provides a TestClient connected to a fresh app with mocked SupervisorAgent."""
     # Mock the LLM registry so we don't need real keys
-    from src.infrastructure.llm import registry
-    monkeypatch.setattr(registry, "get_llm_provider", lambda _: None)
+    from src.presentation.api.ws import debate
+    monkeypatch.setattr(debate, "get_llm_provider", lambda _: None)
     
     # Mock the ChromaDB store init to avoid creating directories
     from src.infrastructure.rag.chroma_document_store import ChromaDBDocumentStore
@@ -115,42 +134,56 @@ class TestDebateWebSocket:
             
             # 2. First event from generator
             ev1 = websocket.receive_json()
+            if ev1["type"] == "error":
+                pytest.fail(f"WebSocket error received: {ev1.get('content')}")
             assert ev1["type"] == EventType.AGENT_STARTED.value
             assert ev1["role"] == AgentRole.NL_INTERPRETER.value
             
-            # 3. Second event: HITL
+            # 3. HITL 1
             ev2 = websocket.receive_json()
             assert ev2["type"] == EventType.HITL_REQUIRED.value
-            assert ev2["metadata"]["checkpoint"] == "1"
+            assert ev2["metadata"]["checkpoint"] == "1_interpreter"
+            websocket.send_json({"type": "hitl_response", "decision": "approve"})
             
-            # 4. Client responds to HITL
-            websocket.send_json({
-                "type": "hitl_response",
-                "decision": "approve",
-                "feedback": ""
-            })
-            
-            # 5. Third event: DONE
+            # 4. HITL 2
             ev3 = websocket.receive_json()
-            assert ev3["type"] == EventType.DONE.value
-            assert "approve" in ev3["content"]
+            assert ev3["type"] == EventType.HITL_REQUIRED.value
+            assert ev3["metadata"]["checkpoint"] == "2_architects"
+            websocket.send_json({
+                "type": "hitl_response", 
+                "decision": "approve",
+                "selected_options": ["Option-1"]
+            })
+
+            # 5. HITL 3
+            ev4 = websocket.receive_json()
+            assert ev4["type"] == EventType.HITL_REQUIRED.value
+            assert ev4["metadata"]["checkpoint"] == "3_judge"
+            websocket.send_json({"type": "hitl_response", "decision": "approve"})
+            
+            # 6. DONE
+            ev5 = websocket.receive_json()
+            assert ev5["type"] == EventType.DONE.value
+            assert "approve" in ev5["content"]
+            assert "Option-1" in ev5["content"]
 
     def test_malformed_hitl_response_defaults_to_approve(self, ws_client):
         """dict_to_hitl_response falls back to APPROVE to prevent deadlocks."""
         with ws_client.websocket_connect("/ws/debate") as websocket:
             websocket.send_json({"type": "start", "user_request": "Test"})
             
-            # Skip to HITL
+            # Skip to HITL 1
             websocket.receive_json() # AGENT_STARTED
-            websocket.receive_json() # HITL_REQUIRED
+            websocket.receive_json() # HITL 1
+            websocket.send_json({"type": "hitl_response", "decision": "i_dont_know"}) # Invalid decision
             
-            # Send invalid decision
-            websocket.send_json({
-                "type": "hitl_response",
-                "decision": "i_dont_know_what_im_doing"
-            })
+            websocket.receive_json() # HITL 2
+            websocket.send_json({"type": "hitl_response", "decision": "i_dont_know"})
+            
+            websocket.receive_json() # HITL 3
+            websocket.send_json({"type": "hitl_response", "decision": "i_dont_know"})
             
             # Verify fallback worked
-            ev3 = websocket.receive_json()
-            assert ev3["type"] == EventType.DONE.value
-            assert "approve" in ev3["content"]
+            ev = websocket.receive_json()
+            assert ev["type"] == EventType.DONE.value
+            assert "approve" in ev["content"]

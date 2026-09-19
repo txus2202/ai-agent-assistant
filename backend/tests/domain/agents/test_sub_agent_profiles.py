@@ -15,10 +15,10 @@ import pytest
 
 
 class TestAgentRole:
-    def test_has_six_roles(self):
+    def test_has_seven_roles(self):
         from src.domain.agents.agent_role import AgentRole
 
-        assert len(list(AgentRole)) == 6
+        assert len(list(AgentRole)) == 7
 
     def test_expected_roles_exist(self):
         from src.domain.agents.agent_role import AgentRole
@@ -30,6 +30,7 @@ class TestAgentRole:
             "THE_JUDGE",
             "DEVOPS_SECOPS",
             "DIAGRAMMER",
+            "LEARNING",
         }
         actual = {role.name for role in AgentRole}
         assert actual == expected

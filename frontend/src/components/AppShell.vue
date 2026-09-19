@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useDebateStore } from '../stores/debate'
 import ChatPanel from './ChatPanel.vue'
 import ParticleOrb from './ParticleOrb.vue'
@@ -20,8 +20,19 @@ const handleUserSubmit = (request: string) => {
   store.startDebate(request)
 }
 
+const isRefining = ref(false)
+const feedbackText = ref('')
+
 const handleHitlAction = (decision: 'approve' | 'refine' | 'reject') => {
-  store.submitHitlDecision(decision)
+  if (decision === 'refine' && !isRefining.value) {
+    // Reveal the textarea instead of submitting immediately
+    isRefining.value = true
+    return
+  }
+  
+  store.submitHitlDecision(decision, feedbackText.value)
+  isRefining.value = false
+  feedbackText.value = ''
 }
 </script>
 
@@ -63,15 +74,41 @@ const handleHitlAction = (decision: 'approve' | 'refine' | 'reject') => {
               Manual Override (HITL)
             </h3>
             
-            <div class="grid grid-cols-2 gap-2" v-if="store.isHitlRequired">
-              <HITLActionButton 
-                decision="approve"
-                @action="handleHitlAction"
-              />
-              <HITLActionButton 
-                decision="refine"
-                @action="handleHitlAction"
-              />
+            <div v-if="store.isHitlRequired" class="flex flex-col space-y-2">
+              <div v-if="!isRefining" class="grid grid-cols-2 gap-2">
+                <HITLActionButton 
+                  decision="approve"
+                  @action="handleHitlAction"
+                />
+                <HITLActionButton 
+                  decision="refine"
+                  @action="handleHitlAction"
+                />
+              </div>
+              
+              <!-- Inline Refine Textarea -->
+              <div v-else class="flex flex-col space-y-2 animate-fade-in">
+                <textarea 
+                  v-model="feedbackText"
+                  class="w-full h-24 bg-space-950 border border-neon-amber/50 rounded p-2 text-sm font-mono text-slate-300 focus:outline-none focus:border-neon-amber focus:ring-1 focus:ring-neon-amber/50 resize-none custom-scrollbar"
+                  placeholder="Provide your feedback to the agent..."
+                ></textarea>
+                <div class="flex justify-end space-x-2">
+                  <button 
+                    @click="isRefining = false"
+                    class="px-3 py-1 text-xs font-mono text-slate-400 hover:text-slate-200 transition-colors"
+                  >
+                    CANCEL
+                  </button>
+                  <button 
+                    @click="handleHitlAction('refine')"
+                    :disabled="!feedbackText.trim()"
+                    class="px-4 py-1 text-xs font-mono border border-neon-amber text-neon-amber rounded hover:bg-neon-amber/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    SEND FEEDBACK
+                  </button>
+                </div>
+              </div>
             </div>
             
             <div v-else class="text-center p-4 border border-space-800 border-dashed rounded text-space-700 font-mono text-xs uppercase">

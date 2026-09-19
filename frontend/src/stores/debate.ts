@@ -53,22 +53,79 @@ export const useDebateStore = defineStore('debate', () => {
   }
 
   let ws: WebSocket | null = null
+  let reconnectAttempts = 0
+  let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
+
+  function connect() {
+    const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/debate'
+    
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+      return
+    }
+
+    ws = new WebSocket(wsUrl)
+    
+    ws.onopen = () => {
+      console.log('[WS] Connected to', wsUrl)
+      isConnected.value = true
+      reconnectAttempts = 0
+    }
+    
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        handleSupervisorEvent(data)
+      } catch (e) {
+        console.error('[WS] Failed to parse message', event.data)
+      }
+    }
+    
+    ws.onclose = () => {
+      console.log('[WS] Disconnected')
+      isConnected.value = false
+      ws = null
+      attemptReconnect()
+    }
+    
+    ws.onerror = (error) => {
+      console.error('[WS] Error', error)
+      // onclose will be triggered automatically
+    }
+  }
+
+  function attemptReconnect() {
+    if (reconnectTimeout) {
+      clearTimeout(reconnectTimeout)
+    }
+    
+    // Exponential backoff (max 10s)
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000)
+    console.log(`[WS] Attempting to reconnect in ${delay}ms...`)
+    
+    reconnectTimeout = setTimeout(() => {
+      reconnectAttempts++
+      connect()
+    }, delay)
+  }
 
   function startDebate(userRequest: string) {
+    if (!isConnected.value || !ws) {
+      messages.value.push({ role: 'assistant', content: 'Error: Cannot start debate, disconnected from server. Trying to reconnect...' })
+      connect()
+      return
+    }
+
     isDebating.value = true
     messages.value.push({ role: 'user', content: userRequest })
     
-    // In a real app, this would initialize ws and send the start message
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'start', user_request: userRequest }))
-    }
+    ws.send(JSON.stringify({ type: 'start', user_request: userRequest }))
   }
 
   function handleSupervisorEvent(event: any) {
     if (event.type === 'hitl_required') {
       isHitlRequired.value = true
       hitlCheckpoint.value = event.metadata?.checkpoint || null
-      messages.value.push({ role: 'assistant', content: event.content })
+      messages.value.push({ role: 'assistant', content: event.content || 'HITL Required' })
     } else if (event.type === 'agent_started') {
       const agent = agents.value.find(a => a.role === event.role)
       if (agent) agent.state = 'ACTIVE'
@@ -77,7 +134,12 @@ export const useDebateStore = defineStore('debate', () => {
       if (agent) agent.state = 'COMPLETED'
     } else if (event.type === 'done') {
       isDebating.value = false
-      messages.value.push({ role: 'assistant', content: event.content })
+      messages.value.push({ role: 'assistant', content: event.content || 'Debate finished.' })
+    } else if (event.type === 'error') {
+      isDebating.value = false
+      messages.value.push({ role: 'assistant', content: `Error: ${event.content}` })
+    } else if (event.type === 'message') {
+      messages.value.push({ role: 'assistant', content: `[${event.role}] ${event.content}` })
     }
   }
 
@@ -94,6 +156,9 @@ export const useDebateStore = defineStore('debate', () => {
     }
   }
 
+  // Connect automatically on store initialization
+  connect()
+
   return {
     isConnected,
     isDebating,
@@ -103,9 +168,10 @@ export const useDebateStore = defineStore('debate', () => {
     agents,
     isAgentsLoaded,
     loadAgents,
+    connect,
     startDebate,
     handleSupervisorEvent,
     submitHitlDecision,
-    ws
+    get ws() { return ws } // Getter for testing purposes
   }
 })

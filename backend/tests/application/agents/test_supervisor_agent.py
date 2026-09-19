@@ -44,6 +44,10 @@ class FakeLLM(ILLMProvider):
     def complete(self, prompt: str, model_name: str) -> str:
         return f"[consolidated response from: {prompt[:40]}]"
 
+class FakeAgentConfigRepo:
+    def find_by_role(self, role: str):
+        return None
+
 
 def _make_mock_runner(response_text: str = "agent response"):
     from src.application.agents.sub_agent_runner import SubAgentResponse
@@ -86,11 +90,11 @@ class TestSupervisorAgentEventOrder:
 
         monkeypatch.setattr(_mod.SubAgentRunner, "run", _make_mock_runner())
 
-        events = await _collect(await SupervisorAgent.run(
+        events = await _collect(SupervisorAgent.run(
             user_request="Design a caching strategy",
-            llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
-            model_name="gemini-1.5-flash",
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
             hitl_callback=_approve_always,
         ))
 
@@ -105,11 +109,11 @@ class TestSupervisorAgentEventOrder:
 
         monkeypatch.setattr(_mod.SubAgentRunner, "run", _make_mock_runner())
 
-        events = await _collect(await SupervisorAgent.run(
+        events = await _collect(SupervisorAgent.run(
             user_request="Design a caching strategy",
-            llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
-            model_name="gemini-1.5-flash",
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
             hitl_callback=_approve_always,
         ))
 
@@ -122,11 +126,11 @@ class TestSupervisorAgentEventOrder:
 
         monkeypatch.setattr(_mod.SubAgentRunner, "run", _make_mock_runner())
 
-        events = await _collect(await SupervisorAgent.run(
+        events = await _collect(SupervisorAgent.run(
             user_request="Design a caching strategy",
-            llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
-            model_name="gemini-1.5-flash",
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
             hitl_callback=_approve_always,
         ))
 
@@ -139,16 +143,16 @@ class TestSupervisorAgentEventOrder:
 
         monkeypatch.setattr(_mod.SubAgentRunner, "run", _make_mock_runner())
 
-        events = await _collect(await SupervisorAgent.run(
+        events = await _collect(SupervisorAgent.run(
             user_request="Design a caching strategy",
-            llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
-            model_name="gemini-1.5-flash",
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
             hitl_callback=_approve_always,
         ))
 
         started_roles = set(_roles_for_type(events, EventType.AGENT_STARTED))
-        expected = {r for r in AgentRole}
+        expected = {r for r in AgentRole if r != AgentRole.LEARNING}
         assert expected.issubset(started_roles)
 
     @pytest.mark.anyio
@@ -158,21 +162,21 @@ class TestSupervisorAgentEventOrder:
 
         monkeypatch.setattr(_mod.SubAgentRunner, "run", _make_mock_runner())
 
-        events = await _collect(await SupervisorAgent.run(
+        events = await _collect(SupervisorAgent.run(
             user_request="Design a caching strategy",
-            llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
-            model_name="gemini-1.5-flash",
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
             hitl_callback=_approve_always,
         ))
 
         hitl_events = [e for e in events if e.type == EventType.HITL_REQUIRED]
-        assert len(hitl_events) == 2
+        assert len(hitl_events) == 3
 
 
 class TestSupervisorAgentHITL:
     @pytest.mark.anyio
-    async def test_hitl1_content_includes_all_three_proposals(self, monkeypatch):
+    async def test_hitl2_and_hitl3_content_includes_proposals(self, monkeypatch):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -180,25 +184,28 @@ class TestSupervisorAgentHITL:
 
         hitl_events: list[SupervisorEvent] = []
 
-        async def _capture_first(event: SupervisorEvent) -> HITLResponse:
+        async def _capture_all(event: SupervisorEvent) -> HITLResponse:
             hitl_events.append(event)
             return HITLResponse(decision=HITLDecision.APPROVE)
 
-        await _collect(await SupervisorAgent.run(
+        await _collect(SupervisorAgent.run(
             user_request="Design something",
-            llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
-            model_name="gemini-1.5-flash",
-            hitl_callback=_capture_first,
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_capture_all,
         ))
 
-        first_hitl = hitl_events[0]
-        assert AgentRole.INNOVATOR.value in first_hitl.content
-        assert AgentRole.SENIOR_ARCHITECT.value in first_hitl.content
-        assert AgentRole.THE_JUDGE.value in first_hitl.content
+        assert len(hitl_events) == 3
+        hitl2 = hitl_events[1]
+        assert AgentRole.INNOVATOR.value in hitl2.content
+        assert AgentRole.SENIOR_ARCHITECT.value in hitl2.content
+        
+        hitl3 = hitl_events[2]
+        assert AgentRole.THE_JUDGE.value in hitl3.content
 
     @pytest.mark.anyio
-    async def test_reject_at_hitl1_reruns_architects(self, monkeypatch):
+    async def test_reject_at_hitl2_reruns_architects(self, monkeypatch):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -214,19 +221,20 @@ class TestSupervisorAgentHITL:
         monkeypatch.setattr(_mod.SubAgentRunner, "run", _counting_runner)
 
         decisions = iter([
-            HITLResponse(decision=HITLDecision.REJECT),
-            HITLResponse(decision=HITLDecision.APPROVE),
-            HITLResponse(decision=HITLDecision.APPROVE),
+            HITLResponse(decision=HITLDecision.APPROVE), # HITL1
+            HITLResponse(decision=HITLDecision.REJECT),  # HITL2
+            HITLResponse(decision=HITLDecision.APPROVE), # HITL2
+            HITLResponse(decision=HITLDecision.APPROVE), # HITL3
         ])
 
         async def _sequential_callback(_event: SupervisorEvent) -> HITLResponse:
             return next(decisions)
 
-        await _collect(await SupervisorAgent.run(
+        await _collect(SupervisorAgent.run(
             user_request="Design something",
-            llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
-            model_name="gemini-1.5-flash",
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
             hitl_callback=_sequential_callback,
         ))
 
@@ -234,7 +242,7 @@ class TestSupervisorAgentHITL:
         assert call_counts.get(AgentRole.SENIOR_ARCHITECT.value, 0) == 2
 
     @pytest.mark.anyio
-    async def test_refine_at_hitl1_does_not_rerun_architects(self, monkeypatch):
+    async def test_refine_at_hitl2_does_not_rerun_architects(self, monkeypatch):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -250,26 +258,28 @@ class TestSupervisorAgentHITL:
         monkeypatch.setattr(_mod.SubAgentRunner, "run", _counting_runner)
 
         decisions = iter([
-            HITLResponse(decision=HITLDecision.REFINE, feedback="focus on latency"),
-            HITLResponse(decision=HITLDecision.APPROVE),
+            HITLResponse(decision=HITLDecision.APPROVE), # HITL1
+            HITLResponse(decision=HITLDecision.REFINE, feedback="focus on latency"), # HITL2
+            HITLResponse(decision=HITLDecision.APPROVE), # HITL2
+            HITLResponse(decision=HITLDecision.APPROVE), # HITL3
         ])
 
         async def _sequential_callback(_event: SupervisorEvent) -> HITLResponse:
             return next(decisions)
 
-        await _collect(await SupervisorAgent.run(
+        await _collect(SupervisorAgent.run(
             user_request="Design something",
-            llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
-            model_name="gemini-1.5-flash",
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
             hitl_callback=_sequential_callback,
         ))
 
-        assert call_counts.get(AgentRole.INNOVATOR.value, 0) == 1
-        assert call_counts.get(AgentRole.SENIOR_ARCHITECT.value, 0) == 1
+        assert call_counts.get(AgentRole.INNOVATOR.value, 0) == 2
+        assert call_counts.get(AgentRole.SENIOR_ARCHITECT.value, 0) == 2
 
     @pytest.mark.anyio
-    async def test_refine_feedback_appears_in_diagrammer_request(self, monkeypatch):
+    async def test_refine_feedback_appears_in_judge_request(self, monkeypatch):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -284,22 +294,24 @@ class TestSupervisorAgentHITL:
         monkeypatch.setattr(_mod.SubAgentRunner, "run", _capturing_runner)
 
         decisions = iter([
-            HITLResponse(decision=HITLDecision.REFINE, feedback="focus on latency"),
-            HITLResponse(decision=HITLDecision.APPROVE),
+            HITLResponse(decision=HITLDecision.APPROVE), # HITL1
+            HITLResponse(decision=HITLDecision.APPROVE), # HITL2
+            HITLResponse(decision=HITLDecision.REFINE, feedback="focus on latency"), # HITL3
+            HITLResponse(decision=HITLDecision.APPROVE), # HITL3
         ])
 
         async def _sequential_callback(_event: SupervisorEvent) -> HITLResponse:
             return next(decisions)
 
-        await _collect(await SupervisorAgent.run(
+        await _collect(SupervisorAgent.run(
             user_request="Design something",
-            llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
-            model_name="gemini-1.5-flash",
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
             hitl_callback=_sequential_callback,
         ))
 
-        assert "focus on latency" in received_requests.get(AgentRole.DIAGRAMMER.value, "")
+        assert "focus on latency" in received_requests.get(AgentRole.THE_JUDGE.value, "")
 
     @pytest.mark.anyio
     async def test_done_event_has_non_empty_content(self, monkeypatch):
@@ -308,11 +320,11 @@ class TestSupervisorAgentHITL:
 
         monkeypatch.setattr(_mod.SubAgentRunner, "run", _make_mock_runner())
 
-        events = await _collect(await SupervisorAgent.run(
+        events = await _collect(SupervisorAgent.run(
             user_request="Design a caching strategy",
-            llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
-            model_name="gemini-1.5-flash",
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
             hitl_callback=_approve_always,
         ))
 
@@ -321,7 +333,7 @@ class TestSupervisorAgentHITL:
         assert len(done.content) > 0
 
     @pytest.mark.anyio
-    async def test_reject_at_hitl2_reruns_diagrammer_and_devops(self, monkeypatch):
+    async def test_reject_at_hitl3_reruns_judge(self, monkeypatch):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -337,21 +349,21 @@ class TestSupervisorAgentHITL:
         monkeypatch.setattr(_mod.SubAgentRunner, "run", _counting_runner)
 
         decisions = iter([
-            HITLResponse(decision=HITLDecision.APPROVE),
-            HITLResponse(decision=HITLDecision.REJECT),
-            HITLResponse(decision=HITLDecision.APPROVE),
+            HITLResponse(decision=HITLDecision.APPROVE), # HITL1
+            HITLResponse(decision=HITLDecision.APPROVE), # HITL2
+            HITLResponse(decision=HITLDecision.REJECT),  # HITL3
+            HITLResponse(decision=HITLDecision.APPROVE), # HITL3
         ])
 
         async def _sequential_callback(_event: SupervisorEvent) -> HITLResponse:
             return next(decisions)
 
-        await _collect(await SupervisorAgent.run(
+        await _collect(SupervisorAgent.run(
             user_request="Design something",
-            llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
-            model_name="gemini-1.5-flash",
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
             hitl_callback=_sequential_callback,
         ))
 
-        assert call_counts.get(AgentRole.DIAGRAMMER.value, 0) == 2
-        assert call_counts.get(AgentRole.DEVOPS_SECOPS.value, 0) == 2
+        assert call_counts.get(AgentRole.THE_JUDGE.value, 0) == 2

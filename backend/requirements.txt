@@ -8,9 +8,9 @@ sentence-transformers>=3.0 # Local embedding model (all-MiniLM-L6-v2); not bundl
 PyYAML>=6.0                # Obsidian frontmatter parsing
 
 # Phase 2+: LLM adapters (uncomment when implementing)
-# google-generativeai>=0.7    # Gemini (Vertex AI or AI Studio)
-# openai>=1.40                # OpenAI
-# anthropic>=0.30             # Anthropic
+google-genai>=0.1.0         # Gemini (Vertex AI or AI Studio)
+openai>=1.40                # OpenAI
+anthropic>=0.30             # Anthropic
 
 # Phase 3+: Learning Agent extractors
 PyMuPDF>=1.23               # PDF text extraction

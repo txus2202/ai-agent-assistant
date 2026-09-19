@@ -18,10 +18,14 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     openai_api_key: str = ""
     anthropic_api_key: str = ""
+    
+    # Vertex AI configuration
+    google_cloud_project: str | None = None
+    google_cloud_location: str = "europe-west1"
 
     # Runtime defaults (Can be overridden by DEFAULT_PROVIDER, DEFAULT_MODEL)
     default_provider: str = "gemini"
-    default_model: str = "gemini-1.5-flash"
+    default_model: str = "gemini-3.6-flash"
 
     # RAG (Can be overridden by RAG_TOP_K)
     rag_top_k: int = 5
@@ -39,7 +43,7 @@ class Settings(BaseSettings):
     max_learn_file_mb: int = 50
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", "../.env"),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,

@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import Annotated, List, Dict
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -14,11 +14,11 @@ class AgentConfigUpdate(BaseModel):
     provider: str
     model_name: str
 
-def get_config_repo(settings: Settings = Depends(get_settings)) -> SqliteAgentConfigRepository:
+def get_config_repo(settings: Annotated[Settings, Depends(get_settings)]) -> SqliteAgentConfigRepository:
     return SqliteAgentConfigRepository(str(settings.sqlite_db_path))
 
 @router.get("/agents")
-async def get_agents_config(repo: SqliteAgentConfigRepository = Depends(get_config_repo)) -> List[Dict[str, str]]:
+async def get_agents_config(repo: Annotated[SqliteAgentConfigRepository, Depends(get_config_repo)]) -> List[Dict[str, str]]:
     """
     Devuelve la lista de agentes disponibles en el sistema con su proveedor y modelo configurados.
     """
@@ -45,11 +45,16 @@ async def get_agents_config(repo: SqliteAgentConfigRepository = Depends(get_conf
         })
     return result
 
-@router.put("/agents/{role}")
+@router.put(
+    "/agents/{role}",
+    responses={
+        404: {"description": "Agent role not found"}
+    }
+)
 async def update_agent_config(
     role: str, 
     update: AgentConfigUpdate, 
-    repo: SqliteAgentConfigRepository = Depends(get_config_repo)
+    repo: Annotated[SqliteAgentConfigRepository, Depends(get_config_repo)]
 ):
     """
     Actualiza la configuración (proveedor y modelo) de un agente específico.

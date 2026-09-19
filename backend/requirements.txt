@@ -22,3 +22,4 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 pydantic-settings>=2.3
 python-multipart>=0.0.9     # required by FastAPI for file upload (multipart/form-data)
+aiofiles>=23.2              # required for async file IO

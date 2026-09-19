@@ -23,6 +23,7 @@ ADR-015: No ADK dependency. hitl_callback is now an async callable.
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 from collections.abc import AsyncGenerator, Awaitable, Callable
 
 from src.application.agents.sub_agent_runner import SubAgentRunner
@@ -120,133 +121,165 @@ async def _debate_generator(
         )
         return r, resp.content
 
-    agent_outputs: dict[str, str] = {}
+    state = DebateState()
     
-    # ── Phase 1: Interpretation ───────────────────────────────────────
-    refinement_1 = ""
+    async for event in _run_phase_1(state, user_request, run_role, hitl_callback):
+        yield event
+        
+    async for event in _run_phase_2(state, run_role, hitl_callback):
+        yield event
+        
+    async for event in _run_phase_3(state, run_role, hitl_callback):
+        yield event
+        
+    async for event in _run_phase_4(state, run_role):
+        yield event
+        
+    default_provider = llm_factory(settings.default_provider)
+    yield await _run_consolidation(state, default_provider, settings.default_model)
+
+
+class DebateState:
+    def __init__(self) -> None:
+        self.agent_outputs: dict[str, str] = {}
+        self.formalized: str = ""
+        self.selected_solutions: list[str] = []
+        self.final_solutions: list[str] = []
+        self.hitl2_content: str = ""
+
+async def _run_phase_1(
+    state: DebateState,
+    user_request: str,
+    run_role: Callable[[AgentRole, str], Awaitable[tuple[AgentRole, str]]],
+    hitl_callback: Callable[[SupervisorEvent], Awaitable[HITLResponse]]
+) -> AsyncGenerator[SupervisorEvent, None]:
+    refinement = ""
     while True:
-        req_1 = user_request + (f"\n\n## User Refinement\n{refinement_1}" if refinement_1 else "")
+        req = user_request + (f"\n\n## User Refinement\n{refinement}" if refinement else "")
         yield SupervisorEvent(type=EventType.AGENT_STARTED, role=AgentRole.NL_INTERPRETER, content="")
-        _, nl_content = await run_role(AgentRole.NL_INTERPRETER, req_1)
-        agent_outputs[AgentRole.NL_INTERPRETER.value] = nl_content
+        _, nl_content = await run_role(AgentRole.NL_INTERPRETER, req)
+        state.agent_outputs[AgentRole.NL_INTERPRETER.value] = nl_content
         yield SupervisorEvent(
             type=EventType.AGENT_COMPLETED,
             role=AgentRole.NL_INTERPRETER,
             content=nl_content,
         )
         
-        hitl1_event = SupervisorEvent(
+        hitl_event = SupervisorEvent(
             type=EventType.HITL_REQUIRED,
             role=None,
             content=f"## Interpretation\n{nl_content}",
             metadata={"checkpoint": "1_interpreter"},
         )
-        yield hitl1_event
-        hitl1 = await hitl_callback(hitl1_event)
+        yield hitl_event
+        hitl = await hitl_callback(hitl_event)
 
-        if hitl1.decision == HITLDecision.APPROVE:
-            formalized = nl_content
+        if hitl.decision == HITLDecision.APPROVE:
+            state.formalized = nl_content
             break
-        elif hitl1.decision == HITLDecision.REFINE:
-            refinement_1 = hitl1.feedback
-        # else REJECT: loop
+        elif hitl.decision == HITLDecision.REFINE:
+            refinement = hitl.feedback
 
-    # ── Phase 2: Ideation ──────────────────────────────────────────────
-    refinement_2 = ""
-    selected_solutions = []
+async def _run_phase_2(
+    state: DebateState,
+    run_role: Callable[[AgentRole, str], Awaitable[tuple[AgentRole, str]]],
+    hitl_callback: Callable[[SupervisorEvent], Awaitable[HITLResponse]]
+) -> AsyncGenerator[SupervisorEvent, None]:
+    refinement = ""
     while True:
-        req_2 = formalized + (f"\n\n## User Refinement\n{refinement_2}" if refinement_2 else "")
-        roles_step2 = (AgentRole.INNOVATOR, AgentRole.SENIOR_ARCHITECT)
-        for role in roles_step2:
+        req = state.formalized + (f"\n\n## User Refinement\n{refinement}" if refinement else "")
+        roles = (AgentRole.INNOVATOR, AgentRole.SENIOR_ARCHITECT)
+        for role in roles:
             yield SupervisorEvent(type=EventType.AGENT_STARTED, role=role, content="")
             
-        results_step2 = await asyncio.gather(*(run_role(r, req_2) for r in roles_step2))
+        results = await asyncio.gather(*(run_role(r, req) for r in roles))
         
-        for role, content in results_step2:
-            agent_outputs[role.value] = content
+        for role, content in results:
+            state.agent_outputs[role.value] = content
             yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=role, content=content)
 
-        hitl2_content = (
-            f"## {AgentRole.INNOVATOR.value}\n{agent_outputs[AgentRole.INNOVATOR.value]}\n\n"
-            f"## {AgentRole.SENIOR_ARCHITECT.value}\n{agent_outputs[AgentRole.SENIOR_ARCHITECT.value]}"
+        state.hitl2_content = (
+            f"## {AgentRole.INNOVATOR.value}\n{state.agent_outputs[AgentRole.INNOVATOR.value]}\n\n"
+            f"## {AgentRole.SENIOR_ARCHITECT.value}\n{state.agent_outputs[AgentRole.SENIOR_ARCHITECT.value]}"
         )
-        hitl2_event = SupervisorEvent(
+        hitl_event = SupervisorEvent(
             type=EventType.HITL_REQUIRED,
             role=None,
-            content=hitl2_content,
+            content=state.hitl2_content,
             metadata={"checkpoint": "2_architects"},
         )
-        yield hitl2_event
-        hitl2 = await hitl_callback(hitl2_event)
+        yield hitl_event
+        hitl = await hitl_callback(hitl_event)
 
-        if hitl2.decision == HITLDecision.APPROVE:
-            selected_solutions = hitl2.selected_options
+        if hitl.decision == HITLDecision.APPROVE:
+            state.selected_solutions = hitl.selected_options
             break
-        elif hitl2.decision == HITLDecision.REFINE:
-            refinement_2 = hitl2.feedback
-        # else REJECT: loop
+        elif hitl.decision == HITLDecision.REFINE:
+            refinement = hitl.feedback
 
-    # ── Phase 3: Critique ──────────────────────────────────────────────
-    refinement_3 = ""
-    final_solutions = []
+async def _run_phase_3(
+    state: DebateState,
+    run_role: Callable[[AgentRole, str], Awaitable[tuple[AgentRole, str]]],
+    hitl_callback: Callable[[SupervisorEvent], Awaitable[HITLResponse]]
+) -> AsyncGenerator[SupervisorEvent, None]:
+    refinement = ""
     
-    # Extract only the selected options or fallback to all proposals
     proposals_text = ""
-    if selected_solutions:
-        proposals_text = "The user has selected the following options to review:\n" + ", ".join(selected_solutions)
+    if state.selected_solutions:
+        proposals_text = "The user has selected the following options to review:\n" + ", ".join(state.selected_solutions)
         proposals_text += "\n\nRefer to the architecture proposals above and ONLY critique the selected ones."
     else:
-        proposals_text = "Review the following proposals:\n\n" + hitl2_content
+        proposals_text = "Review the following proposals:\n\n" + state.hitl2_content
 
     while True:
-        req_3 = formalized + "\n\n" + proposals_text + (f"\n\n## User Refinement\n{refinement_3}" if refinement_3 else "")
+        req = state.formalized + "\n\n" + proposals_text + (f"\n\n## User Refinement\n{refinement}" if refinement else "")
         yield SupervisorEvent(type=EventType.AGENT_STARTED, role=AgentRole.THE_JUDGE, content="")
-        _, judge_content = await run_role(AgentRole.THE_JUDGE, req_3)
-        agent_outputs[AgentRole.THE_JUDGE.value] = judge_content
+        _, judge_content = await run_role(AgentRole.THE_JUDGE, req)
+        state.agent_outputs[AgentRole.THE_JUDGE.value] = judge_content
         yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=AgentRole.THE_JUDGE, content=judge_content)
 
-        hitl3_event = SupervisorEvent(
+        hitl_event = SupervisorEvent(
             type=EventType.HITL_REQUIRED,
             role=None,
             content=f"## {AgentRole.THE_JUDGE.value}\n{judge_content}",
             metadata={"checkpoint": "3_judge"},
         )
-        yield hitl3_event
-        hitl3 = await hitl_callback(hitl3_event)
+        yield hitl_event
+        hitl = await hitl_callback(hitl_event)
 
-        if hitl3.decision == HITLDecision.APPROVE:
-            final_solutions = hitl3.selected_options or selected_solutions
+        if hitl.decision == HITLDecision.APPROVE:
+            state.final_solutions = hitl.selected_options or state.selected_solutions
             break
-        elif hitl3.decision == HITLDecision.REFINE:
-            refinement_3 = hitl3.feedback
-        # else REJECT: loop
+        elif hitl.decision == HITLDecision.REFINE:
+            refinement = hitl.feedback
 
-    # ── Phase 4: Implementation ────────────────────────────────────────
-    refinement_4 = ""
-    while True:
-        impl_context = "Selected Final Solutions:\n" + ", ".join(final_solutions) if final_solutions else hitl2_content
-        req_4 = formalized + "\n\n" + impl_context + (f"\n\n## User Refinement\n{refinement_4}" if refinement_4 else "")
+async def _run_phase_4(
+    state: DebateState,
+    run_role: Callable[[AgentRole, str], Awaitable[tuple[AgentRole, str]]]
+) -> AsyncGenerator[SupervisorEvent, None]:
+    impl_context = "Selected Final Solutions:\n" + ", ".join(state.final_solutions) if state.final_solutions else state.hitl2_content
+    req = state.formalized + "\n\n" + impl_context
+    
+    roles_impl = (AgentRole.DIAGRAMMER, AgentRole.DEVOPS_SECOPS)
+    for role in roles_impl:
+        yield SupervisorEvent(type=EventType.AGENT_STARTED, role=role, content="")
         
-        roles_impl = (AgentRole.DIAGRAMMER, AgentRole.DEVOPS_SECOPS)
-        for role in roles_impl:
-            yield SupervisorEvent(type=EventType.AGENT_STARTED, role=role, content="")
-            
-        results_impl = await asyncio.gather(*(run_role(r, req_4) for r in roles_impl))
-        
-        for role, content in results_impl:
-            agent_outputs[role.value] = content
-            yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=role, content=content)
+    results_impl = await asyncio.gather(*(run_role(r, req) for r in roles_impl))
+    
+    for role, content in results_impl:
+        state.agent_outputs[role.value] = content
+        yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=role, content=content)
 
-        break # No HITL here, just proceed to consolidation
-
-    # ── Consolidation ─────────────────────────────────────────────────
+async def _run_consolidation(
+    state: DebateState,
+    default_provider: ILLMProvider,
+    default_model: str
+) -> SupervisorEvent:
     debate_context = "\n\n".join(
-        f"### {role}\n{content}" for role, content in agent_outputs.items()
+        f"### {role}\n{content}" for role, content in state.agent_outputs.items()
     )
     consolidation_prompt = _CONSOLIDATION_PROMPT.format(debate_context=debate_context)
     
-    # Consolidation uses the default model
-    default_provider = llm_factory(settings.default_provider)
-    final_response = await asyncio.to_thread(default_provider.complete, consolidation_prompt, settings.default_model)
+    final_response = await asyncio.to_thread(default_provider.complete, consolidation_prompt, default_model)
 
-    yield SupervisorEvent(type=EventType.DONE, role=None, content=final_response)
+    return SupervisorEvent(type=EventType.DONE, role=None, content=final_response)

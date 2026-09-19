@@ -1,18 +1,26 @@
 import os
 import shutil
+import tempfile
 import uuid
-from typing import Dict
+import aiofiles
+from typing import Annotated, Dict
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 router = APIRouter(prefix="/api/upload", tags=["upload"])
 
 # Directory to temporarily store uploaded files
-TEMP_UPLOAD_DIR = "/tmp/atenea_uploads"
+TEMP_UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "atenea_uploads")
 MAX_FILE_SIZE_MB = 50
 
-@router.post("")
-async def upload_file(file: UploadFile = File(...)) -> Dict[str, str]:
+@router.post(
+    "",
+    responses={
+        400: {"description": "No filename provided"},
+        413: {"description": "File too large"}
+    }
+)
+async def upload_file(file: Annotated[UploadFile, File(...)]) -> Dict[str, str]:
     """
     Sube un archivo de forma temporal para que luego el agente de aprendizaje 
     (o cualquier otro) pueda procesarlo pasándole la ruta.
@@ -33,13 +41,13 @@ async def upload_file(file: UploadFile = File(...)) -> Dict[str, str]:
     size = 0
     max_bytes = MAX_FILE_SIZE_MB * 1024 * 1024
 
-    with open(file_path, "wb") as buffer:
+    async with aiofiles.open(file_path, "wb") as buffer:
         while chunk := await file.read(1024 * 1024):  # 1MB chunks
             size += len(chunk)
             if size > max_bytes:
                 os.remove(file_path)
                 raise HTTPException(status_code=413, detail=f"File too large. Maximum size is {MAX_FILE_SIZE_MB}MB")
-            buffer.write(chunk)
+            await buffer.write(chunk)
 
     return {
         "ok": "true",

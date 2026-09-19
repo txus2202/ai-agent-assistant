@@ -35,3 +35,9 @@ frontend/stitch-export/
 
 # Obsidian internal metadata (plugins, local config, cache)
 obsidian_vault/.obsidian/
+# Databases
+*.db
+*.sqlite3
+
+# ChromaDB
+.chroma/

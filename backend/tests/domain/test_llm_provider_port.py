@@ -17,12 +17,18 @@ from src.domain.exceptions import LLMProviderError
 class _WorkingAdapter(ILLMProvider):
     """Minimal adapter that satisfies the ILLMProvider contract."""
 
+    def list_models(self) -> list[dict[str, str]]:
+        return [{"id": "test", "name": "Test"}]
+
     def complete(self, prompt: str, model_name: str) -> str:
         return "42"
 
 
 class _FailingAdapter(ILLMProvider):
     """Adapter that always raises LLMProviderError."""
+
+    def list_models(self) -> list[dict[str, str]]:
+        return [{"id": "test", "name": "Test"}]
 
     def complete(self, prompt: str, model_name: str) -> str:
         raise LLMProviderError("quota exceeded")

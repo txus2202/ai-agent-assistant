@@ -7,6 +7,10 @@ const mockUpdateAgentConfig = vi.fn()
 vi.mock('../../stores/config', () => ({
   useConfigStore: () => ({
     agentsConfig: [{ id: 'THE_JUDGE', provider: 'gemini', model_name: 'gemini-1.5-flash' }, { id: 'the_judge', provider: 'gemini', model_name: 'gemini-1.5-flash' }],
+    providers: [
+      { id: 'gemini', name: 'Gemini', models: [{ id: 'gemini-1.5-flash', name: 'Gemini Flash' }] },
+      { id: 'openai', name: 'OpenAI', models: [{ id: 'gpt-4o-mini', name: 'GPT 4o Mini' }] }
+    ],
     updateAgentConfig: mockUpdateAgentConfig
   })
 }))

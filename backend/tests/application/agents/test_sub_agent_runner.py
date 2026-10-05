@@ -29,6 +29,9 @@ class FakeLLM(ILLMProvider):
         self._response = response
         self.received_prompts: list[str] = []
 
+    def list_models(self) -> list[dict[str, str]]:
+        return [{"id": "test", "name": "Test"}]
+
     def complete(self, prompt: str, model_name: str) -> str:
         self.received_prompts.append(prompt)
         return self._response

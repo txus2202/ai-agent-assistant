@@ -41,6 +41,9 @@ from src.infrastructure.rag.in_memory_document_store import InMemoryDocumentStor
 # ---------------------------------------------------------------------------
 
 class FakeLLM(ILLMProvider):
+    def list_models(self) -> list[dict[str, str]]:
+        return [{"id": "test", "name": "Test"}]
+
     def complete(self, prompt: str, model_name: str) -> str:
         return f"[consolidated response from: {prompt[:40]}]"
 
@@ -152,7 +155,7 @@ class TestSupervisorAgentEventOrder:
         ))
 
         started_roles = set(_roles_for_type(events, EventType.AGENT_STARTED))
-        expected = {r for r in AgentRole if r != AgentRole.LEARNING}
+        expected = {r for r in AgentRole if r not in (AgentRole.LEARNING, AgentRole.SUPERVISOR)}
         assert expected.issubset(started_roles)
 
     @pytest.mark.anyio

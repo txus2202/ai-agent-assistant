@@ -1,21 +1,24 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useDebateStore } from '../stores/debate'
 import { ArrowLeft, Trash2 } from 'lucide-vue-next'
 
 interface DebateRecord {
   id: string
   created_at: string
-  messages: Array<any>
+  events: Array<any>
+  user_request?: string
 }
 
 const router = useRouter()
+const store = useDebateStore()
 const debates = ref<DebateRecord[]>([])
 const isLoading = ref(true)
 
 const fetchDebates = async () => {
   try {
-    const response = await fetch('/api/history')
+    const response = await fetch('/api/debates')
     if (response.ok) {
       debates.value = await response.json()
     }
@@ -26,11 +29,12 @@ const fetchDebates = async () => {
   }
 }
 
-const deleteDebate = async (id: string) => {
+const deleteDebate = async (id: string, event: Event) => {
+  event.stopPropagation()
   if (!confirm('Are you sure you want to delete this session?')) return
   
   try {
-    const response = await fetch(`/api/history/${id}`, { method: 'DELETE' })
+    const response = await fetch(`/api/debates/${id}`, { method: 'DELETE' })
     if (response.ok) {
       debates.value = debates.value.filter(d => d.id !== id)
     }
@@ -45,6 +49,11 @@ onMounted(() => {
 
 const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleString()
+}
+
+const restoreDebate = (debate: DebateRecord) => {
+  store.loadDebate(debate)
+  router.push('/')
 }
 </script>
 
@@ -85,35 +94,30 @@ const formatDate = (dateString: string) => {
         <div 
           v-for="debate in debates" 
           :key="debate.id"
-          class="bg-space-900 border border-space-700 rounded-xl p-6 transition-all hover:border-neon-cyan/50 group"
+          @click="restoreDebate(debate)"
+          class="bg-space-900 border border-space-700 rounded-xl p-6 transition-all hover:border-neon-cyan/50 hover:bg-space-800/50 cursor-pointer group"
         >
           <div class="flex justify-between items-start">
-            <div>
-              <h2 class="text-lg font-mono text-white mb-2 tracking-wider">
-                Session {{ debate.id.slice(0, 8) }}...
+            <div class="w-full pr-4">
+              <h2 class="text-sm font-mono text-white mb-3 tracking-wide line-clamp-2 leading-relaxed italic">
+                "{{ debate.user_request || (debate.events && debate.events.find(m => m.type === 'start')?.user_request) || 'No prompt recorded' }}"
               </h2>
-              <p class="text-sm text-space-400 font-mono flex items-center space-x-4">
+              <p class="text-[11px] text-space-400 font-mono flex items-center space-x-4">
+                <span title="Session ID" class="text-space-500 font-bold uppercase">ID: {{ debate.id.slice(0, 8) }}</span>
                 <span>{{ formatDate(debate.created_at) }}</span>
-                <span class="px-2 py-0.5 bg-space-800 rounded text-neon-cyan text-xs">
-                  {{ debate.messages.length }} events
+                <span class="px-2 py-0.5 bg-space-800 rounded text-neon-cyan text-[10px]">
+                  {{ debate.events ? debate.events.length : 0 }} events
                 </span>
               </p>
             </div>
             
             <button 
-              @click="deleteDebate(debate.id)"
-              class="p-2 text-space-600 hover:text-neon-red hover:bg-neon-red/10 rounded opacity-0 group-hover:opacity-100 transition-all"
+              @click="deleteDebate(debate.id, $event)"
+              class="p-2 text-space-600 hover:text-neon-red hover:bg-neon-red/10 rounded opacity-0 group-hover:opacity-100 transition-all shrink-0"
               title="Delete Session"
             >
               <Trash2 class="w-5 h-5" />
             </button>
-          </div>
-
-          <!-- Preview first user message if available -->
-          <div v-if="debate.messages.some(m => m.type === 'start' || m.role === 'user')" class="mt-4 p-4 bg-space-950 rounded-lg border border-space-800/50">
-            <p class="text-sm text-slate-300 italic line-clamp-2">
-              "{{ debate.messages.find(m => m.type === 'start')?.user_request || debate.messages.find(m => m.role === 'user')?.content || 'No prompt recorded' }}"
-            </p>
           </div>
         </div>
       </div>

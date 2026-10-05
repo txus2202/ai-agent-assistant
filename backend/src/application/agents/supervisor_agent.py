@@ -135,8 +135,12 @@ async def _debate_generator(
     async for event in _run_phase_4(state, run_role):
         yield event
         
-    default_provider = llm_factory(settings.default_provider)
-    yield await _run_consolidation(state, default_provider, settings.default_model)
+    supervisor_config = agent_config_repo.find_by_role(AgentRole.SUPERVISOR.value)
+    sup_provider_name = supervisor_config.provider if supervisor_config else settings.default_provider
+    sup_model_name = supervisor_config.model_name if supervisor_config else settings.default_model
+    
+    supervisor_provider = llm_factory(sup_provider_name)
+    yield await _run_consolidation(state, supervisor_provider, sup_model_name)
 
 
 class DebateState:

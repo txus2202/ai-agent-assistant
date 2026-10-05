@@ -88,7 +88,7 @@ class DebateWebSocketHandler:
                 source_type=SourceType.PDF,
                 llm_provider=llm_prov,
                 document_store=self.document_store,
-                vault_root=Path(self.settings.obsidian_vault_path),
+                vault_root=self.settings.vault_root,
                 model_name=mod_name
             )
             if res.errors:
@@ -147,6 +147,8 @@ class DebateWebSocketHandler:
         user_request = raw_start.get("user_request", "")
         target_agent = raw_start.get("target_agent", "supervisor")
         attachments = raw_start.get("attachments", [])
+        
+        logger.error(f"DEBUG: type(user_request)={type(user_request)} value={user_request}")
 
         if not user_request:
             await self.websocket.send_json({"type": "error", "content": "user_request is required"})

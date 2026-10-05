@@ -39,6 +39,10 @@ class SqliteDebateRepository(IDebateRepository):
                     ),
                 )
         except sqlite3.Error as exc:
+            import logging
+            log = logging.getLogger(__name__)
+            log.error(f"DEBUG SQLITE CREATE: id={type(debate.id)} created_at={type(debate.created_at.isoformat())} user_request={type(debate.user_request)} target_agent={type(debate.target_agent)} events_json={type(debate.events_json)} status={type(debate.status)}")
+            log.error(f"DEBUG SQLITE CREATE VALUES: target_agent={debate.target_agent}")
             raise RepositoryError(f"Failed to create debate {debate.id}: {exc}") from exc
 
     def append_event(self, debate_id: str, event_json: str) -> None:

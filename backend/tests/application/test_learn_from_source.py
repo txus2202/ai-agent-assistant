@@ -55,11 +55,17 @@ The infrastructure layer adapts external services to domain ports.
 
 
 class FakeLLM(ILLMProvider):
+    def list_models(self) -> list[dict[str, str]]:
+        return [{"id": "test", "name": "Test"}]
+
     def complete(self, prompt: str, model_name: str) -> str:
         return _SAMPLE_MD
 
 
 class FailingLLM(ILLMProvider):
+    def list_models(self) -> list[dict[str, str]]:
+        return [{"id": "test", "name": "Test"}]
+
     def complete(self, prompt: str, model_name: str) -> str:
         raise LLMProviderError("LLM unavailable")
 

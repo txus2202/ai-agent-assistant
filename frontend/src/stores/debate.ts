@@ -10,8 +10,11 @@ export interface Agent {
 }
 
 export interface ChatMessage {
+  id?: string
   role: 'user' | 'assistant'
   content: string
+  timestamp?: string
+  agentName?: string
 }
 
 export const useDebateStore = defineStore('debate', () => {
@@ -131,13 +134,42 @@ export const useDebateStore = defineStore('debate', () => {
     return data.path
   }
 
+  function loadDebate(debate: any) {
+    messages.value = []
+    rawEvents.value = []
+    isHitlRequired.value = false
+    hitlCheckpoint.value = null
+    
+    // Reset agent states to STANDBY
+    agents.value.forEach(a => a.state = 'STANDBY')
+    
+    if (debate.user_request) {
+      messages.value.push({
+        role: 'user',
+        content: debate.user_request,
+      } as ChatMessage)
+    }
+    
+    if (debate.events && Array.isArray(debate.events)) {
+      debate.events.forEach((event: any) => {
+        rawEvents.value.push(event)
+        handleSupervisorEvent(event)
+      })
+    }
+    
+    isDebating.value = debate.status === 'running'
+  }
+
   function startDebate(userRequest: string, targetAgent: string = 'supervisor', attachmentUrl: string | null = null) {
     if (!isConnected.value || !ws) {
       messages.value.push({ role: 'assistant', content: 'Error: Cannot start debate, disconnected from server. Trying to reconnect...' })
       connect()
       return
     }
-
+    
+    // Reset agent states to STANDBY for the new debate
+    agents.value.forEach(a => a.state = 'STANDBY')
+    
     isDebating.value = true
     messages.value.push({
       id: crypto.randomUUID(),
@@ -203,6 +235,7 @@ export const useDebateStore = defineStore('debate', () => {
     agents,
     isAgentsLoaded,
     loadAgents,
+    loadDebate,
     connect,
     startDebate,
     uploadFile,

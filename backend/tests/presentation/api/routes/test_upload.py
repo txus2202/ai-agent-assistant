@@ -16,7 +16,7 @@ def test_upload_file(client, tmp_path, monkeypatch):
     test_content = b"fake pdf content"
     files = {"file": ("test.pdf", test_content, "application/pdf")}
     
-    response = client.post("/api/upload", files=files)
+    response = client.post("/upload", files=files)
     assert response.status_code == 200
     data = response.json()
     assert data["ok"] == "true"
@@ -30,5 +30,5 @@ def test_upload_file(client, tmp_path, monkeypatch):
         assert f.read() == test_content
 
 def test_upload_missing_file(client):
-    response = client.post("/api/upload")
+    response = client.post("/upload")
     assert response.status_code == 422  # Unprocessable Entity (missing field)

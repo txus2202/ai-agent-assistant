@@ -6,8 +6,8 @@ import ParticleOrb from './ParticleOrb.vue'
 import AgentTopology from './AgentTopology.vue'
 import HITLActionButton from './HITLActionButton.vue'
 import EventStream from './EventStream.vue'
+import AppHeader from './AppHeader.vue'
 import { AGENT_THEME, DEFAULT_AGENT_THEME } from '../config/agentTheme'
-import { History } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 
 const store = useDebateStore()
@@ -20,9 +20,7 @@ const activeAgentColor = computed(() => {
   return AGENT_THEME[activeAgent.role]?.hex || DEFAULT_AGENT_THEME.hex
 })
 
-const handleUserSubmit = (request: string) => {
-  store.startDebate(request)
-}
+
 
 const isRefining = ref(false)
 const feedbackText = ref('')
@@ -41,42 +39,28 @@ const handleHitlAction = (decision: 'approve' | 'refine' | 'reject') => {
 </script>
 
 <template>
-  <div class="h-screen w-full bg-space-950 flex flex-col md:flex-row overflow-hidden text-slate-300 font-sans">
+  <div class="h-screen w-full bg-space-950 flex flex-col overflow-hidden text-slate-300 font-sans">
     
-    <!-- Left Column: Chat Panel -->
-    <div class="w-full md:w-1/3 lg:w-1/4 h-1/2 md:h-full z-10">
-      <ChatPanel 
-        :messages="store.messages"
-        :is-debating="store.isDebating"
-        @submit="handleUserSubmit"
-      />
-    </div>
+    <!-- Top Header -->
+    <AppHeader />
 
-    <!-- Middle Column: Particle Orb & Canvas -->
-    <div class="w-full md:flex-1 h-1/2 md:h-full relative z-0">
-      <div class="absolute top-6 left-6 z-10 pointer-events-none">
-        <h1 class="text-3xl font-mono font-bold tracking-widest text-white mix-blend-overlay opacity-50">
-          A.T.E.N.E.A
-        </h1>
-        <p class="text-xs font-mono text-neon-cyan tracking-[0.3em] uppercase mt-2">
-          Autonomous Agentic Architecture
-        </p>
+    <!-- 3-Column Layout -->
+    <div class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+      <!-- Left Column: Chat Panel -->
+      <div class="w-full md:w-1/3 lg:w-1/4 h-1/2 md:h-full z-10">
+        <ChatPanel 
+          :messages="store.messages"
+          :is-debating="store.isDebating"
+        />
       </div>
 
-      <!-- Header actions -->
-      <div class="absolute top-6 right-6 z-10">
-        <button 
-          @click="router.push('/history')"
-          class="flex items-center space-x-2 px-3 py-2 bg-space-800/80 hover:bg-space-700 border border-space-600 rounded text-space-300 hover:text-neon-cyan transition-colors backdrop-blur font-mono text-xs"
-        >
-          <History class="w-4 h-4" />
-          <span>HISTORY</span>
-        </button>
-      </div>
+      <!-- Middle Column: Particle Orb & Canvas -->
+      <div class="w-full md:flex-1 h-1/2 md:h-full relative z-0 flex flex-col bg-[#04070d]">
       
       <ParticleOrb 
         :active-agent-color="activeAgentColor"
         :is-debating="store.isDebating"
+        class="flex-1"
       />
     </div>
 
@@ -139,5 +123,6 @@ const handleHitlAction = (decision: 'approve' | 'refine' | 'reject') => {
       </div>
     </div>
 
+    </div>
   </div>
 </template>

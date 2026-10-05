@@ -36,3 +36,16 @@ class ILLMProvider(ABC):
         Raises:
             LLMProviderError: On any provider-level failure.
         """
+
+    @abstractmethod
+    def list_models(self) -> list[dict[str, str]]:
+        """
+        List all available models for this provider.
+
+        Returns:
+            A list of dictionaries, each containing 'id' and 'name' keys.
+            Example: [{"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro"}]
+
+        Raises:
+            LLMProviderError: On any provider-level failure.
+        """

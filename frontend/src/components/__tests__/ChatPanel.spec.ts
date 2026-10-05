@@ -44,10 +44,16 @@ describe('ChatPanel.vue', () => {
       }
     })
     
-    // Find target agent select and set value
-    const agentSelect = wrapper.find('[data-test="target-agent-select"]')
-    expect(agentSelect.exists()).toBe(true)
-    await agentSelect.setValue('learning')
+    // Find target agent select dropdown and click it
+    const dropdownBtn = wrapper.find('[data-test="agent-dropdown-btn"]')
+    expect(dropdownBtn.exists()).toBe(true)
+    await dropdownBtn.trigger('click')
+
+    // Find the learning agent option and click it
+    const options = wrapper.findAll('[data-test="agent-option"]')
+    const learningOption = options.find(btn => btn.text().includes('Learning Agent'))
+    expect(learningOption).toBeDefined()
+    await learningOption!.trigger('click')
 
     // Find textarea and set value
     const textarea = wrapper.find('textarea')

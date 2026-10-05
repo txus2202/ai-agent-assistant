@@ -18,3 +18,4 @@ class AgentRole(Enum):
     DEVOPS_SECOPS    = "devops_secops"
     DIAGRAMMER       = "diagrammer"
     LEARNING         = "learning"
+    SUPERVISOR       = "supervisor"

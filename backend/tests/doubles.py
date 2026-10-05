@@ -16,6 +16,9 @@ class FixedResponseProvider(ILLMProvider):
     def __init__(self, response: str = "42") -> None:
         self._response = response
 
+    def list_models(self) -> list[dict[str, str]]:
+        return [{"id": "test", "name": "Test"}]
+
     def complete(self, prompt: str, model_name: str) -> str:
         return self._response
 
@@ -25,6 +28,9 @@ class FailingProvider(ILLMProvider):
 
     def __init__(self, message: str = "quota exceeded") -> None:
         self._message = message
+
+    def list_models(self) -> list[dict[str, str]]:
+        return [{"id": "test", "name": "Test"}]
 
     def complete(self, prompt: str, model_name: str) -> str:
         raise LLMProviderError(self._message)

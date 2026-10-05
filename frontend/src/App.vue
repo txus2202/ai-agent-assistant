@@ -1,17 +1,24 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import AppShell from './components/AppShell.vue'
 import { useDebateStore } from './stores/debate'
+import { useConfigStore } from './stores/config'
 
 const store = useDebateStore()
+const configStore = useConfigStore()
 
-onMounted(() => {
+onMounted(async () => {
+  await Promise.all([
+    configStore.loadProviders(),
+    configStore.loadAgentsConfig()
+  ])
   store.loadAgents()
 })
 </script>
 
 <template>
-  <AppShell v-if="store.isAgentsLoaded" />
+  <div v-if="store.isAgentsLoaded" class="h-screen w-full bg-space-950 overflow-hidden">
+    <router-view />
+  </div>
   <div v-else class="h-screen w-full bg-space-950 flex items-center justify-center text-neon-cyan font-mono text-sm tracking-widest animate-pulse">
     INITIALIZING A.T.E.N.E.A...
   </div>

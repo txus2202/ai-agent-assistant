@@ -26,6 +26,7 @@ export default {
           orange:     '#ff8800',
           darkgreen:  '#00ff9d',     // Senior Architect
           lightgreen: '#22c55e',     // Innovator
+          darkblue:   '#1d4ed8',     // Learning Agent
         }
       },
       fontFamily: {

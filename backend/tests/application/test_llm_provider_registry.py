@@ -25,6 +25,9 @@ class FakeAdapter(ILLMProvider):
     def __init__(self, name: str = "fake"):
         self.name = name
 
+    def list_models(self) -> list[dict[str, str]]:
+        return [{"id": "test", "name": "Test"}]
+
     def complete(self, prompt: str, model_name: str) -> str:
         return f"{self.name}:{model_name}:{prompt}"
 

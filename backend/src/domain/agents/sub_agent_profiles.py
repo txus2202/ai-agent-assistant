@@ -153,6 +153,18 @@ _LEARNING = SubAgentProfile(
 )
 
 
+_SUPERVISOR = SubAgentProfile(
+    role=AgentRole.SUPERVISOR,
+    display_name="Supervisor",
+    uses_rag=False,
+    rag_filter=None,
+    system_prompt=(
+        "You are the orchestrator of ATENEA's AI team. Your role is to coordinate "
+        "and delegate tasks to the appropriate specialized sub-agents."
+    ),
+)
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -165,6 +177,7 @@ _PROFILES: dict[AgentRole, SubAgentProfile] = {
     AgentRole.DEVOPS_SECOPS:    _DEVOPS_SECOPS,
     AgentRole.DIAGRAMMER:       _DIAGRAMMER,
     AgentRole.LEARNING:         _LEARNING,
+    AgentRole.SUPERVISOR:       _SUPERVISOR,
 }
 
 

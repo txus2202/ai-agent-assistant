@@ -48,3 +48,10 @@ class AnthropicAdapter(ILLMProvider):
             return message.content[0].text
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
+
+    def list_models(self) -> list[dict[str, str]]:
+        return [
+            {"id": "claude-3-5-sonnet-latest", "name": "Claude 3.5 Sonnet"},
+            {"id": "claude-3-opus-latest", "name": "Claude 3 Opus"},
+            {"id": "claude-3-haiku-20240307", "name": "Claude 3 Haiku"}
+        ]

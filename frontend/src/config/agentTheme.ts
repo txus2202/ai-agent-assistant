@@ -12,6 +12,7 @@ export const AGENT_THEME: Record<string, AgentTheme> = {
   'the_judge':           { hex: '#ef4444', colorClass: 'text-neon-red',        glowClass: 'glow-red' },
   'diagrammer':          { hex: '#b347ff', colorClass: 'text-neon-purple',     glowClass: 'glow-purple' },
   'devops_secops':       { hex: '#ff8800', colorClass: 'text-neon-orange',     glowClass: 'glow-orange' },
+  'learning':            { hex: '#1d4ed8', colorClass: 'text-neon-darkblue',   glowClass: 'glow-darkblue' },
 }
 
 // Fallback theme for unknown agents

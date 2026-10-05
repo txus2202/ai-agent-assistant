@@ -61,7 +61,7 @@ def create_app() -> FastAPI:
     )
 
     # ── Routers ──────────────────────────────────────────────────────────
-    from src.presentation.api.routes import health, config, upload, history
+    from src.presentation.api.routes import health, config, upload, history, models
     from src.presentation.api.ws import debate
 
     # Register routes
@@ -69,11 +69,11 @@ def create_app() -> FastAPI:
     app.include_router(config.router)
     app.include_router(upload.router)
     app.include_router(history.router)
+    app.include_router(models.router)
     app.include_router(debate.router)
     
     # Future routers registered here as they are implemented:
     # app.include_router(settings_router, prefix="/settings")
-    # app.include_router(models_router,   prefix="/models")
     # app.include_router(learn_router,    prefix="/learn")
     # app.include_router(history_router,  prefix="/debates")
 

@@ -7,7 +7,7 @@ from typing import Annotated, Dict
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-router = APIRouter(prefix="/api/upload", tags=["upload"])
+router = APIRouter(prefix="/upload", tags=["upload"])
 
 # Directory to temporarily store uploaded files
 TEMP_UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "atenea_uploads")

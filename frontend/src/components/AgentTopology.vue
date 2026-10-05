@@ -52,7 +52,8 @@ watch(
       <AgentCard
         v-for="agent in agents"
         :key="agent.role"
-        :role="agent.name"
+        :role="agent.role"
+        :roleName="agent.name"
         :state="agent.state"
         :colorClass="getTheme(agent.role).colorClass"
         :glowClass="getTheme(agent.role).glowClass"

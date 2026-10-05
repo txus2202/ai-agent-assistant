@@ -45,6 +45,34 @@ async def get_agents_config(repo: Annotated[SqliteAgentConfigRepository, Depends
         })
     return result
 
+@router.get(
+    "/agents/{role}",
+    responses={
+        404: {"description": "Agent role not found"}
+    }
+)
+async def get_agent_config(
+    role: str,
+    repo: Annotated[SqliteAgentConfigRepository, Depends(get_config_repo)]
+) -> Dict[str, str]:
+    """
+    Obtiene la configuración (proveedor y modelo) de un agente específico.
+    """
+    try:
+        # Validate that the role exists in the enum
+        _ = AgentRole(role)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Agent role not found")
+
+    settings = get_settings()
+    config = repo.find_by_role(role)
+    
+    return {
+        "id": role,
+        "provider": config.provider if config else settings.default_provider,
+        "model_name": config.model_name if config else settings.default_model
+    }
+
 @router.put(
     "/agents/{role}",
     responses={

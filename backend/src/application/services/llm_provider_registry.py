@@ -51,3 +51,26 @@ class LLMProviderRegistry:
     def available(self) -> list[str]:
         """Return a list of all registered provider names."""
         return list(self._providers.keys())
+
+    def list_all_models(self) -> list[dict]:
+        """
+        Aggregate models from all registered providers.
+        Returns a list of dicts: {"id": "provider_name", "name": "PROVIDER_NAME", "models": [...]}
+        """
+        result = []
+        for name, provider in self._providers.items():
+            try:
+                models = provider.list_models()
+                result.append({
+                    "id": name.lower(),
+                    "name": name.upper(),
+                    "models": models
+                })
+            except Exception:
+                # If a provider fails to list models (e.g. invalid API key), skip it or return empty list
+                result.append({
+                    "id": name.lower(),
+                    "name": name.upper(),
+                    "models": []
+                })
+        return result

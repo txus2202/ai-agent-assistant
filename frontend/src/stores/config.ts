@@ -7,18 +7,43 @@ export interface AgentConfig {
   model_name: string
 }
 
+export interface ModelConfig {
+  id: string
+  name: string
+}
+
+export interface ProviderConfig {
+  id: string
+  name: string
+  models: ModelConfig[]
+}
+
 interface ConfigState {
   agentsConfig: AgentConfig[]
+  providers: ProviderConfig[]
   isLoading: boolean
 }
 
 export const useConfigStore = defineStore('config', {
   state: (): ConfigState => ({
     agentsConfig: [],
+    providers: [],
     isLoading: false,
   }),
   
   actions: {
+    async loadProviders() {
+      try {
+        const response = await fetch('/api/models')
+        if (response.ok) {
+          const data = await response.json()
+          this.providers = data.filter((p: any) => p.models && p.models.length > 0)
+        }
+      } catch (error) {
+        console.error('Failed to load providers:', error)
+      }
+    },
+
     async loadAgentsConfig() {
       this.isLoading = true
       try {

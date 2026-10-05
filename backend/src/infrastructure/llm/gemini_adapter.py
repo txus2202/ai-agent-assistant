@@ -84,3 +84,23 @@ class GeminiAdapter(ILLMProvider):
             return response.text
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
+
+    def list_models(self) -> list[dict[str, str]]:
+        try:
+            models = self._client.models.list()
+            result = []
+            for m in models:
+                # Filter for models that support text generation
+                methods = getattr(m, "supported_generation_methods", [])
+                if "generateContent" in methods or not methods:
+                    name_id = m.name.replace("models/", "") if hasattr(m, "name") else str(m)
+                    
+                    # Exclude deprecated, vision-specific (old), and snapshot versions
+                    if "vision" in name_id.lower() or "1.0" in name_id or "-00" in name_id:
+                        continue
+                        
+                    display_name = getattr(m, "display_name", name_id)
+                    result.append({"id": name_id, "name": display_name})
+            return result
+        except Exception as exc:
+            raise LLMProviderError(str(exc)) from exc

@@ -18,4 +18,18 @@ The system acts as a team of experts orchestrated under the **Supervisor Pattern
 - **Backend:** Python (FastAPI)
 - **AI Orchestration:** Google ADK (Agent Development Kit)
 - **Vector DB & Observability:** ChromaDB + Langfuse (Docker)
-- **Local Audio Models:** Whisper.cpp (STT) + Piper (TTS)
+- **Local Audio Models:** Faster-Whisper (STT) + Kokoro ONNX (TTS) + Vosk (Wake Word)
+
+## 🚀 Getting Started
+
+### 1. Download Local AI Models
+
+Because this system runs voice processing locally to ensure privacy, you must download the necessary AI models before running the backend. We provide a convenient script to do this:
+
+```bash
+# Make sure you are in the root directory
+chmod +x scripts/download_models.sh
+./scripts/download_models.sh
+```
+
+*This will download the Kokoro ONNX TTS model and the Vosk Wake Word model into the appropriate `backend/` directories. (Total size ~380MB)*

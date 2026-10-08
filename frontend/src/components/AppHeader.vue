@@ -2,16 +2,29 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useConfigStore } from '../stores/config'
-import { Cpu, Volume2, VolumeX, History, ChevronDown } from 'lucide-vue-next'
+import { useDebateStore } from '../stores/debate'
+import { Cpu, Volume2, VolumeX, History, ChevronDown, Ear, EarOff } from 'lucide-vue-next'
 import packageJson from '../../package.json'
 
 const router = useRouter()
 const version = packageJson.version
+const debateStore = useDebateStore()
 
-// Mute state
-const isMuted = ref(false)
 const toggleAudio = () => {
-  isMuted.value = !isMuted.value
+  debateStore.isVoiceOutputEnabled = !debateStore.isVoiceOutputEnabled
+  if (!debateStore.isVoiceOutputEnabled) {
+    debateStore.stopTts() // stop immediately if muted
+  } else {
+    debateStore.unlockAudioContext()
+  }
+}
+
+const toggleAutoListen = () => {
+  if (debateStore.isAutoListenEnabled) {
+    debateStore.stopAutoListen()
+  } else {
+    debateStore.startAutoListen()
+  }
 }
 
 // Supervisor state
@@ -162,8 +175,17 @@ const selectModel = async (providerName: string, modelName: string) => {
           class="p-1.5 hover:text-cyan-300 hover:bg-space-800 rounded transition border border-transparent hover:border-cyan-800/60" 
           title="Toggle System Audio"
         >
-          <VolumeX v-if="isMuted" class="w-4 h-4 text-rose-400" />
+          <VolumeX v-if="!debateStore.isVoiceOutputEnabled" class="w-4 h-4 text-rose-400" />
           <Volume2 v-else class="w-4 h-4" />
+        </button>
+        <button 
+          @click="toggleAutoListen"
+          class="p-1.5 rounded transition border border-transparent"
+          :class="debateStore.isAutoListenEnabled ? 'text-amber-400 bg-amber-900/30 border-amber-500/50' : 'hover:text-amber-200 hover:bg-space-800 hover:border-amber-800/60'"
+          title="Toggle Auto-Listen (Wake Word)"
+        >
+          <Ear v-if="debateStore.isAutoListenEnabled" class="w-4 h-4" />
+          <EarOff v-else class="w-4 h-4" />
         </button>
         <button 
           @click="router.push('/history')"

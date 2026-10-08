@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     # Learning Agent file size limit (MB)
     max_learn_file_mb: int = 50
 
+    # Audio Integration (Phase 5)
+    whisper_model: str = "base"
+    kokoro_model_path: Path = Path("voices/kokoro-v1.0.onnx")
+    kokoro_voices_path: Path = Path("voices/voices-v1.0.bin")
+    kokoro_voice_name: str = "ef_dora"
+
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
         env_file_encoding="utf-8",

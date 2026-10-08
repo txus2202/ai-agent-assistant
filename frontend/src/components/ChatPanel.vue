@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
-import { SendHorizontal, Paperclip, Activity, MessageSquare, Check, User, Bot, ChevronDown } from 'lucide-vue-next'
+import { SendHorizontal, Paperclip, Activity, MessageSquare, Check, User, Bot, ChevronDown, Mic, MicOff, Volume2, VolumeX } from 'lucide-vue-next'
 import { useDebateStore } from '../stores/debate'
 
 const props = defineProps<{
@@ -9,15 +9,11 @@ const props = defineProps<{
 }>()
 
 const store = useDebateStore()
-
-const inputMsg = ref('')
-const selectedAgent = ref('supervisor')
-const selectedFile = ref<File | null>(null)
 const chatScroll = ref<HTMLElement | null>(null)
 
-// Custom Agent Dropdown Logic
-const isAgentDropdownOpen = ref(false)
-const agentDropdownRef = ref<HTMLElement | null>(null)
+// Voice Integration (Phase 5)
+
+
 
 const agentsList = [
   { value: 'supervisor', label: 'Supervisor' },
@@ -30,6 +26,10 @@ const agentsList = [
   { value: 'learning', label: 'Learning Agent' }
 ]
 
+const selectedAgent = ref('supervisor')
+const selectedFile = ref<File | null>(null)
+const isAgentDropdownOpen = ref(false)
+const agentDropdownRef = ref<HTMLElement | null>(null)
 const selectedAgentLabel = computed(() => {
   return agentsList.find(a => a.value === selectedAgent.value)?.label || 'Supervisor'
 })
@@ -60,6 +60,142 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutsideAgent)
 })
 
+// TTS Queue logic for gapless sentence-by-sentence playback
+let ttsTextQueue: string[] = []
+let ttsAudioQueue: string[] = []
+let isPrefetching = false
+
+// Watch store.isTtsPlaying to abort playback
+watch(() => store.isTtsPlaying, (isPlaying) => {
+  if (!isPlaying) {
+    // Don't interrupt the silent unlock audio
+    if (!store.globalAudioPlayer.src || !store.globalAudioPlayer.src.startsWith('data:audio')) {
+      try {
+        store.globalAudioPlayer.pause()
+      } catch(e) {}
+      store.globalAudioPlayer.removeAttribute('src')
+    }
+    
+    store.globalAudioPlayer.onended = null
+    ttsTextQueue = []
+    ttsAudioQueue.forEach(url => URL.revokeObjectURL(url))
+    ttsAudioQueue = []
+    isPrefetching = false
+  }
+})
+
+const playVoiceResponse = async (text: string, role?: string) => {
+  if (!store.isVoiceOutputEnabled || !text) return
+  
+  // Set store state
+  store.isTtsPlaying = true
+  if (role) {
+    store.activeTtsRole = role
+  }
+  
+  // Clean text from markdown and split into sentences
+  const cleanText = text.replace(/[*#`_]/g, '').replace(/\[.*?\]/g, '')
+  // Split by punctuation (., ?, !, \n) but keep the punctuation
+  const sentences = cleanText.match(/[^.!?\n]+[.!?\n]+/g) || [cleanText]
+  
+  ttsTextQueue.push(...sentences.map(s => s.trim()).filter(s => s.length > 0))
+  
+  if (!isPrefetching) {
+    prefetchTtsQueue()
+  }
+}
+
+const prefetchTtsQueue = async () => {
+  if (ttsTextQueue.length === 0) {
+    isPrefetching = false
+    return
+  }
+  
+  isPrefetching = true
+  const sentence = ttsTextQueue.shift()!
+  
+  try {
+    const response = await fetch('/api/audio/synthesize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: sentence })
+    })
+    
+    if (response.ok) {
+      // If the user pressed stop while we were fetching, discard this result
+      if (!store.isTtsPlaying) {
+        isPrefetching = false
+        return
+      }
+
+      const audioBlob = await response.blob()
+      const audioUrl = URL.createObjectURL(audioBlob)
+      ttsAudioQueue.push(audioUrl)
+      
+      // If player is idle (or has no valid blob src), start playing immediately
+      if (store.isTtsPlaying) {
+        const isIdle = store.globalAudioPlayer.paused || !store.globalAudioPlayer.src || !store.globalAudioPlayer.src.startsWith('blob:')
+        if (isIdle) {
+          playNextAudio()
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Error synthesizing speech:", e)
+  }
+  
+  // Fetch next sentence immediately
+  if (store.isTtsPlaying) {
+    prefetchTtsQueue()
+  } else {
+    isPrefetching = false
+  }
+}
+
+const playNextAudio = () => {
+  if (ttsAudioQueue.length === 0) {
+    if (ttsTextQueue.length === 0 && !isPrefetching) {
+      // Completely done playing all queued TTS
+      store.stopTts()
+    }
+    return
+  }
+  
+  if (!store.isTtsPlaying) return
+  
+  const nextAudioUrl = ttsAudioQueue.shift()!
+  
+  store.globalAudioPlayer.src = nextAudioUrl
+  
+  store.globalAudioPlayer.onended = () => {
+    URL.revokeObjectURL(nextAudioUrl) // free memory
+    store.globalAudioPlayer.onended = null
+    playNextAudio()
+  }
+  
+  store.globalAudioPlayer.play().catch(e => {
+    console.error("Play error:", e)
+    URL.revokeObjectURL(nextAudioUrl)
+    store.globalAudioPlayer.onended = null
+    playNextAudio() // Continue to next if play fails
+  })
+}
+
+// Hook to play TTS when debating finishes or hits HITL
+watch(() => props.messages.length, (newLen, oldLen) => {
+  if (newLen > oldLen) {
+    const lastMsg = props.messages[newLen - 1]
+    // Play any newly added assistant message (e.g. intermediate agent responses or final done)
+    // As long as it was a single message push (not bulk loadDebate)
+    if (newLen === oldLen + 1 && lastMsg && lastMsg.role === 'assistant') {
+      // Extract role from the brackets if it exists (e.g. "[nl_interpreter] ...")
+      const match = lastMsg.content.match(/^\[(.*?)\]\s/)
+      const role = match ? match[1] : undefined
+      playVoiceResponse(lastMsg.content, role)
+    }
+  }
+})
+
 const handleFileChange = (e: Event) => {
   const target = e.target as HTMLInputElement
   if (target.files && target.files.length > 0) {
@@ -68,7 +204,11 @@ const handleFileChange = (e: Event) => {
 }
 
 const onSubmit = async () => {
-  if (!inputMsg.value.trim() || props.isDebating) return
+  if (!store.draftMessage.trim() || props.isDebating) return
+  
+  if (store.isVoiceOutputEnabled) {
+    store.unlockAudioContext()
+  }
   
   let attachmentUrl = null
   if (selectedFile.value) {
@@ -81,9 +221,9 @@ const onSubmit = async () => {
     }
   }
 
-  store.startDebate(inputMsg.value, selectedAgent.value, attachmentUrl)
+  store.startDebate(store.draftMessage, selectedAgent.value, attachmentUrl)
   
-  inputMsg.value = ''
+  store.draftMessage = ''
   selectedFile.value = null
 }
 
@@ -94,12 +234,23 @@ const clearChat = () => {
   }
 }
 
-// Auto-scroll to bottom when messages change
-watch(() => props.messages.length, async () => {
+// Auto-scroll to the start of the last message
+watch(() => props.messages.length, async (newLen, oldLen) => {
   await nextTick()
-  if (chatScroll.value) {
-    chatScroll.value.scrollTop = chatScroll.value.scrollHeight
+  if (chatScroll.value && newLen > 0) {
+    // Find all message blocks
+    const messageBlocks = chatScroll.value.querySelectorAll('.message-block')
+    if (messageBlocks.length > 0) {
+      // Get the last message block
+      const lastMessageEl = messageBlocks[messageBlocks.length - 1] as HTMLElement
+      // Scroll it into view smoothly, aligning it to the start of the view
+      lastMessageEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
   }
+})
+
+defineExpose({
+  onSubmit
 })
 </script>
 
@@ -132,12 +283,16 @@ watch(() => props.messages.length, async () => {
             <span class="text-[9px] text-neon-cyan/70 font-mono tracking-widest uppercase">MODO CONSULTA MULTI-AGENTE</span>
           </div>
         </div>
-        <button 
-          @click="clearChat"
-          class="text-[9px] border border-space-700 hover:border-space-500 text-space-400 hover:text-slate-300 font-mono px-3 py-1.5 rounded transition-colors uppercase tracking-widest bg-space-900"
-        >
-          Limpiar
-        </button>
+        <div class="flex items-center space-x-2">
+
+          <!-- Clear Chat -->
+          <button 
+            @click="clearChat"
+            class="text-[9px] border border-space-700 hover:border-space-500 text-space-400 hover:text-slate-300 font-mono px-3 py-1.5 rounded transition-colors uppercase tracking-widest bg-space-900"
+          >
+            Limpiar
+          </button>
+        </div>
       </div>
       
       <!-- File attachment indicator (if selected) -->
@@ -154,7 +309,7 @@ watch(() => props.messages.length, async () => {
       <div 
         v-for="(msg, i) in messages" 
         :key="i"
-        class="flex flex-col w-full"
+        class="flex flex-col w-full message-block"
       >
         <!-- User Bubble -->
         <template v-if="msg.role === 'user'">
@@ -180,6 +335,17 @@ watch(() => props.messages.length, async () => {
               <span class="px-2 py-0.5 bg-neon-green/10 border border-neon-green/30 text-neon-green text-[8px] font-mono uppercase tracking-widest rounded shadow-sm">
                 {{ msg.agentName || 'SUPERVISOR AGENT' }}
               </span>
+              
+              <!-- Stop TTS Button -->
+              <button 
+                v-if="store.isTtsPlaying && i === messages.length - 1"
+                @click="store.stopTts()"
+                class="ml-2 px-2 py-0.5 bg-red-900/40 hover:bg-red-900/80 border border-red-500/50 text-red-400 text-[9px] font-mono uppercase tracking-widest rounded shadow-sm flex items-center space-x-1 transition-colors"
+                title="Detener lectura de este mensaje"
+              >
+                <div class="w-1.5 h-1.5 bg-red-500 rounded-sm"></div>
+                <span>Silenciar</span>
+              </button>
             </div>
             <div class="w-full bg-[#030509] border border-neon-green/40 rounded-xl rounded-tl-none px-5 py-4 text-[13px] text-slate-300 leading-relaxed whitespace-pre-wrap shadow-[0_0_15px_-3px_rgba(0,255,157,0.1)]">
               {{ msg.content }}
@@ -247,7 +413,7 @@ watch(() => props.messages.length, async () => {
             </div>
           </div>
 
-          <label class="cursor-pointer text-space-400 hover:text-neon-cyan transition-colors flex items-center justify-center px-3 py-1.5 border border-cyan-900/50 rounded bg-[#030509] hover:bg-space-800 shadow-[0_0_10px_-2px_rgba(0,229,255,0.05)] hover:border-neon-cyan/50" title="Adjuntar archivo">
+          <label v-if="selectedAgent === 'learning'" class="cursor-pointer text-space-400 hover:text-neon-cyan transition-colors flex items-center justify-center px-3 py-1.5 border border-cyan-900/50 rounded bg-[#030509] hover:bg-space-800 shadow-[0_0_10px_-2px_rgba(0,229,255,0.05)] hover:border-neon-cyan/50" title="Adjuntar archivo">
             <input type="file" @change="handleFileChange" class="hidden" data-test="file-input" />
             <Paperclip class="w-4 h-4" />
           </label>
@@ -255,8 +421,8 @@ watch(() => props.messages.length, async () => {
         
         <div class="relative flex items-center w-full">
           <textarea 
-            v-model="inputMsg"
-            placeholder="Escribe tu consulta o pulsa el micrófono..."
+            v-model="store.draftMessage"
+            placeholder="Escribe tu consulta o pulsa el micrófono del orbe..."
             rows="1"
             class="w-full bg-[#030509] border border-space-700 rounded-lg pl-4 pr-12 py-[3px] text-sm text-slate-200 focus:outline-none focus:border-neon-cyan transition-all placeholder:text-[11px] placeholder-space-600 font-mono shadow-inner resize-none custom-scrollbar min-h-[44px]"
             :disabled="isDebating"
@@ -265,7 +431,7 @@ watch(() => props.messages.length, async () => {
           
           <button 
             type="submit"
-            :disabled="!inputMsg.trim() || isDebating"
+            :disabled="!store.draftMessage.trim() || isDebating"
             class="absolute right-2 p-1.5 bg-[#00e5ff] text-[#060a11] hover:bg-cyan-400 disabled:opacity-50 disabled:hover:bg-[#00e5ff] transition-colors rounded shadow-[0_0_10px_rgba(0,229,255,0.3)]"
           >
             <SendHorizontal class="w-5 h-5" />

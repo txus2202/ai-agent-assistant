@@ -40,6 +40,21 @@ jobs:
         run: |
           pytest --cov=src --cov-report=xml
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: './frontend/package-lock.json'
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Run frontend tests with coverage
+        working-directory: ./frontend
+        run: npx vitest run --coverage
+
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@master
         env:
@@ -50,5 +65,6 @@ jobs:
             -Dsonar.projectKey=txus2202_ai-agent-assistant
             -Dsonar.organization=txus2202
             -Dsonar.python.coverage.reportPaths=backend/coverage.xml
-            -Dsonar.sources=backend/src
-            -Dsonar.tests=backend/tests
+            -Dsonar.javascript.lcov.reportPaths=frontend/coverage/lcov.info
+            -Dsonar.sources=backend/src,frontend/src
+            -Dsonar.tests=backend/tests,frontend/src/components/__tests__,frontend/src/stores/__tests__,frontend/src/views/__tests__

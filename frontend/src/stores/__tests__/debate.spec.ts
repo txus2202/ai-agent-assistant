@@ -5,16 +5,24 @@ import { useDebateStore } from '../debate'
 describe('useDebateStore', () => {
   let originalWebSocket: typeof WebSocket
 
+  let mockSend: any
+
   beforeEach(() => {
     setActivePinia(createPinia())
     originalWebSocket = global.WebSocket
-    global.WebSocket = vi.fn().mockImplementation(function(this: any) {
-      this.readyState = WebSocket.OPEN
-      this.send = vi.fn()
-      this.close = vi.fn()
-      this.addEventListener = vi.fn()
-      this.removeEventListener = vi.fn()
-    }) as any
+    mockSend = vi.fn()
+    class MockWebSocket {
+      readyState = WebSocket.OPEN
+      send = mockSend
+      close = vi.fn()
+      addEventListener = vi.fn()
+      removeEventListener = vi.fn()
+      onopen = null
+      onclose = null
+      onmessage = null
+      onerror = null
+    }
+    global.WebSocket = MockWebSocket as any
   })
 
   afterEach(() => {
@@ -50,6 +58,7 @@ describe('useDebateStore', () => {
 
   it('handles startDebate by setting states appropriately', () => {
     const store = useDebateStore()
+    store.connect()
     
     // Set connected so it proceeds to send
     store.isConnected = true
@@ -60,7 +69,7 @@ describe('useDebateStore', () => {
     expect(store.messages[0].content).toBe('test task')
     expect(store.messages[0].role).toBe('user')
     // We can verify send was called on the mocked ws
-    expect(store.ws?.send).toHaveBeenCalledWith(JSON.stringify({ 
+    expect(mockSend).toHaveBeenCalledWith(JSON.stringify({ 
       type: 'start', 
       user_request: 'test task',
       target_agent: 'learning',
@@ -70,9 +79,10 @@ describe('useDebateStore', () => {
 
   it('handles startDebate with defaults', () => {
     const store = useDebateStore()
+    store.connect()
     store.isConnected = true
     store.startDebate('test task')
-    expect(store.ws?.send).toHaveBeenCalledWith(JSON.stringify({ 
+    expect(mockSend).toHaveBeenCalledWith(JSON.stringify({ 
       type: 'start', 
       user_request: 'test task',
       target_agent: 'supervisor',
@@ -106,5 +116,34 @@ describe('useDebateStore', () => {
     
     expect(store.isHitlRequired).toBe(true)
     expect(store.hitlCheckpoint).toBe('1')
+  })
+
+  it('handles startAutoListen by creating a websocket', async () => {
+    const store = useDebateStore()
+    
+    // Mock getUserMedia
+    Object.defineProperty(global.navigator, 'mediaDevices', {
+      value: {
+        getUserMedia: vi.fn().mockResolvedValue({})
+      },
+      writable: true
+    })
+
+    // Mock AudioContext
+    class MockAudioContext {
+      createMediaStreamSource = vi.fn().mockReturnValue({ connect: vi.fn() })
+      createScriptProcessor = vi.fn().mockReturnValue({
+        connect: vi.fn(),
+        onaudioprocess: null
+      })
+      destination = {}
+      close = vi.fn().mockResolvedValue(undefined)
+      resume = vi.fn().mockResolvedValue(undefined)
+    }
+    global.AudioContext = MockAudioContext as any
+
+    await store.startAutoListen()
+    
+    expect(store.isAutoListenEnabled).toBe(true)
   })
 })

@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
+import { useDebateStore } from '../stores/debate'
+
+const store = useDebateStore()
 
 const props = defineProps<{
   activeAgentColor: string // e.g. '#00e5ff'
@@ -7,11 +10,16 @@ const props = defineProps<{
   activeAgentIndex?: number // Optional index (0 to 5) to identify the agent
 }>()
 
+const emit = defineEmits<{
+  (e: 'submit-draft'): void
+}>()
+
 const orbCanvasRef = ref<HTMLCanvasElement | null>(null)
 const waveformCanvasRef = ref<HTMLCanvasElement | null>(null)
 let ctx: CanvasRenderingContext2D | null = null
 let animationFrameId: number
 let waveAnimationFrameId: number
+let isComponentUnmounted = false
 
 // Cosmic Neural Orb Web Particle logic
 const SPHERE_PARTICLE_COUNT = 800 // Reduced for Plexus performance
@@ -228,6 +236,155 @@ const animateOrb = () => {
   animationFrameId = requestAnimationFrame(animateOrb)
 }
 
+// --- STT Logic ---
+const isRecording = ref(false)
+const mediaRecorder = ref<MediaRecorder | null>(null)
+const audioChunks = ref<Blob[]>([])
+
+const toggleRecording = async () => {
+  if (isRecording.value) {
+    mediaRecorder.value?.stop()
+    isRecording.value = false
+    store.isRecording = false
+    stopSilenceDetection()
+    return
+  }
+
+  try {
+    store.stopTts() // Stop TTS when user wants to speak
+    store.unlockAudioContext() // Unlock audio context and instantiate analyser during user click
+    
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const recorder = new MediaRecorder(stream)
+    audioChunks.value = []
+
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) audioChunks.value.push(e.data)
+    }
+
+    recorder.onstop = async () => {
+      const audioBlob = new Blob(audioChunks.value, { type: 'audio/webm' })
+      stream.getTracks().forEach(t => t.stop())
+      if (!isComponentUnmounted) {
+        await uploadAudioForTranscription(audioBlob)
+      }
+    }
+
+    recorder.start()
+    mediaRecorder.value = recorder
+    isRecording.value = true
+    store.isRecording = true
+    
+    startSilenceDetection(stream)
+  } catch (err) {
+    console.error("Error accessing microphone:", err)
+    alert("No se pudo acceder al micrófono para dictado de voz.")
+  }
+}
+
+const uploadAudioForTranscription = async (blob: Blob) => {
+  const formData = new FormData()
+  formData.append('file', blob, 'recording.webm')
+  
+  try {
+    const response = await fetch('/api/audio/transcribe', {
+      method: 'POST',
+      body: formData
+    })
+    
+    if (response.ok) {
+      const data = await response.json()
+      if (data.text) {
+        store.draftMessage += (store.draftMessage ? ' ' : '') + data.text
+        emit('submit-draft')
+      }
+    } else {
+      console.error("Transcription failed")
+    }
+  } catch (e) {
+    console.error("Transcription error:", e)
+  }
+}
+
+// --- Silence Detection ---
+let silenceTimeout: ReturnType<typeof setTimeout> | null = null
+let initialDelayTimeout: ReturnType<typeof setTimeout> | null = null
+let audioContext: AudioContext | null = null
+let analyser: AnalyserNode | null = null
+let microphone: MediaStreamAudioSourceNode | null = null
+let silenceCheckInterval: ReturnType<typeof setInterval> | null = null
+
+const startSilenceDetection = (stream: MediaStream) => {
+  // Use a small delay before starting to avoid triggering on initial silence
+  initialDelayTimeout = setTimeout(() => {
+    if (!isRecording.value) return
+    
+    audioContext = new AudioContext()
+    analyser = audioContext.createAnalyser()
+    analyser.minDecibels = -70 // Sensitive threshold for voice
+    analyser.smoothingTimeConstant = 0.2
+    analyser.fftSize = 256 // good for time-domain waveform
+    
+    microphone = audioContext.createMediaStreamSource(stream)
+    microphone.connect(analyser)
+    
+    const dataArray = new Uint8Array(analyser.frequencyBinCount)
+    
+    const checkSilence = () => {
+      if (!isRecording.value || !analyser) return
+      
+      analyser.getByteFrequencyData(dataArray)
+      let sum = 0
+      for(let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i]
+      }
+      const average = sum / dataArray.length
+      
+      if (average > 3) { // User is talking
+        if (silenceTimeout) {
+          clearTimeout(silenceTimeout)
+          silenceTimeout = null
+        }
+      } else { // Silent
+        if (!silenceTimeout) {
+          silenceTimeout = setTimeout(() => {
+            if (isRecording.value) {
+              console.log("Silence detected, auto-submitting...")
+              toggleRecording()
+            }
+          }, 2000)
+        }
+      }
+    }
+    
+    silenceCheckInterval = setInterval(checkSilence, 100)
+  }, 1000)
+}
+
+const stopSilenceDetection = () => {
+  if (initialDelayTimeout) {
+    clearTimeout(initialDelayTimeout)
+    initialDelayTimeout = null
+  }
+  if (silenceTimeout) {
+    clearTimeout(silenceTimeout)
+    silenceTimeout = null
+  }
+  if (silenceCheckInterval) {
+    clearInterval(silenceCheckInterval)
+    silenceCheckInterval = null
+  }
+  if (microphone) {
+    microphone.disconnect()
+    microphone = null
+  }
+  if (audioContext && audioContext.state !== 'closed') {
+    audioContext.close().catch(() => {})
+    audioContext = null
+  }
+  analyser = null
+}
+
 // --- Audio Waveform Visualizer ---
 let waveOffset = 0
 const animateWaveform = () => {
@@ -241,20 +398,58 @@ const animateWaveform = () => {
   const height = wCanvas.height
   const centerY = height / 2
 
-  wCtx.strokeStyle = 'rgba(255, 255, 255, 0.25)'
-  wCtx.lineWidth = 1.2
-  wCtx.beginPath()
-  wCtx.moveTo(0, centerY)
-  wCtx.lineTo(width, centerY)
-  wCtx.stroke()
+  let activeAnalyser: AnalyserNode | null = null
+  let waveColor = '#ffffff'
 
-  const pulseX = (waveOffset * 30) % width
-  wCtx.beginPath()
-  wCtx.arc(pulseX, centerY, 1.8, 0, Math.PI * 2)
-  wCtx.fillStyle = '#ffffff'
-  wCtx.fill()
+  if (isRecording.value && analyser) {
+    activeAnalyser = analyser
+    waveColor = '#ffffff'
+  } else if (store.isTtsPlaying && store.globalAnalyser) {
+    activeAnalyser = store.globalAnalyser
+    waveColor = props.activeAgentColor
+  }
 
-  waveOffset += 0.08
+  if (activeAnalyser) {
+    const dataArray = new Uint8Array(activeAnalyser.frequencyBinCount)
+    activeAnalyser.getByteTimeDomainData(dataArray)
+    
+    wCtx.strokeStyle = waveColor
+    wCtx.lineWidth = 2
+    wCtx.beginPath()
+    
+    const sliceWidth = width * 1.0 / activeAnalyser.frequencyBinCount
+    let x = 0
+    
+    for (let i = 0; i < activeAnalyser.frequencyBinCount; i++) {
+      const v = dataArray[i] / 128.0 // 0.0 to 2.0
+      const y = (v * height) / 2
+      
+      if (i === 0) {
+        wCtx.moveTo(x, y)
+      } else {
+        wCtx.lineTo(x, y)
+      }
+      x += sliceWidth
+    }
+    wCtx.stroke()
+  } else {
+    // Idle flat line / fake pulse
+    wCtx.strokeStyle = 'rgba(255, 255, 255, 0.25)'
+    wCtx.lineWidth = 1.2
+    wCtx.beginPath()
+    wCtx.moveTo(0, centerY)
+    wCtx.lineTo(width, centerY)
+    wCtx.stroke()
+
+    const pulseX = (waveOffset * 30) % width
+    wCtx.beginPath()
+    wCtx.arc(pulseX, centerY, 1.8, 0, Math.PI * 2)
+    wCtx.fillStyle = '#ffffff'
+    wCtx.fill()
+
+    waveOffset += 0.08
+  }
+  
   waveAnimationFrameId = requestAnimationFrame(animateWaveform)
 }
 
@@ -267,13 +462,49 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  isComponentUnmounted = true
   window.removeEventListener('resize', resizeCanvas)
   cancelAnimationFrame(animationFrameId)
   cancelAnimationFrame(waveAnimationFrameId)
+  stopSilenceDetection()
+  if (mediaRecorder.value && isRecording.value) {
+    mediaRecorder.value.stop()
+  }
 })
 
 watch(() => props.isDebating, () => {
   // Speed or parameters can be reset here if needed
+})
+
+watch(() => store.isWakeWordTriggered, (triggered) => {
+  if (triggered && !isRecording.value) {
+    toggleRecording()
+  }
+})
+
+const voiceStateText = computed(() => {
+  if (isRecording.value) {
+    return 'ESTADO VOZ: ESCUCHANDO ORDEN'
+  }
+  if (store.isTtsPlaying) {
+    return 'ESTADO VOZ: ACTIVO'
+  }
+  if (store.isAutoListenEnabled) {
+    return 'ESTADO VOZ: ESPERANDO WAKE WORD'
+  }
+  return 'ESTADO VOZ: EN REPOSO'
+})
+
+const voiceDotStyle = computed(() => {
+  if (isRecording.value) {
+    return { backgroundColor: '#ffffff', boxShadow: '0 0 8px #ffffff' }
+  } else if (store.isTtsPlaying) {
+    return { 
+      backgroundColor: props.activeAgentColor, 
+      boxShadow: `0 0 8px ${props.activeAgentColor}` 
+    }
+  }
+  return { backgroundColor: '#475569' } // slate-600
 })
 </script>
 
@@ -314,7 +545,13 @@ watch(() => props.isDebating, () => {
     <div class="w-full bg-space-900/85 border-t border-slate-800/90 p-2.5 z-20 flex flex-col md:flex-row items-center justify-between gap-3 backdrop-blur-md shrink-0">
       <!-- Audio Deck Left: Microphone Button & Status Selector -->
       <div class="flex items-center space-x-3 w-full md:w-auto">
-        <button id="micButton" class="relative group px-3 py-1.5 rounded-lg bg-space-850 hover:bg-space-800 border border-slate-700 hover:border-cyan-400 text-slate-300 hover:text-cyan-200 transition-all flex items-center space-x-2 shadow-md shrink-0 active:scale-95" title="Activar micrófono para hablar (Pulsa para hablar)">
+        <button id="micButton" 
+          @click="toggleRecording"
+          :class="isRecording ? 'border-red-500 bg-red-900/30' : 'border-slate-700 hover:border-cyan-400 bg-space-850 hover:bg-space-800'"
+          class="relative group px-3 py-1.5 rounded-lg text-slate-300 hover:text-cyan-200 transition-all flex items-center space-x-2 shadow-md shrink-0 active:scale-95" 
+          title="Activar micrófono para hablar (Pulsa para hablar)"
+        >
+          <div v-if="isRecording" class="absolute w-2 h-2 rounded-full bg-red-500 -top-1 -right-1 animate-pulse"></div>
           <div class="w-7 h-7 rounded-full bg-space-900 flex items-center justify-center border border-slate-700 group-hover:border-cyan-400" id="micIconRing">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-mic w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition"><path d="M12 19v3"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><rect x="9" y="2" width="6" height="13" rx="3"></rect></svg>
           </div>
@@ -322,7 +559,7 @@ watch(() => props.isDebating, () => {
             <div class="text-[10px] font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1">
               <span>MIC VOZ</span>
             </div>
-            <div class="text-[8px] text-slate-400" id="micStatusSub">LISTO PARA ESCUCHAR</div>
+            <div class="text-[8px] text-slate-400" id="micStatusSub">{{ isRecording ? 'ESCUCHANDO...' : 'LISTO PARA ESCUCHAR' }}</div>
           </div>
         </button>
       </div>
@@ -334,8 +571,8 @@ watch(() => props.isDebating, () => {
 
       <!-- Audio Status Caption Right -->
       <div class="w-full md:w-auto text-[10px] text-slate-400 font-mono flex items-center space-x-2 justify-end shrink-0">
-        <span class="w-2 h-2 rounded-full bg-slate-600" id="voiceIndicatorDot"></span>
-        <span class="text-slate-400 font-mono" id="voiceStateCaption">ESTADO VOZ: EN REPOSO</span>
+        <span class="w-2 h-2 rounded-full transition-colors duration-300" id="voiceIndicatorDot" :style="voiceDotStyle"></span>
+        <span class="text-slate-400 font-mono" id="voiceStateCaption">{{ voiceStateText }}</span>
       </div>
     </div>
     

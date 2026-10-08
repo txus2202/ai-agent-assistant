@@ -286,4 +286,4 @@ async def _run_consolidation(
     
     final_response = await asyncio.to_thread(default_provider.complete, consolidation_prompt, default_model)
 
-    return SupervisorEvent(type=EventType.DONE, role=None, content=final_response)
+    return SupervisorEvent(type=EventType.DONE, role=AgentRole.SUPERVISOR, content=final_response)

@@ -101,7 +101,7 @@ class DebateWebSocketHandler:
             type=EventType.AGENT_COMPLETED, role=AgentRole.LEARNING, content=content
         ))
         await self.send_event(SupervisorEvent(
-            type=EventType.DONE, role=None, content=content
+            type=EventType.DONE, role=AgentRole.LEARNING, content=content
         ))
 
     async def _handle_sub_agent(self, target_agent: str, user_request: str) -> None:
@@ -128,7 +128,7 @@ class DebateWebSocketHandler:
                 type=EventType.AGENT_COMPLETED, role=role_enum, content=resp.content
             ))
             await self.send_event(SupervisorEvent(
-                type=EventType.DONE, role=None, content=resp.content
+                type=EventType.DONE, role=role_enum, content=resp.content
             ))
             
         except ValueError:
@@ -138,43 +138,42 @@ class DebateWebSocketHandler:
             await self.websocket.close(code=1003)
 
     async def process_messages(self) -> None:
-        raw_start = await self.websocket.receive_json()
-        if raw_start.get("type") != "start":
-            await self.websocket.send_json({"type": "error", "content": "Expected 'start' message"})
-            await self.websocket.close(code=1003)
-            return
+        while True:
+            raw_start = await self.websocket.receive_json()
+            if raw_start.get("type") != "start":
+                await self.websocket.send_json({"type": "error", "content": "Expected 'start' message"})
+                # We don't close, just wait for next message
+                continue
 
-        user_request = raw_start.get("user_request", "")
-        target_agent = raw_start.get("target_agent", "supervisor")
-        attachments = raw_start.get("attachments", [])
-        
-        logger.error(f"DEBUG: type(user_request)={type(user_request)} value={user_request}")
+            user_request = raw_start.get("user_request", "")
+            target_agent = raw_start.get("target_agent", "supervisor")
+            attachments = raw_start.get("attachments", [])
+            
+            logger.error(f"DEBUG: type(user_request)={type(user_request)} value={user_request}")
 
-        if not user_request:
-            await self.websocket.send_json({"type": "error", "content": "user_request is required"})
-            await self.websocket.close(code=1003)
-            return
+            if not user_request:
+                await self.websocket.send_json({"type": "error", "content": "user_request is required"})
+                continue
 
-        try:
-            _ = get_llm_provider(self.settings.default_provider)
-        except Exception as e:
-            await self.websocket.send_json({"type": "error", "content": f"Default provider error: {str(e)}"})
-            await self.websocket.close(code=1011)
-            return
+            try:
+                _ = get_llm_provider(self.settings.default_provider)
+            except Exception as e:
+                await self.websocket.send_json({"type": "error", "content": f"Default provider error: {str(e)}"})
+                continue
 
-        self.debate_record = DebateRecord(
-            user_request=user_request,
-            target_agent=target_agent,
-            status="running"
-        )
-        self.debate_repo.create(self.debate_record)
+            self.debate_record = DebateRecord(
+                user_request=user_request,
+                target_agent=target_agent,
+                status="running"
+            )
+            self.debate_repo.create(self.debate_record)
 
-        if target_agent == "supervisor":
-            await self._handle_supervisor(user_request)
-        elif target_agent == AgentRole.LEARNING.value:
-            await self._handle_learning(attachments)
-        else:
-            await self._handle_sub_agent(target_agent, user_request)
+            if target_agent == "supervisor":
+                await self._handle_supervisor(user_request)
+            elif target_agent == AgentRole.LEARNING.value:
+                await self._handle_learning(attachments)
+            else:
+                await self._handle_sub_agent(target_agent, user_request)
 
     def abort(self) -> None:
         if self.debate_record:

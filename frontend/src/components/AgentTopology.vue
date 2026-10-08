@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
+import { useDebateStore } from '../stores/debate'
 import AgentCard from './AgentCard.vue'
 import { AGENT_THEME, DEFAULT_AGENT_THEME } from '../config/agentTheme'
+
+const store = useDebateStore()
 
 const props = defineProps<{
   agents: Array<{
@@ -16,11 +19,11 @@ const getTheme = (role: string) => {
   return AGENT_THEME[role] || DEFAULT_AGENT_THEME
 }
 
-// Watch for changes in agents to trigger scrollIntoView on the active one
+// Watch for changes in agents or activeTtsRole to trigger scrollIntoView on the active one
 watch(
-  () => props.agents,
-  async (newAgents) => {
-    const activeIndex = newAgents.findIndex(a => a.state === 'ACTIVE')
+  () => [props.agents, store.activeTtsRole],
+  async () => {
+    const activeIndex = props.agents.findIndex(a => a.state === 'ACTIVE' || store.activeTtsRole === a.role)
     if (activeIndex !== -1) {
       await nextTick()
       const activeEl = listContainer.value?.children[activeIndex] as HTMLElement
@@ -54,7 +57,7 @@ watch(
         :key="agent.role"
         :role="agent.role"
         :roleName="agent.name"
-        :state="agent.state"
+        :state="store.activeTtsRole === agent.role ? 'ACTIVE' : agent.state"
         :colorClass="getTheme(agent.role).colorClass"
         :glowClass="getTheme(agent.role).glowClass"
       />

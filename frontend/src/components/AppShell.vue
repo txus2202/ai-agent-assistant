@@ -12,8 +12,13 @@ import { useRouter } from 'vue-router'
 
 const store = useDebateStore()
 const router = useRouter()
+const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null)
 
 const activeAgentColor = computed(() => {
+  if (store.activeTtsRole) {
+    return AGENT_THEME[store.activeTtsRole]?.hex || DEFAULT_AGENT_THEME.hex
+  }
+  
   const activeAgent = store.agents.find(a => a.state === 'ACTIVE')
   if (!activeAgent) return DEFAULT_AGENT_THEME.hex
   
@@ -49,6 +54,7 @@ const handleHitlAction = (decision: 'approve' | 'refine' | 'reject') => {
       <!-- Left Column: Chat Panel -->
       <div class="w-full md:w-1/3 lg:w-1/4 h-1/2 md:h-full z-10">
         <ChatPanel 
+          ref="chatPanelRef"
           :messages="store.messages"
           :is-debating="store.isDebating"
         />
@@ -59,7 +65,8 @@ const handleHitlAction = (decision: 'approve' | 'refine' | 'reject') => {
       
       <ParticleOrb 
         :active-agent-color="activeAgentColor"
-        :is-debating="store.isDebating"
+        :is-debating="store.isDebating || store.isTtsPlaying"
+        @submit-draft="chatPanelRef?.onSubmit()"
         class="flex-1"
       />
     </div>

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import ParticleOrb from '../ParticleOrb.vue'
 
 describe('ParticleOrb.vue', () => {
@@ -7,6 +8,7 @@ describe('ParticleOrb.vue', () => {
   let cancelAnimationFrameSpy: any
 
   beforeEach(() => {
+    setActivePinia(createPinia())
     // Mock Canvas API
     HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
       clearRect: vi.fn(),
@@ -91,5 +93,23 @@ describe('ParticleOrb.vue', () => {
     
     expect(wrapper.props('isDebating')).toBe(true)
     expect(wrapper.props('activeAgentColor')).toBe('#00e5ff')
+  })
+
+  it('displays correct voice state text when auto listen is enabled', async () => {
+    const wrapper = mount(ParticleOrb, {
+      props: { isDebating: false, activeAgentColor: '#ffffff' }
+    })
+    
+    // Default
+    expect(wrapper.text()).toContain('ESTADO VOZ: EN REPOSO')
+    
+    // Need to use the store to change state
+    const { useDebateStore } = await import('../../stores/debate')
+    const store = useDebateStore()
+    
+    store.isAutoListenEnabled = true
+    await wrapper.vm.$nextTick()
+    
+    expect(wrapper.text()).toContain('ESTADO VOZ: ESPERANDO WAKE WORD')
   })
 })

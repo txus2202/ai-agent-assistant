@@ -24,9 +24,61 @@ export const useDebateStore = defineStore('debate', () => {
   const hitlCheckpoint = ref<string | null>(null)
   const messages = ref<ChatMessage[]>([])
   const rawEvents = ref<any[]>([])
+  const draftMessage = ref('')
   
   const agents = ref<Agent[]>([])
   const isAgentsLoaded = ref(false)
+
+  // TTS State
+  const isTtsPlaying = ref(false)
+  const activeTtsRole = ref<string | null>(null)
+  const isVoiceOutputEnabled = ref(true)
+  const globalAudioPlayer = new Audio()
+  
+  // Auto-Listen (Wake-Word) State
+  // Expose isRecording so WW can be muted
+  const isRecording = ref(false)
+  const isAutoListenEnabled = ref(false)
+  const isWakeWordTriggered = ref(false)
+  
+  // Need to add crossOrigin to allow Web Audio API to process it
+  globalAudioPlayer.crossOrigin = 'anonymous'
+
+  // Web Audio API Context for waveform visualization
+  let globalAudioContext: AudioContext | null = null
+  const globalAnalyser = ref<AnalyserNode | null>(null)
+  let globalMediaSource: MediaElementAudioSourceNode | null = null
+
+  function unlockAudioContext() {
+    // 1. Unlock HTMLMediaElement
+    globalAudioPlayer.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA"
+    globalAudioPlayer.play().catch(() => {})
+
+    // 2. Create/Resume Web Audio Context for the waveform
+    try {
+      if (!globalAudioContext) {
+        globalAudioContext = new AudioContext()
+        const analyser = globalAudioContext.createAnalyser()
+        analyser.fftSize = 256
+        globalAnalyser.value = analyser
+        
+        globalMediaSource = globalAudioContext.createMediaElementSource(globalAudioPlayer)
+        globalMediaSource.connect(analyser)
+        analyser.connect(globalAudioContext.destination)
+      }
+      
+      if (globalAudioContext.state === 'suspended') {
+        globalAudioContext.resume().catch(() => {})
+      }
+    } catch (e) {
+      console.warn("Could not unlock Web Audio Context", e)
+    }
+  }
+
+  function stopTts() {
+    isTtsPlaying.value = false
+    activeTtsRole.value = null
+  }
 
   // Fetch agent topology from backend
   async function loadAgents() {
@@ -161,6 +213,8 @@ export const useDebateStore = defineStore('debate', () => {
   }
 
   function startDebate(userRequest: string, targetAgent: string = 'supervisor', attachmentUrl: string | null = null) {
+    stopTts() // Interrupt any ongoing TTS
+
     if (!isConnected.value || !ws) {
       messages.value.push({ role: 'assistant', content: 'Error: Cannot start debate, disconnected from server. Trying to reconnect...' })
       connect()
@@ -200,7 +254,8 @@ export const useDebateStore = defineStore('debate', () => {
       if (agent) agent.state = 'COMPLETED'
     } else if (event.type === 'done') {
       isDebating.value = false
-      messages.value.push({ role: 'assistant', content: event.content || 'Debate finished.' })
+      const prefix = event.role ? `[${event.role}] ` : ''
+      messages.value.push({ role: 'assistant', content: prefix + (event.content || 'Debate finished.') })
     } else if (event.type === 'error') {
       isDebating.value = false
       messages.value.push({ role: 'assistant', content: `Error: ${event.content}` })
@@ -223,7 +278,115 @@ export const useDebateStore = defineStore('debate', () => {
   }
 
   // Connect automatically on store initialization
-  connect()
+  if (import.meta.env.MODE !== 'test') {
+    connect()
+  }
+
+  let wakeWordWs: WebSocket | null = null
+  let wwAudioContext: AudioContext | null = null
+  let wwMicrophone: MediaStreamAudioSourceNode | null = null
+  let wwProcessor: ScriptProcessorNode | null = null
+  let wwStream: MediaStream | null = null
+
+  async function startAutoListen() {
+    if (isAutoListenEnabled.value) return
+    isAutoListenEnabled.value = true
+    isWakeWordTriggered.value = false
+
+    // Create AudioContext immediately on user click to avoid browser suspension
+    wwAudioContext = new AudioContext({ sampleRate: 16000 })
+    
+    // Convert ws://localhost:8000/ws/debate to /ws/audio/wake-word
+    let wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/debate'
+    wsUrl = wsUrl.replace('/ws/debate', '/ws/audio/wake-word')
+    
+    wakeWordWs = new WebSocket(wsUrl)
+    wakeWordWs.binaryType = 'arraybuffer'
+
+    wakeWordWs.onopen = async () => {
+      console.log('[WW] Connected to wake-word stream')
+      try {
+        wwStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        
+        // Resume if suspended
+        if (wwAudioContext?.state === 'suspended') {
+          await wwAudioContext.resume()
+        }
+        wwMicrophone = wwAudioContext.createMediaStreamSource(wwStream)
+        
+        // Use ScriptProcessorNode to get raw PCM
+        wwProcessor = wwAudioContext.createScriptProcessor(4096, 1, 1)
+        wwMicrophone.connect(wwProcessor)
+        wwProcessor.connect(wwAudioContext.destination)
+        
+        wwProcessor.onaudioprocess = (e) => {
+          if (!wakeWordWs || wakeWordWs.readyState !== WebSocket.OPEN) return
+          
+          // Do not listen for wake word if we are currently recording
+          if (isRecording.value) return
+
+          const inputData = e.inputBuffer.getChannelData(0) // Float32Array
+          // Convert Float32 to Int16
+          const pcm16 = new Int16Array(inputData.length)
+          for (let i = 0; i < inputData.length; i++) {
+            let s = Math.max(-1, Math.min(1, inputData[i]))
+            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
+          }
+          wakeWordWs.send(pcm16.buffer)
+        }
+      } catch (e) {
+        console.error('[WW] Error accessing microphone for auto-listen', e)
+        stopAutoListen()
+      }
+    }
+
+    wakeWordWs.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (data.type === 'WAKE_WORD_DETECTED') {
+          console.log('[WW] Wake word detected!')
+          stopTts() // Interrupt any ongoing TTS
+          isWakeWordTriggered.value = true // UI should watch this to start recording
+          
+          // Reset after a short delay so it can be triggered again later
+          setTimeout(() => {
+            isWakeWordTriggered.value = false
+          }, 1000)
+        }
+      } catch(e) {}
+    }
+
+    wakeWordWs.onclose = () => {
+      console.log('[WW] Disconnected from wake-word stream')
+      stopAutoListen()
+    }
+  }
+
+  function stopAutoListen() {
+    isAutoListenEnabled.value = false
+    isWakeWordTriggered.value = false
+    
+    if (wakeWordWs) {
+      wakeWordWs.close()
+      wakeWordWs = null
+    }
+    if (wwProcessor) {
+      wwProcessor.disconnect()
+      wwProcessor = null
+    }
+    if (wwMicrophone) {
+      wwMicrophone.disconnect()
+      wwMicrophone = null
+    }
+    if (wwAudioContext) {
+      wwAudioContext.close().catch(() => {})
+      wwAudioContext = null
+    }
+    if (wwStream) {
+      wwStream.getTracks().forEach(t => t.stop())
+      wwStream = null
+    }
+  }
 
   return {
     isConnected,
@@ -232,8 +395,18 @@ export const useDebateStore = defineStore('debate', () => {
     hitlCheckpoint,
     messages,
     rawEvents,
+    draftMessage,
     agents,
     isAgentsLoaded,
+    isTtsPlaying,
+    activeTtsRole,
+    isVoiceOutputEnabled,
+    isAutoListenEnabled,
+    isWakeWordTriggered,
+    globalAudioPlayer,
+    globalAnalyser,
+    unlockAudioContext,
+    stopTts,
     loadAgents,
     loadDebate,
     connect,
@@ -241,6 +414,8 @@ export const useDebateStore = defineStore('debate', () => {
     uploadFile,
     handleSupervisorEvent,
     submitHitlDecision,
+    startAutoListen,
+    stopAutoListen,
     get ws() { return ws } // Getter for testing purposes
   }
 })

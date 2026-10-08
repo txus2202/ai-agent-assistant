@@ -23,3 +23,9 @@ uvicorn[standard]>=0.30
 pydantic-settings>=2.3
 python-multipart>=0.0.9     # required by FastAPI for file upload (multipart/form-data)
 aiofiles>=23.2              # required for async file IO
+
+# Phase 5: Audio
+faster-whisper>=1.0
+kokoro-onnx>=0.4.7
+soundfile>=0.12.1
+vosk>=0.3.45

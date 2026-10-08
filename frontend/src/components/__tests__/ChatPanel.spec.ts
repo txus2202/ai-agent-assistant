@@ -12,7 +12,8 @@ vi.mock('../../stores/debate', () => ({
     isDebating: false,
     messages: [],
     startDebate: mockStartDebate,
-    uploadFile: mockUploadFile
+    uploadFile: mockUploadFile,
+    draftMessage: ''
   })
 }))
 

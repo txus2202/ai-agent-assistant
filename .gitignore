@@ -41,3 +41,8 @@ obsidian_vault/.obsidian/
 
 # ChromaDB
 .chroma/
+
+# AI Models and Temp Files
+backend/voices/
+*.ses
+backend/src/infrastructure/models/vosk/

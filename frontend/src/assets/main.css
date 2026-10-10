@@ -1,6 +1,29 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-space-950: #05070c;
+  --color-space-900: #070b12;
+  --color-space-850: #0b111c;
+  --color-space-800: #0f1726;
+  --color-space-750: #141f33;
+  --color-space-700: #1a2942;
+  
+  --color-neon-green: #00ff9d;
+  --color-neon-cyan: #00e5ff;
+  --color-neon-blue: #2979ff;
+  --color-neon-amber: #ffd000;
+  --color-neon-red: #ef4444;
+  --color-neon-purple: #b347ff;
+  --color-neon-orange: #ff8800;
+  --color-neon-darkgreen: #00ff9d;
+  --color-neon-lightgreen: #22c55e;
+  --color-neon-darkblue: #1d4ed8;
+
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+@custom-variant dark (&:is(.dark *));
 
 @layer base {
   body {

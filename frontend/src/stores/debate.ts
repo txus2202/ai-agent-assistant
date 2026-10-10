@@ -312,12 +312,12 @@ export const useDebateStore = defineStore('debate', () => {
         if (wwAudioContext?.state === 'suspended') {
           await wwAudioContext.resume()
         }
-        wwMicrophone = wwAudioContext.createMediaStreamSource(wwStream)
+        wwMicrophone = wwAudioContext!.createMediaStreamSource(wwStream)
         
         // Use ScriptProcessorNode to get raw PCM
-        wwProcessor = wwAudioContext.createScriptProcessor(4096, 1, 1)
+        wwProcessor = wwAudioContext!.createScriptProcessor(4096, 1, 1)
         wwMicrophone.connect(wwProcessor)
-        wwProcessor.connect(wwAudioContext.destination)
+        wwProcessor.connect(wwAudioContext!.destination)
         
         wwProcessor.onaudioprocess = (e) => {
           if (!wakeWordWs || wakeWordWs.readyState !== WebSocket.OPEN) return
@@ -329,7 +329,7 @@ export const useDebateStore = defineStore('debate', () => {
           // Convert Float32 to Int16
           const pcm16 = new Int16Array(inputData.length)
           for (let i = 0; i < inputData.length; i++) {
-            let s = Math.max(-1, Math.min(1, inputData[i]))
+            let s = Math.max(-1, Math.min(1, inputData[i] || 0))
             pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
           }
           wakeWordWs.send(pcm16.buffer)
@@ -402,6 +402,7 @@ export const useDebateStore = defineStore('debate', () => {
     activeTtsRole,
     isVoiceOutputEnabled,
     isAutoListenEnabled,
+    isRecording,
     isWakeWordTriggered,
     globalAudioPlayer,
     globalAnalyser,

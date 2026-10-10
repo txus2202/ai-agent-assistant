@@ -9,6 +9,7 @@ const store = useDebateStore()
 const props = defineProps<{
   agents: Array<{
     role: string
+    name?: string
     state: 'STANDBY' | 'ACTIVE' | 'COMPLETED'
   }>
 }>()

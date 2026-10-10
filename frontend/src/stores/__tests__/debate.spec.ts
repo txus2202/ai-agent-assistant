@@ -51,8 +51,8 @@ describe('useDebateStore', () => {
     await store.loadAgents()
 
     expect(store.agents).toHaveLength(1)
-    expect(store.agents[0].role).toBe('nl_interpreter')
-    expect(store.agents[0].state).toBe('STANDBY')
+    expect(store.agents[0]!.role).toBe('nl_interpreter')
+    expect(store.agents[0]!.state).toBe('STANDBY')
     expect(store.isAgentsLoaded).toBe(true)
   })
 
@@ -66,8 +66,8 @@ describe('useDebateStore', () => {
     
     expect(store.isDebating).toBe(true)
     expect(store.messages).toHaveLength(1)
-    expect(store.messages[0].content).toBe('test task')
-    expect(store.messages[0].role).toBe('user')
+    expect(store.messages[0]!.content).toBe('test task')
+    expect(store.messages[0]!.role).toBe('user')
     // We can verify send was called on the mocked ws
     expect(mockSend).toHaveBeenCalledWith(JSON.stringify({ 
       type: 'start', 

@@ -71,8 +71,8 @@ export const useConfigStore = defineStore('config', {
         if (response.ok) {
           const index = this.agentsConfig.findIndex(a => a.id === role)
           if (index !== -1) {
-            this.agentsConfig[index].provider = provider
-            this.agentsConfig[index].model_name = modelName
+            this.agentsConfig[index]!.provider = provider
+            this.agentsConfig[index]!.model_name = modelName
           }
         }
       } catch (error) {

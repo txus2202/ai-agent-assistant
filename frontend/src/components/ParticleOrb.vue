@@ -143,7 +143,7 @@ const animateOrb = () => {
   // Draw Plexus Connections
   ctx!.lineWidth = 0.5
   for (let i = 0; i < particles.length; i++) {
-    const p1 = particles[i]
+    const p1 = particles[i]!
     if (p1.z < -700) continue // Skip far particles for performance
     
     // Determine color based on active state and group
@@ -152,7 +152,7 @@ const animateOrb = () => {
     
     // Only check connections for a subset to save performance
     for (let j = i + 1; j < particles.length; j += 2) {
-      const p2 = particles[j]
+      const p2 = particles[j]!
       if (p2.z < -700) continue
       
       const dx = p1.x - p2.x
@@ -336,7 +336,7 @@ const startSilenceDetection = (stream: MediaStream) => {
       analyser.getByteFrequencyData(dataArray)
       let sum = 0
       for(let i = 0; i < dataArray.length; i++) {
-        sum += dataArray[i]
+        sum += dataArray[i]!
       }
       const average = sum / dataArray.length
       
@@ -421,7 +421,7 @@ const animateWaveform = () => {
     let x = 0
     
     for (let i = 0; i < activeAnalyser.frequencyBinCount; i++) {
-      const v = dataArray[i] / 128.0 // 0.0 to 2.0
+      const v = dataArray[i]! / 128.0 // 0.0 to 2.0
       const y = (v * height) / 2
       
       if (i === 0) {

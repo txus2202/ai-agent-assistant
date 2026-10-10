@@ -30,7 +30,7 @@ describe('useConfigStore', () => {
     await store.loadAgentsConfig()
 
     expect(store.agentsConfig).toHaveLength(1)
-    expect(store.agentsConfig[0].provider).toBe('gemini')
+    expect(store.agentsConfig[0]!.provider).toBe('gemini')
     expect(global.fetch).toHaveBeenCalledWith('/api/config/agents')
   })
 
@@ -53,7 +53,7 @@ describe('useConfigStore', () => {
       body: JSON.stringify({ provider: 'openai', model_name: 'gpt-4o' })
     })
 
-    expect(store.agentsConfig[0].provider).toBe('openai')
-    expect(store.agentsConfig[0].model_name).toBe('gpt-4o')
+    expect(store.agentsConfig[0]!.provider).toBe('openai')
+    expect(store.agentsConfig[0]!.model_name).toBe('gpt-4o')
   })
 })

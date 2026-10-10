@@ -22,7 +22,7 @@ const provider = computed({
     let defaultModel = ''
     const selectedProvider = store.providers.find(p => p.id === val)
     if (selectedProvider && selectedProvider.models.length > 0) {
-      defaultModel = selectedProvider.models[0].id
+      defaultModel = selectedProvider.models[0]?.id || ''
     }
     store.updateAgentConfig(props.role, val, defaultModel)
   }

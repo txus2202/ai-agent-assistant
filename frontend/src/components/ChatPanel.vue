@@ -4,7 +4,7 @@ import { SendHorizontal, Paperclip, Activity, MessageSquare, Check, User, Bot, C
 import { useDebateStore } from '../stores/debate'
 
 const props = defineProps<{
-  messages: Array<{ role: 'user' | 'assistant', content: string }>
+  messages: Array<{ role: 'user' | 'assistant', content: string, agentName?: string }>
   isDebating: boolean
 }>()
 
@@ -199,7 +199,7 @@ watch(() => props.messages.length, (newLen, oldLen) => {
 const handleFileChange = (e: Event) => {
   const target = e.target as HTMLInputElement
   if (target.files && target.files.length > 0) {
-    selectedFile.value = target.files[0]
+    selectedFile.value = target.files[0] || null
   }
 }
 

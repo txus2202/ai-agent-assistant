@@ -8,10 +8,8 @@ import HITLActionButton from './HITLActionButton.vue'
 import EventStream from './EventStream.vue'
 import AppHeader from './AppHeader.vue'
 import { AGENT_THEME, DEFAULT_AGENT_THEME } from '../config/agentTheme'
-import { useRouter } from 'vue-router'
 
 const store = useDebateStore()
-const router = useRouter()
 const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null)
 
 const activeAgentColor = computed(() => {
@@ -94,7 +92,9 @@ const handleHitlAction = (decision: 'approve' | 'refine' | 'reject') => {
               
               <!-- Inline Refine Textarea -->
               <div v-else class="flex flex-col space-y-2 animate-fade-in">
+                <label for="hitl-feedback" class="sr-only">Feedback for the agent</label>
                 <textarea 
+                  id="hitl-feedback"
                   v-model="feedbackText"
                   class="w-full h-24 bg-space-950 border border-neon-amber/50 rounded p-2 text-sm font-mono text-slate-300 focus:outline-none focus:border-neon-amber focus:ring-1 focus:ring-neon-amber/50 resize-none custom-scrollbar"
                   placeholder="Provide your feedback to the agent..."

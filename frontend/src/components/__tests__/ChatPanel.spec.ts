@@ -227,6 +227,7 @@ describe('ChatPanel.vue', () => {
   it('handles file upload error by alerting the user and halting debate start', async () => {
     mockUploadFile.mockRejectedValueOnce(new Error('File rejected'))
     global.alert = vi.fn()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
 
     const wrapper = mount(ChatPanel, {
       props: {

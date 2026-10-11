@@ -267,6 +267,8 @@ describe('useDebateStore', () => {
   })
 
   it('handles startAutoListen getUserMedia error gracefully', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(console, 'log').mockImplementation(() => {})
     const store = useDebateStore()
 
     Object.defineProperty(global.navigator, 'mediaDevices', {
@@ -386,6 +388,7 @@ describe('useDebateStore', () => {
   })
 
   it('handles loadAgents fallback when backend API fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     global.fetch = vi.fn().mockRejectedValue(new Error('Network error'))
 
     const store = useDebateStore()
@@ -418,6 +421,8 @@ describe('useDebateStore', () => {
   })
 
   it('handles websocket open, message, error, and close lifecycle events', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(console, 'log').mockImplementation(() => {})
     const store = useDebateStore()
     store.connect()
 

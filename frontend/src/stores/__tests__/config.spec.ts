@@ -75,6 +75,7 @@ describe('useConfigStore', () => {
   })
 
   it('handles loadProviders fetch error without throwing', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     global.fetch = vi.fn().mockRejectedValue(new Error('Network error'))
     const store = useConfigStore()
 
@@ -83,6 +84,7 @@ describe('useConfigStore', () => {
   })
 
   it('handles loadAgentsConfig error gracefully and resets isLoading', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     global.fetch = vi.fn().mockRejectedValue(new Error('API failure'))
     const store = useConfigStore()
 
@@ -110,6 +112,7 @@ describe('useConfigStore', () => {
   })
 
   it('handles updateAgentConfig network exception gracefully', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     const store = useConfigStore()
     store.agentsConfig = [
       { id: 'supervisor', name: 'Supervisor', provider: 'gemini', model_name: 'gemini-1.5-pro' }

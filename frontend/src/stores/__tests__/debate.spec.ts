@@ -224,28 +224,30 @@ describe('useDebateStore', () => {
 
     const wakeWordWs = activeSockets[activeSockets.length - 1]
     expect(wakeWordWs).toBeDefined()
+    if (!wakeWordWs) throw new Error('wakeWordWs not initialized')
 
     // Trigger onopen
-    await wakeWordWs.onopen()
+    await wakeWordWs.onopen?.()
 
-    expect(createdProcessor).toBeDefined()
-    expect(createdProcessor.port.onmessage).toBeDefined()
+    const processor = createdProcessor as unknown as MockAudioWorkletNodeWithCapture
+    expect(processor).toBeDefined()
+    expect(processor.port.onmessage).toBeDefined()
 
     // Simulate sending PCM audio data through AudioWorklet port
     const floatData = new Float32Array([0.5, -0.5, 0.0])
-    createdProcessor.port.onmessage({ data: floatData })
+    processor.port.onmessage?.({ data: floatData })
     expect(mockSend).toHaveBeenCalledWith(expect.any(ArrayBuffer))
 
     // If store is recording, it should skip sending
     mockSend.mockClear()
     store.isRecording = true
-    createdProcessor.port.onmessage({ data: floatData })
+    processor.port.onmessage?.({ data: floatData })
     expect(mockSend).not.toHaveBeenCalled()
     store.isRecording = false
 
     // Simulate wake word detected event from server
     store.isTtsPlaying = true
-    wakeWordWs.onmessage({
+    wakeWordWs.onmessage?.({
       data: JSON.stringify({ type: 'WAKE_WORD_DETECTED' })
     })
 
@@ -257,7 +259,7 @@ describe('useDebateStore', () => {
     expect(store.isWakeWordTriggered).toBe(false)
 
     // Trigger onclose callback
-    wakeWordWs.onclose()
+    wakeWordWs.onclose?.()
     expect(store.isAutoListenEnabled).toBe(false)
     expect(mockTrackStop).toHaveBeenCalled()
 
@@ -277,8 +279,9 @@ describe('useDebateStore', () => {
 
     store.startAutoListen()
     const wakeWordWs = activeSockets[activeSockets.length - 1]
+    if (!wakeWordWs) throw new Error('wakeWordWs not initialized')
 
-    await wakeWordWs.onopen()
+    await wakeWordWs.onopen?.()
     expect(store.isAutoListenEnabled).toBe(false)
   })
 
@@ -420,13 +423,14 @@ describe('useDebateStore', () => {
 
     const wsInstance = activeSockets[0]
     expect(wsInstance).toBeDefined()
+    if (!wsInstance) throw new Error('wsInstance not initialized')
 
     // 1. onopen
-    wsInstance.onopen()
+    wsInstance.onopen?.()
     expect(store.isConnected).toBe(true)
 
     // 2. onmessage with valid data
-    wsInstance.onmessage({
+    wsInstance.onmessage?.({
       data: JSON.stringify({ type: 'message', role: 'supervisor', content: 'Debate stream initialized.' })
     })
     expect(store.rawEvents).toHaveLength(1)
@@ -434,14 +438,14 @@ describe('useDebateStore', () => {
     expect(store.messages[0]!.content).toBe('[supervisor] Debate stream initialized.')
 
     // 3. onmessage with invalid JSON does not throw
-    wsInstance.onmessage({ data: 'invalid json payload' })
+    wsInstance.onmessage?.({ data: 'invalid json payload' })
     expect(store.rawEvents).toHaveLength(1)
 
     // 4. onerror
-    wsInstance.onerror(new Error('Network drop'))
+    wsInstance.onerror?.(new Error('Network drop'))
 
     // 5. onclose
-    wsInstance.onclose()
+    wsInstance.onclose?.()
     expect(store.isConnected).toBe(false)
   })
 

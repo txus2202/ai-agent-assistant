@@ -62,11 +62,11 @@ class LocalAudioService(IAudioService):
         """
         def _transcribe():
             model = self._get_whisper_model()
-            segments, info = model.transcribe(
+            segments, _ = model.transcribe(
                 audio_file, 
                 beam_size=5,
                 vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=500),
+                vad_parameters={"min_silence_duration_ms": 500},
                 initial_prompt="This is a conversation in Spanish and English. Hola, ¿cómo estás? Hello, how are you?"
             )
             text = " ".join([segment.text for segment in segments])

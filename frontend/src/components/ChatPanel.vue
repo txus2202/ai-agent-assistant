@@ -62,27 +62,17 @@ onUnmounted(() => {
 
 // TTS Queue logic for gapless sentence-by-sentence playback
 let ttsTextQueue: string[] = []
-let ttsAudioQueue: string[] = []
+let ttsAudioQueue: ArrayBuffer[] = []
 let isPrefetching = false
+let isPlayingAudio = false
 
 // Watch store.isTtsPlaying to abort playback
 watch(() => store.isTtsPlaying, (isPlaying) => {
   if (!isPlaying) {
-    // Don't interrupt the silent unlock audio
-    if (!store.globalAudioPlayer.src || !store.globalAudioPlayer.src.startsWith('data:audio')) {
-      try {
-        store.globalAudioPlayer.pause()
-      } catch {
-        // Ignore errors when pausing an unavailable player
-      }
-      store.globalAudioPlayer.removeAttribute('src')
-    }
-    
-    store.globalAudioPlayer.onended = null
     ttsTextQueue = []
-    ttsAudioQueue.forEach(url => URL.revokeObjectURL(url))
     ttsAudioQueue = []
     isPrefetching = false
+    isPlayingAudio = false
   }
 })
 
@@ -130,16 +120,12 @@ const prefetchTtsQueue = async () => {
         return
       }
 
-      const audioBlob = await response.blob()
-      const audioUrl = URL.createObjectURL(audioBlob)
-      ttsAudioQueue.push(audioUrl)
+      const audioBuffer = await response.arrayBuffer()
+      ttsAudioQueue.push(audioBuffer)
       
-      // If player is idle (or has no valid blob src), start playing immediately
-      if (store.isTtsPlaying) {
-        const isIdle = store.globalAudioPlayer.paused || !store.globalAudioPlayer.src || !store.globalAudioPlayer.src.startsWith('blob:')
-        if (isIdle) {
-          playNextAudio()
-        }
+      // If audio player is idle, start playing immediately
+      if (store.isTtsPlaying && !isPlayingAudio) {
+        playNextAudio()
       }
     }
   } catch (e) {
@@ -154,7 +140,9 @@ const prefetchTtsQueue = async () => {
   }
 }
 
-const playNextAudio = () => {
+const playNextAudio = async () => {
+  if (isPlayingAudio) return
+
   if (ttsAudioQueue.length === 0) {
     if (ttsTextQueue.length === 0 && !isPrefetching) {
       // Completely done playing all queued TTS
@@ -165,33 +153,21 @@ const playNextAudio = () => {
   
   if (!store.isTtsPlaying) return
   
-  const nextAudioUrl = ttsAudioQueue.shift()!
+  isPlayingAudio = true
+  const nextChunk = ttsAudioQueue.shift()!
   
-  store.globalAudioPlayer.src = nextAudioUrl
-  
-  store.globalAudioPlayer.onended = () => {
-    URL.revokeObjectURL(nextAudioUrl) // free memory
-    store.globalAudioPlayer.onended = null
-    playNextAudio()
-  }
-  
-  store.globalAudioPlayer.play().catch(e => {
-    console.error("Play error:", e)
-    store.globalAudioPlayer.onended = null
-    if (e?.name === 'NotAllowedError') {
-      // Autoplay blocked (Safari): keep the audio and retry on the next user gesture
-      ttsAudioQueue.unshift(nextAudioUrl)
-      const retry = () => {
-        store.unlockAudioContext()
-        if (store.isTtsPlaying) setTimeout(playNextAudio, 150)
-      }
-      window.addEventListener('pointerdown', retry, { once: true })
-      window.addEventListener('keydown', retry, { once: true })
-      return
+  try {
+    if (store.playTtsAudioChunk) {
+      await store.playTtsAudioChunk(nextChunk)
     }
-    URL.revokeObjectURL(nextAudioUrl)
-    playNextAudio() // Continue to next if play fails
-  })
+  } catch (e) {
+    console.error("Play error:", e)
+  } finally {
+    isPlayingAudio = false
+    if (store.isTtsPlaying) {
+      playNextAudio()
+    }
+  }
 }
 
 // Hook to play TTS when debating finishes or hits HITL

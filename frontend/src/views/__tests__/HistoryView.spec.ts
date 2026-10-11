@@ -80,4 +80,27 @@ describe('HistoryView.vue', () => {
     expect(global.fetch).toHaveBeenCalledWith('/api/debates/123', { method: 'DELETE' })
     expect(wrapper.text()).not.toContain('Session 123')
   })
+
+  it('restores a debate on click and keyboard Enter', async () => {
+    const mockDebates = [
+      { id: '123', created_at: '2023-10-01T12:00:00Z', events: [{ type: 'start', user_request: 'Test prompt' }] }
+    ]
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockDebates)
+    })
+
+    const wrapper = mount(HistoryView, {
+      global: { plugins: [router, createPinia()] }
+    })
+    await flushPromises()
+
+    const card = wrapper.find('[role="button"]')
+    expect(card.exists()).toBe(true)
+    expect(card.attributes('tabindex')).toBe('0')
+
+    const pushSpy = vi.spyOn(router, 'push')
+    await card.trigger('keydown', { key: 'Enter' })
+    expect(pushSpy).toHaveBeenCalledWith('/')
+  })
 })

@@ -18,7 +18,7 @@ def test_wake_word_service_process_chunk(mock_kaldi, mock_model_class):
     
     # Call process_chunk with a zero-filled byte array
     audio_chunk = b'\x00' * 4096
-    detected = service.process_chunk(audio_chunk, threshold=0.5)
+    detected = service.process_chunk(audio_chunk)
     
     assert detected is True
     mock_kaldi.assert_called_once()
@@ -35,6 +35,6 @@ def test_wake_word_service_no_detection(mock_kaldi, mock_model_class):
     service = WakeWordService()
     
     audio_chunk = b'\x00' * 4096
-    detected = service.process_chunk(audio_chunk, threshold=0.5)
+    detected = service.process_chunk(audio_chunk)
     
     assert detected is False

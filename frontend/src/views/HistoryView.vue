@@ -55,6 +55,14 @@ const restoreDebate = (debate: DebateRecord) => {
   store.loadDebate(debate)
   router.push('/')
 }
+
+const handleCardKeyDown = (event: KeyboardEvent, debate: DebateRecord) => {
+  if (event.target !== event.currentTarget) return
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    restoreDebate(debate)
+  }
+}
 </script>
 
 <template>
@@ -94,8 +102,11 @@ const restoreDebate = (debate: DebateRecord) => {
         <div 
           v-for="debate in debates" 
           :key="debate.id"
+          role="button"
+          tabindex="0"
           @click="restoreDebate(debate)"
-          class="bg-space-900 border border-space-700 rounded-xl p-6 transition-all hover:border-neon-cyan/50 hover:bg-space-800/50 cursor-pointer group"
+          @keydown="handleCardKeyDown($event, debate)"
+          class="bg-space-900 border border-space-700 rounded-xl p-6 transition-all hover:border-neon-cyan/50 hover:bg-space-800/50 cursor-pointer group focus:outline-none focus:border-neon-cyan/50 focus:ring-1 focus:ring-neon-cyan/50"
         >
           <div class="flex justify-between items-start">
             <div class="w-full pr-4">

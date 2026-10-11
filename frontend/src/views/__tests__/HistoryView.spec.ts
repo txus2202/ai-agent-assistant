@@ -81,7 +81,7 @@ describe('HistoryView.vue', () => {
     expect(wrapper.text()).not.toContain('Session 123')
   })
 
-  it('restores a debate on click and keyboard Enter', async () => {
+  it('restores a debate on click', async () => {
     const mockDebates = [
       { id: '123', created_at: '2023-10-01T12:00:00Z', events: [{ type: 'start', user_request: 'Test prompt' }] }
     ]
@@ -95,12 +95,12 @@ describe('HistoryView.vue', () => {
     })
     await flushPromises()
 
-    const card = wrapper.find('[role="button"]')
-    expect(card.exists()).toBe(true)
-    expect(card.attributes('tabindex')).toBe('0')
+    const cardBtn = wrapper.find('.session-card')
+    expect(cardBtn.exists()).toBe(true)
+    expect(cardBtn.element.tagName).toBe('BUTTON')
 
     const pushSpy = vi.spyOn(router, 'push')
-    await card.trigger('keydown', { key: 'Enter' })
+    await cardBtn.trigger('click')
     expect(pushSpy).toHaveBeenCalledWith('/')
   })
 })

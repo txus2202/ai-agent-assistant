@@ -17,7 +17,10 @@ const mockStore = {
   draftMessage: '',
   isVoiceOutputEnabled: false,
   isTtsPlaying: false,
-  activeTtsRole: null
+  activeTtsRole: null as string | null,
+  playTtsAudioChunk: vi.fn(),
+  stopTts: vi.fn(),
+  unlockAudioContext: vi.fn()
 }
 
 vi.mock('../../stores/debate', () => ({
@@ -27,6 +30,7 @@ vi.mock('../../stores/debate', () => ({
 describe('ChatPanel.vue', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    Element.prototype.scrollIntoView = vi.fn()
   })
 
   afterEach(() => {
@@ -199,5 +203,117 @@ describe('ChatPanel.vue', () => {
     await (wrapper.vm as unknown as { onSubmit: () => Promise<void> }).onSubmit()
 
     expect(mockStartDebate).toHaveBeenCalledWith('Voice drafted prompt', 'supervisor', null)
+  })
+
+  it('closes agent dropdown when clicking outside', async () => {
+    const wrapper = mount(ChatPanel, {
+      props: {
+        messages: [],
+        isDebating: false
+      }
+    })
+
+    const dropdownBtn = wrapper.find('[data-test="agent-dropdown-btn"]')
+    await dropdownBtn.trigger('click')
+    expect(wrapper.find('[data-test="agent-option"]').exists()).toBe(true)
+
+    // Simulate clicking outside
+    document.dispatchEvent(new MouseEvent('click'))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-test="agent-option"]').exists()).toBe(false)
+  })
+
+  it('handles file upload error by alerting the user and halting debate start', async () => {
+    mockUploadFile.mockRejectedValueOnce(new Error('File rejected'))
+    global.alert = vi.fn()
+
+    const wrapper = mount(ChatPanel, {
+      props: {
+        messages: [],
+        isDebating: false
+      }
+    })
+
+    const dropdownBtn = wrapper.find('[data-test="agent-dropdown-btn"]')
+    await dropdownBtn.trigger('click')
+    const learningOption = wrapper.findAll('[data-test="agent-option"]').find(b => b.text().includes('Learning Agent'))
+    await learningOption!.trigger('click')
+
+    const fileInput = wrapper.find('[data-test="file-input"]')
+    const file = new File(['content'], 'test.pdf')
+    Object.defineProperty(fileInput.element, 'files', { value: [file], writable: false })
+    await fileInput.trigger('change')
+
+    const textarea = wrapper.find('textarea')
+    await textarea.setValue('Help with file')
+    await wrapper.find('form').trigger('submit.prevent')
+
+    expect(global.alert).toHaveBeenCalledWith('Error uploading file. Please try again.')
+    expect(mockStartDebate).not.toHaveBeenCalled()
+  })
+
+  it('triggers voice synthesis when a new assistant message arrives and voice output is enabled', async () => {
+    mockStore.isVoiceOutputEnabled = true
+    mockStore.playTtsAudioChunk = vi.fn().mockResolvedValue(undefined)
+    mockStore.stopTts = vi.fn()
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(8))
+    })
+
+    const wrapper = mount(ChatPanel, {
+      props: {
+        messages: [],
+        isDebating: false
+      }
+    })
+
+    await wrapper.setProps({
+      messages: [
+        { role: 'assistant', content: '[senior_architect] System architecture approved. Ready for deployment.' }
+      ]
+    })
+
+    expect(mockStore.isTtsPlaying).toBe(true)
+    expect(mockStore.activeTtsRole).toBe('senior_architect')
+    expect(global.fetch).toHaveBeenCalledWith('/api/audio/synthesize', expect.any(Object))
+  })
+
+  it('renders Silenciar button when TTS is playing and stops TTS on click', async () => {
+    mockStore.isTtsPlaying = true
+    const stopTtsSpy = vi.fn()
+    mockStore.stopTts = stopTtsSpy
+
+    const wrapper = mount(ChatPanel, {
+      props: {
+        messages: [
+          { role: 'assistant', content: 'Assistant speech here', agentName: 'SUPERVISOR AGENT' }
+        ],
+        isDebating: false
+      }
+    })
+
+    const muteBtn = wrapper.find('button[title="Detener lectura de este mensaje"]')
+    expect(muteBtn.exists()).toBe(true)
+    await muteBtn.trigger('click')
+    expect(stopTtsSpy).toHaveBeenCalled()
+  })
+
+  it('unlocks audio context on submit when voice output is enabled', async () => {
+    mockStore.isVoiceOutputEnabled = true
+    const unlockSpy = vi.fn()
+    mockStore.unlockAudioContext = unlockSpy
+
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: false }
+    })
+
+    const textarea = wrapper.find('textarea')
+    await textarea.setValue('Prompt with voice enabled')
+    await wrapper.find('form').trigger('submit.prevent')
+
+    expect(unlockSpy).toHaveBeenCalled()
   })
 })

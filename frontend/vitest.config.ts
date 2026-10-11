@@ -12,7 +12,8 @@ export default mergeConfig(
       coverage: {
         provider: 'v8',
         reporter: ['text', 'json', 'lcov'],
-        reportsDirectory: './coverage'
+        reportsDirectory: './coverage',
+        exclude: [...configDefaults.exclude, '**/*.css', 'e2e/**']
       }
     },
   }),

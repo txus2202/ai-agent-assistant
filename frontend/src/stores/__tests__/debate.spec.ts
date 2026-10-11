@@ -2,27 +2,94 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useDebateStore } from '../debate'
 
+interface MockWebSocketInstance {
+  readyState: number
+  send: ReturnType<typeof vi.fn>
+  close: ReturnType<typeof vi.fn>
+  addEventListener: ReturnType<typeof vi.fn>
+  removeEventListener: ReturnType<typeof vi.fn>
+  onopen: (() => void | Promise<void>) | null
+  onclose: (() => void) | null
+  onmessage: ((event: { data: string }) => void) | null
+  onerror: ((err: unknown) => void) | null
+}
+
 describe('useDebateStore', () => {
   let originalWebSocket: typeof WebSocket
-
   let mockSend: ReturnType<typeof vi.fn>
+  let activeSockets: MockWebSocketInstance[] = []
 
   beforeEach(() => {
     setActivePinia(createPinia())
     originalWebSocket = global.WebSocket
     mockSend = vi.fn()
+    activeSockets = []
     class MockWebSocket {
       readyState = WebSocket.OPEN
       send = mockSend
       close = vi.fn()
       addEventListener = vi.fn()
       removeEventListener = vi.fn()
-      onopen = null
-      onclose = null
-      onmessage = null
-      onerror = null
+      onopen: (() => void) | null = null
+      onclose: (() => void) | null = null
+      onmessage: ((event: { data: string }) => void) | null = null
+      onerror: ((err: unknown) => void) | null = null
+      constructor() {
+        activeSockets.push(this)
+      }
     }
     global.WebSocket = MockWebSocket as unknown as typeof WebSocket
+
+    class MockAudioContext {
+      state = 'suspended'
+      resume = vi.fn().mockResolvedValue(undefined)
+      close = vi.fn().mockResolvedValue(undefined)
+      destination = {}
+      createAnalyser = vi.fn().mockReturnValue({
+        fftSize: 256,
+        connect: vi.fn()
+      })
+      createBuffer = vi.fn().mockReturnValue({})
+      createBufferSource = vi.fn().mockImplementation(() => {
+        const node = {
+          buffer: null,
+          connect: vi.fn(),
+          start: vi.fn().mockImplementation(() => {
+            if (node.onended) {
+              node.onended()
+            }
+          }),
+          stop: vi.fn(),
+          disconnect: vi.fn(),
+          onended: null as (() => void) | null
+        }
+        return node
+      })
+      decodeAudioData = vi.fn().mockImplementation(() => Promise.resolve({}))
+      createMediaStreamSource = vi.fn().mockReturnValue({ connect: vi.fn(), disconnect: vi.fn() })
+      createScriptProcessor = vi.fn().mockReturnValue({
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        onaudioprocess: null
+      })
+      audioWorklet = {
+        addModule: vi.fn().mockResolvedValue(undefined)
+      }
+    }
+    global.AudioContext = MockAudioContext as unknown as typeof AudioContext
+    ;(window as unknown as { AudioContext: typeof AudioContext }).AudioContext = MockAudioContext as unknown as typeof AudioContext
+
+    class MockAudioWorkletNode {
+      port = {
+        onmessage: null as ((e: MessageEvent<Float32Array>) => void) | null,
+        postMessage: vi.fn()
+      }
+      connect = vi.fn()
+      disconnect = vi.fn()
+    }
+    vi.stubGlobal('AudioWorkletNode', MockAudioWorkletNode)
+    URL.createObjectURL = vi.fn().mockReturnValue('blob:mock-worklet')
+    URL.revokeObjectURL = vi.fn()
   })
 
   afterEach(() => {
@@ -118,36 +185,100 @@ describe('useDebateStore', () => {
     expect(store.hitlCheckpoint).toBe('1')
   })
 
-  it('handles startAutoListen by creating a websocket', async () => {
+  it('handles startAutoListen lifecycle, audio streaming, wake word detection, and cleanup', async () => {
+    vi.useFakeTimers()
     const store = useDebateStore()
-    
-    // Mock getUserMedia
+
+    const mockTrackStop = vi.fn()
     Object.defineProperty(global.navigator, 'mediaDevices', {
       value: {
-        getUserMedia: vi.fn().mockResolvedValue({})
+        getUserMedia: vi.fn().mockResolvedValue({
+          getTracks: () => [{ stop: mockTrackStop }]
+        })
       },
+      configurable: true,
       writable: true
     })
 
-    // Mock AudioContext
-    class MockAudioContext {
-      createMediaStreamSource = vi.fn().mockReturnValue({ connect: vi.fn() })
-      createScriptProcessor = vi.fn().mockReturnValue({
-        connect: vi.fn(),
-        onaudioprocess: null
-      })
-      destination = {}
-      close = vi.fn().mockResolvedValue(undefined)
-      resume = vi.fn().mockResolvedValue(undefined)
+    class MockAudioWorkletNodeWithCapture {
+      port = {
+        onmessage: null as ((e: { data: Float32Array }) => void) | null,
+        postMessage: vi.fn()
+      }
+      connect = vi.fn()
+      disconnect = vi.fn()
+      constructor() {
+        createdProcessor = this
+      }
     }
-    global.AudioContext = MockAudioContext as unknown as typeof AudioContext
+    let createdProcessor: MockAudioWorkletNodeWithCapture | null = null
+    vi.stubGlobal('AudioWorkletNode', MockAudioWorkletNodeWithCapture)
 
-    await store.startAutoListen()
-    
+    store.startAutoListen()
     expect(store.isAutoListenEnabled).toBe(true)
 
-    // Stop auto listen
-    store.stopAutoListen()
+    // Early return if already enabled
+    const initialSocketsCount = activeSockets.length
+    store.startAutoListen()
+    expect(activeSockets.length).toBe(initialSocketsCount)
+
+    const wakeWordWs = activeSockets[activeSockets.length - 1]
+    expect(wakeWordWs).toBeDefined()
+
+    // Trigger onopen
+    await wakeWordWs.onopen()
+
+    expect(createdProcessor).toBeDefined()
+    expect(createdProcessor.port.onmessage).toBeDefined()
+
+    // Simulate sending PCM audio data through AudioWorklet port
+    const floatData = new Float32Array([0.5, -0.5, 0.0])
+    createdProcessor.port.onmessage({ data: floatData })
+    expect(mockSend).toHaveBeenCalledWith(expect.any(ArrayBuffer))
+
+    // If store is recording, it should skip sending
+    mockSend.mockClear()
+    store.isRecording = true
+    createdProcessor.port.onmessage({ data: floatData })
+    expect(mockSend).not.toHaveBeenCalled()
+    store.isRecording = false
+
+    // Simulate wake word detected event from server
+    store.isTtsPlaying = true
+    wakeWordWs.onmessage({
+      data: JSON.stringify({ type: 'WAKE_WORD_DETECTED' })
+    })
+
+    expect(store.isTtsPlaying).toBe(false)
+    expect(store.isWakeWordTriggered).toBe(true)
+
+    // Fast forward 1000ms timer to reset wake word trigger
+    vi.advanceTimersByTime(1100)
+    expect(store.isWakeWordTriggered).toBe(false)
+
+    // Trigger onclose callback
+    wakeWordWs.onclose()
+    expect(store.isAutoListenEnabled).toBe(false)
+    expect(mockTrackStop).toHaveBeenCalled()
+
+    vi.useRealTimers()
+  })
+
+  it('handles startAutoListen getUserMedia error gracefully', async () => {
+    const store = useDebateStore()
+
+    Object.defineProperty(global.navigator, 'mediaDevices', {
+      value: {
+        getUserMedia: vi.fn().mockRejectedValue(new Error('Mic not found'))
+      },
+      configurable: true,
+      writable: true
+    })
+
+    store.startAutoListen()
+    const wakeWordWs = activeSockets[activeSockets.length - 1]
+
+    await wakeWordWs.onopen()
     expect(store.isAutoListenEnabled).toBe(false)
   })
 
@@ -281,5 +412,72 @@ describe('useDebateStore', () => {
 
     expect(store.isTtsPlaying).toBe(false)
     expect(store.activeTtsRole).toBeNull()
+  })
+
+  it('handles websocket open, message, error, and close lifecycle events', () => {
+    const store = useDebateStore()
+    store.connect()
+
+    const wsInstance = activeSockets[0]
+    expect(wsInstance).toBeDefined()
+
+    // 1. onopen
+    wsInstance.onopen()
+    expect(store.isConnected).toBe(true)
+
+    // 2. onmessage with valid data
+    wsInstance.onmessage({
+      data: JSON.stringify({ type: 'message', role: 'supervisor', content: 'Debate stream initialized.' })
+    })
+    expect(store.rawEvents).toHaveLength(1)
+    expect(store.messages).toHaveLength(1)
+    expect(store.messages[0]!.content).toBe('[supervisor] Debate stream initialized.')
+
+    // 3. onmessage with invalid JSON does not throw
+    wsInstance.onmessage({ data: 'invalid json payload' })
+    expect(store.rawEvents).toHaveLength(1)
+
+    // 4. onerror
+    wsInstance.onerror(new Error('Network drop'))
+
+    // 5. onclose
+    wsInstance.onclose()
+    expect(store.isConnected).toBe(false)
+  })
+
+  it('avoids re-creating websocket when already connected or connecting', () => {
+    const store = useDebateStore()
+    store.connect()
+    expect(activeSockets).toHaveLength(1)
+
+    // Call connect again while OPEN
+    store.connect()
+    expect(activeSockets).toHaveLength(1)
+  })
+
+  it('unlocks audio context and primes with silent buffer source', () => {
+    const store = useDebateStore()
+    store.unlockAudioContext()
+
+    // Dispatches user gesture to trigger unlockAudioContext listeners
+    window.dispatchEvent(new Event('pointerdown'))
+    window.dispatchEvent(new Event('keydown'))
+    window.dispatchEvent(new Event('touchstart'))
+
+    expect(store.globalAnalyser).toBeDefined()
+  })
+
+  it('handles playTtsAudioChunk gracefully based on isTtsPlaying state', async () => {
+    const store = useDebateStore()
+
+    // When TTS is not playing, should return early
+    store.isTtsPlaying = false
+    await store.playTtsAudioChunk(new ArrayBuffer(16))
+
+    // When TTS is playing, should decode and play
+    store.isTtsPlaying = true
+    const playPromise = store.playTtsAudioChunk(new ArrayBuffer(16))
+    expect(playPromise).toBeInstanceOf(Promise)
+    await playPromise
   })
 })

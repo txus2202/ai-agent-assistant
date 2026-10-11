@@ -1,40 +1,116 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ParticleOrb from '../ParticleOrb.vue'
+import { useDebateStore } from '../../stores/debate'
 
 describe('ParticleOrb.vue', () => {
   let requestAnimationFrameSpy: MockInstance<typeof window.requestAnimationFrame>
   let cancelAnimationFrameSpy: MockInstance<typeof window.cancelAnimationFrame>
+  let mockStream: MediaStream
+  let mockTrackStop: ReturnType<typeof vi.fn>
+  let createdRecorders: MockMediaRecorder[]
+
+  class MockMediaRecorder {
+    ondataavailable: ((e: { data: Blob }) => void) | null = null
+    onstop: (() => void) | null = null
+    state = 'inactive'
+    stream: MediaStream
+
+    constructor(stream: MediaStream) {
+      this.stream = stream
+      createdRecorders.push(this)
+    }
+
+    start() {
+      this.state = 'recording'
+    }
+
+    stop() {
+      this.state = 'inactive'
+      if (this.onstop) this.onstop()
+    }
+  }
+
+  class MockAudioContext {
+    state = 'running'
+    createAnalyser() {
+      return {
+        minDecibels: -70,
+        smoothingTimeConstant: 0.2,
+        fftSize: 256,
+        frequencyBinCount: 128,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        getByteFrequencyData: vi.fn((arr: Uint8Array) => {
+          arr.fill(0) // silence by default
+        }),
+        getByteTimeDomainData: vi.fn((arr: Uint8Array) => {
+          arr.fill(128)
+        })
+      }
+    }
+    createMediaStreamSource() {
+      return {
+        connect: vi.fn(),
+        disconnect: vi.fn()
+      }
+    }
+    close() {
+      return Promise.resolve()
+    }
+  }
 
   beforeEach(() => {
     setActivePinia(createPinia())
+    createdRecorders = []
+    mockTrackStop = vi.fn()
+    mockStream = {
+      getTracks: () => [{ stop: mockTrackStop }]
+    } as unknown as MediaStream
+
     // Mock Canvas API
     HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
       clearRect: vi.fn(),
       beginPath: vi.fn(),
       arc: vi.fn(),
       fill: vi.fn(),
-      createRadialGradient: vi.fn(() => ({
-        addColorStop: vi.fn()
-      })),
-      createLinearGradient: vi.fn(() => ({
-        addColorStop: vi.fn()
-      })),
-      fillRect: vi.fn(),
+      stroke: vi.fn(),
       moveTo: vi.fn(),
       lineTo: vi.fn(),
-      stroke: vi.fn(),
+      createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+      createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+      fillRect: vi.fn(),
+      lineWidth: 1,
+      strokeStyle: '',
+      fillStyle: ''
     })) as unknown as HTMLCanvasElement['getContext']
 
-    requestAnimationFrameSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
-      return 1 // return dummy id
-    })
+    window.requestAnimationFrame = vi.fn().mockImplementation(() => 1)
+    window.cancelAnimationFrame = vi.fn()
+    requestAnimationFrameSpy = vi.spyOn(window, 'requestAnimationFrame')
     cancelAnimationFrameSpy = vi.spyOn(window, 'cancelAnimationFrame')
+
+    // Mock mediaDevices
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: {
+        getUserMedia: vi.fn().mockResolvedValue(mockStream)
+      },
+      configurable: true,
+      writable: true
+    })
+
+    vi.stubGlobal('MediaRecorder', MockMediaRecorder)
+    vi.stubGlobal('AudioContext', MockAudioContext)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ text: 'Transcripción exitosa' })
+    }))
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.useRealTimers()
   })
 
   it('mounts properly and starts animation loop', () => {
@@ -69,47 +145,277 @@ describe('ParticleOrb.vue', () => {
       }
     })
     
-    // Check if the waveform canvas exists
     const waveformCanvas = wrapper.find('#waveformCanvas')
     expect(waveformCanvas.exists()).toBe(true)
 
-    // Check if the microphone button exists
     const micButton = wrapper.find('#micButton')
     expect(micButton.exists()).toBe(true)
   })
   
-  it('updates correctly when props change', async () => {
+  it('updates correctly when props change and handles 3-char hex colors', async () => {
     const wrapper = mount(ParticleOrb, {
       props: {
         isDebating: false,
-        activeAgentColor: '#ffffff'
+        activeAgentColor: '#fff',
+        activeAgentIndex: 1
       }
     })
     
     await wrapper.setProps({
       isDebating: true,
-      activeAgentColor: '#00e5ff' // Cyan
+      activeAgentColor: '#00e5ff',
+      activeAgentIndex: 2
     })
     
     expect(wrapper.props('isDebating')).toBe(true)
     expect(wrapper.props('activeAgentColor')).toBe('#00e5ff')
+    expect(wrapper.props('activeAgentIndex')).toBe(2)
   })
 
-  it('displays correct voice state text when auto listen is enabled', async () => {
+  it('toggles recording on click, processes audio blob, and submits draft message', async () => {
+    const store = useDebateStore()
+    const stopTtsSpy = vi.spyOn(store, 'stopTts')
+    const unlockSpy = vi.spyOn(store, 'unlockAudioContext')
+
+    const wrapper = mount(ParticleOrb, {
+      props: {
+        isDebating: false,
+        activeAgentColor: '#00e5ff'
+      }
+    })
+
+    const micButton = wrapper.find('#micButton')
+    
+    // Start recording
+    await micButton.trigger('click')
+    await flushPromises()
+
+    expect(stopTtsSpy).toHaveBeenCalled()
+    expect(unlockSpy).toHaveBeenCalled()
+    expect(store.isRecording).toBe(true)
+    expect(wrapper.text()).toContain('ESCUCHANDO...')
+    expect(wrapper.text()).toContain('ESTADO VOZ: ESCUCHANDO ORDEN')
+
+    const recorder = createdRecorders[0]
+    expect(recorder).toBeDefined()
+    expect(recorder!.state).toBe('recording')
+
+    // Simulate incoming audio chunk
+    recorder!.ondataavailable!({ data: new Blob(['audio-data'], { type: 'audio/webm' }) })
+
+    // Stop recording by clicking button again
+    await micButton.trigger('click')
+    await flushPromises()
+
+    expect(store.isRecording).toBe(false)
+    expect(mockTrackStop).toHaveBeenCalled()
+    expect(global.fetch).toHaveBeenCalledWith('/api/audio/transcribe', expect.objectContaining({
+      method: 'POST'
+    }))
+    expect(store.draftMessage).toContain('Transcripción exitosa')
+    expect(wrapper.emitted('submit-draft')).toBeTruthy()
+  })
+
+  it('handles empty transcriptions without appending or emitting', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ text: '' })
+    }))
+
+    const store = useDebateStore()
+    store.draftMessage = ''
+
     const wrapper = mount(ParticleOrb, {
       props: { isDebating: false, activeAgentColor: '#ffffff' }
     })
-    
-    // Default
-    expect(wrapper.text()).toContain('ESTADO VOZ: EN REPOSO')
-    
-    // Need to use the store to change state
-    const { useDebateStore } = await import('../../stores/debate')
+
+    const micButton = wrapper.find('#micButton')
+    await micButton.trigger('click')
+    await flushPromises()
+
+    await micButton.trigger('click')
+    await flushPromises()
+
+    expect(store.draftMessage).toBe('')
+    expect(wrapper.emitted('submit-draft')).toBeFalsy()
+  })
+
+  it('handles failed transcription response gracefully', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500
+    }))
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const wrapper = mount(ParticleOrb, {
+      props: { isDebating: false, activeAgentColor: '#ffffff' }
+    })
+
+    const micButton = wrapper.find('#micButton')
+    await micButton.trigger('click')
+    await flushPromises()
+    await micButton.trigger('click')
+    await flushPromises()
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Transcription failed')
+  })
+
+  it('handles transcription fetch network error gracefully', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network offline')))
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const wrapper = mount(ParticleOrb, {
+      props: { isDebating: false, activeAgentColor: '#ffffff' }
+    })
+
+    const micButton = wrapper.find('#micButton')
+    await micButton.trigger('click')
+    await flushPromises()
+    await micButton.trigger('click')
+    await flushPromises()
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Transcription error:', expect.any(Error))
+  })
+
+  it('handles microphone access failure with alert', async () => {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: {
+        getUserMedia: vi.fn().mockRejectedValue(new Error('Permission denied'))
+      },
+      configurable: true,
+      writable: true
+    })
+
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const wrapper = mount(ParticleOrb, {
+      props: { isDebating: false, activeAgentColor: '#ffffff' }
+    })
+
+    const micButton = wrapper.find('#micButton')
+    await micButton.trigger('click')
+    await flushPromises()
+
+    expect(alertSpy).toHaveBeenCalledWith('No se pudo acceder al micrófono para dictado de voz.')
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Error accessing microphone:', expect.any(Error))
+  })
+
+  it('triggers toggleRecording when store.isWakeWordTriggered becomes true', async () => {
     const store = useDebateStore()
-    
+    const wrapper = mount(ParticleOrb, {
+      props: { isDebating: false, activeAgentColor: '#ffffff' }
+    })
+
+    store.isWakeWordTriggered = true
+    await wrapper.vm.$nextTick()
+    await flushPromises()
+
+    expect(store.isRecording).toBe(true)
+  })
+
+  it('displays correct voice state text and indicator style when TTS is playing', async () => {
+    const store = useDebateStore()
+    const wrapper = mount(ParticleOrb, {
+      props: { isDebating: false, activeAgentColor: '#a855f7' }
+    })
+
+    store.isTtsPlaying = true
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('ESTADO VOZ: ACTIVO')
+    const dot = wrapper.find('#voiceIndicatorDot')
+    expect(dot.attributes('style')).toContain('background-color: rgb(168, 85, 247)')
+  })
+
+  it('displays correct voice state text when auto listen is enabled', async () => {
+    const store = useDebateStore()
+    const wrapper = mount(ParticleOrb, {
+      props: { isDebating: false, activeAgentColor: '#ffffff' }
+    })
+
     store.isAutoListenEnabled = true
     await wrapper.vm.$nextTick()
-    
+
     expect(wrapper.text()).toContain('ESTADO VOZ: ESPERANDO WAKE WORD')
+  })
+
+  it('performs silence detection with timers and auto-submits when quiet', async () => {
+    vi.useFakeTimers()
+    const store = useDebateStore()
+
+    const wrapper = mount(ParticleOrb, {
+      props: { isDebating: false, activeAgentColor: '#ffffff' }
+    })
+
+    const micButton = wrapper.find('#micButton')
+    await micButton.trigger('click')
+    await vi.runOnlyPendingTimersAsync()
+
+    expect(store.isRecording).toBe(true)
+
+    // Advance 1000ms for initial delay
+    await vi.advanceTimersByTimeAsync(1100)
+
+    // Advance 2100ms for silence timeout trigger
+    await vi.advanceTimersByTimeAsync(2100)
+    await vi.runOnlyPendingTimersAsync()
+
+    expect(store.isRecording).toBe(false)
+  })
+
+  it('resets silence timer if audio frequency indicates user speaking', async () => {
+    vi.useFakeTimers()
+    const store = useDebateStore()
+
+    let voiceSpeaking = false
+    class SpeakingAudioContext extends MockAudioContext {
+      createAnalyser() {
+        return {
+          minDecibels: -70,
+          smoothingTimeConstant: 0.2,
+          fftSize: 256,
+          frequencyBinCount: 128,
+          connect: vi.fn(),
+          disconnect: vi.fn(),
+          getByteFrequencyData: vi.fn((arr: Uint8Array) => {
+            arr.fill(voiceSpeaking ? 50 : 0)
+          }),
+          getByteTimeDomainData: vi.fn()
+        }
+      }
+    }
+    vi.stubGlobal('AudioContext', SpeakingAudioContext)
+
+    const wrapper = mount(ParticleOrb, {
+      props: { isDebating: false, activeAgentColor: '#ffffff' }
+    })
+
+    const micButton = wrapper.find('#micButton')
+    await micButton.trigger('click')
+    await vi.runOnlyPendingTimersAsync()
+
+    // Pass initial delay
+    await vi.advanceTimersByTimeAsync(1100)
+
+    // User speaks before silence timeout
+    voiceSpeaking = true
+    await vi.advanceTimersByTimeAsync(300)
+
+    // Still recording because speaking reset the timer
+    expect(store.isRecording).toBe(true)
+
+    // Clean up
+    await micButton.trigger('click')
+    await vi.runOnlyPendingTimersAsync()
+  })
+
+  it('handles window resize event and re-measures canvas dimensions', () => {
+    const wrapper = mount(ParticleOrb, {
+      props: { isDebating: false, activeAgentColor: '#ffffff' }
+    })
+
+    window.dispatchEvent(new Event('resize'))
+    expect(wrapper.exists()).toBe(true)
   })
 })

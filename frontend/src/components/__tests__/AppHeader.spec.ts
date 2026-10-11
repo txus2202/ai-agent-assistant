@@ -96,4 +96,65 @@ describe('AppHeader.vue', () => {
     expect(store.stopAutoListen).toHaveBeenCalled()
     expect(store.isAutoListenEnabled).toBe(false)
   })
+
+  it('loads supervisor configuration from backend on mount', async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url === '/api/config/agents/supervisor') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ provider: 'Anthropic', model_name: 'Claude 3.5 Sonnet' })
+        })
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    })
+
+    const wrapper = mount(AppHeader)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('SUPERVISOR: Anthropic - Claude 3.5 Sonnet')
+  })
+
+  it('handles supervisor dropdown navigation, back button, and model selection with persistence', async () => {
+    const wrapper = mount(AppHeader)
+    await flushPromises()
+
+    const supervisorBtn = wrapper.findAll('button').find(b => b.text().includes('SUPERVISOR:'))
+    expect(supervisorBtn).toBeDefined()
+
+    // 1. Open dropdown
+    await supervisorBtn!.trigger('click')
+    expect(wrapper.text()).toContain('Select Provider')
+
+    // 2. Select Gemini provider
+    const providerBtn = wrapper.findAll('button').find(b => b.text().includes('Gemini'))
+    expect(providerBtn).toBeDefined()
+    await providerBtn!.trigger('click')
+
+    // Should now show provider's models and back button
+    expect(wrapper.text()).toContain('Gemini Pro 1.5')
+    const backBtn = wrapper.findAll('button').find(b => b.text().includes('< BACK'))
+    expect(backBtn).toBeDefined()
+
+    // Click back button to return to provider view
+    await backBtn!.trigger('click')
+    expect(wrapper.text()).toContain('Select Provider')
+
+    // Re-select provider and select model
+    const reProviderBtn = wrapper.findAll('button').find(b => b.text().includes('Gemini'))
+    await reProviderBtn!.trigger('click')
+
+    const modelBtn = wrapper.findAll('button').find(b => b.text().includes('Gemini Pro 1.5'))
+    expect(modelBtn).toBeDefined()
+
+    await modelBtn!.trigger('click')
+
+    // Should close dropdown, update display and send PUT request
+    expect(wrapper.text()).not.toContain('Select Provider')
+    expect(wrapper.text()).toContain('SUPERVISOR: Gemini - Gemini Pro 1.5')
+    expect(global.fetch).toHaveBeenCalledWith('/api/config/agents/supervisor', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'Gemini', model_name: 'Gemini Pro 1.5' })
+    })
+  })
 })

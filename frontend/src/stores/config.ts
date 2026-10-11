@@ -37,7 +37,7 @@ export const useConfigStore = defineStore('config', {
         const response = await fetch('/api/models')
         if (response.ok) {
           const data = await response.json()
-          this.providers = data.filter((p: any) => p.models && p.models.length > 0)
+          this.providers = data.filter((p: ProviderConfig) => p.models && p.models.length > 0)
         }
       } catch (error) {
         console.error('Failed to load providers:', error)

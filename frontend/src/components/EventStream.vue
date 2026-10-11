@@ -1,8 +1,15 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
 
+export interface TelemetryEvent {
+  timestamp?: string
+  type: string
+  role?: string | null
+  [key: string]: unknown
+}
+
 const props = defineProps<{
-  events: Array<any>
+  events: Array<TelemetryEvent>
 }>()
 
 const listContainer = ref<HTMLElement | null>(null)
@@ -17,7 +24,8 @@ watch(
   }
 )
 
-const formatTime = (isoString: string) => {
+const formatTime = (isoString?: string) => {
+  if (!isoString) return '--:--:--.---'
   const d = new Date(isoString)
   return d.toTimeString().split(' ')[0] + '.' + d.getMilliseconds().toString().padStart(3, '0')
 }

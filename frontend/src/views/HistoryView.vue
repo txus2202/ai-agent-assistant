@@ -55,14 +55,6 @@ const restoreDebate = (debate: DebateRecord) => {
   store.loadDebate(debate)
   router.push('/')
 }
-
-const handleCardKeyDown = (event: KeyboardEvent, debate: DebateRecord) => {
-  if (event.target !== event.currentTarget) return
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault()
-    restoreDebate(debate)
-  }
-}
 </script>
 
 <template>
@@ -102,34 +94,34 @@ const handleCardKeyDown = (event: KeyboardEvent, debate: DebateRecord) => {
         <div 
           v-for="debate in debates" 
           :key="debate.id"
-          role="button"
-          tabindex="0"
-          @click="restoreDebate(debate)"
-          @keydown="handleCardKeyDown($event, debate)"
-          class="bg-space-900 border border-space-700 rounded-xl p-6 transition-all hover:border-neon-cyan/50 hover:bg-space-800/50 cursor-pointer group focus:outline-none focus:border-neon-cyan/50 focus:ring-1 focus:ring-neon-cyan/50"
+          class="bg-space-900 border border-space-700 rounded-xl p-6 transition-all hover:border-neon-cyan/50 hover:bg-space-800/50 group flex justify-between items-start"
         >
-          <div class="flex justify-between items-start">
-            <div class="w-full pr-4">
-              <h2 class="text-sm font-mono text-white mb-3 tracking-wide line-clamp-2 leading-relaxed italic">
-                "{{ debate.user_request || (debate.events && debate.events.find(m => m.type === 'start')?.user_request) || 'No prompt recorded' }}"
-              </h2>
-              <p class="text-[11px] text-space-400 font-mono flex items-center space-x-4">
-                <span title="Session ID" class="text-space-500 font-bold uppercase">ID: {{ debate.id.slice(0, 8) }}</span>
-                <span>{{ formatDate(debate.created_at) }}</span>
-                <span class="px-2 py-0.5 bg-space-800 rounded text-neon-cyan text-[10px]">
-                  {{ debate.events ? debate.events.length : 0 }} events
-                </span>
-              </p>
-            </div>
-            
-            <button 
-              @click="deleteDebate(debate.id, $event)"
-              class="p-2 text-space-600 hover:text-neon-red hover:bg-neon-red/10 rounded opacity-0 group-hover:opacity-100 transition-all shrink-0"
-              title="Delete Session"
-            >
-              <Trash2 class="w-5 h-5" />
-            </button>
-          </div>
+          <button 
+            type="button"
+            @click="restoreDebate(debate)"
+            class="session-card flex-1 text-left pr-4 focus:outline-none focus-visible:ring-1 focus-visible:ring-neon-cyan/50 rounded-lg cursor-pointer"
+          >
+            <h2 class="text-sm font-mono text-white mb-3 tracking-wide line-clamp-2 leading-relaxed italic">
+              "{{ debate.user_request || (debate.events && debate.events.find(m => m.type === 'start')?.user_request) || 'No prompt recorded' }}"
+            </h2>
+            <p class="text-[11px] text-space-400 font-mono flex items-center space-x-4">
+              <span title="Session ID" class="text-space-500 font-bold uppercase">ID: {{ debate.id.slice(0, 8) }}</span>
+              <span>{{ formatDate(debate.created_at) }}</span>
+              <span class="px-2 py-0.5 bg-space-800 rounded text-neon-cyan text-[10px]">
+                {{ debate.events ? debate.events.length : 0 }} events
+              </span>
+            </p>
+          </button>
+          
+          <button 
+            type="button"
+            @click="deleteDebate(debate.id, $event)"
+            class="p-2 text-space-600 hover:text-neon-red hover:bg-neon-red/10 rounded opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all shrink-0 cursor-pointer"
+            title="Delete Session"
+            aria-label="Delete Session"
+          >
+            <Trash2 class="w-5 h-5" />
+          </button>
         </div>
       </div>
     </main>

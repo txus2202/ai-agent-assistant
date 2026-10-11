@@ -1,5 +1,5 @@
 import io
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import Response
@@ -10,7 +10,7 @@ from src.presentation.api.config import get_settings
 router = APIRouter(prefix="/audio", tags=["audio"])
 
 # Singleton service reference
-_audio_service: LocalAudioService = None
+_audio_service: Optional[LocalAudioService] = None
 
 def get_audio_service() -> LocalAudioService:
     global _audio_service

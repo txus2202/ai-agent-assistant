@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ParticleOrb from '../ParticleOrb.vue'
 
 describe('ParticleOrb.vue', () => {
-  let requestAnimationFrameSpy: any
-  let cancelAnimationFrameSpy: any
+  let requestAnimationFrameSpy: MockInstance<typeof window.requestAnimationFrame>
+  let cancelAnimationFrameSpy: MockInstance<typeof window.cancelAnimationFrame>
 
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -25,7 +25,7 @@ describe('ParticleOrb.vue', () => {
       moveTo: vi.fn(),
       lineTo: vi.fn(),
       stroke: vi.fn(),
-    })) as any
+    })) as unknown as HTMLCanvasElement['getContext']
 
     requestAnimationFrameSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
       return 1 // return dummy id

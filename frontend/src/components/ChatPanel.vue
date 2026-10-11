@@ -175,8 +175,19 @@ const playNextAudio = () => {
   
   store.globalAudioPlayer.play().catch(e => {
     console.error("Play error:", e)
-    URL.revokeObjectURL(nextAudioUrl)
     store.globalAudioPlayer.onended = null
+    if (e?.name === 'NotAllowedError') {
+      // Autoplay blocked (Safari): keep the audio and retry on the next user gesture
+      ttsAudioQueue.unshift(nextAudioUrl)
+      const retry = () => {
+        store.unlockAudioContext()
+        if (store.isTtsPlaying) setTimeout(playNextAudio, 150)
+      }
+      window.addEventListener('pointerdown', retry, { once: true })
+      window.addEventListener('keydown', retry, { once: true })
+      return
+    }
+    URL.revokeObjectURL(nextAudioUrl)
     playNextAudio() // Continue to next if play fails
   })
 }

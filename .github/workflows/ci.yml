@@ -67,4 +67,6 @@ jobs:
             -Dsonar.python.coverage.reportPaths=backend/coverage.xml
             -Dsonar.javascript.lcov.reportPaths=frontend/coverage/lcov.info
             -Dsonar.sources=backend/src,frontend/src
-            -Dsonar.tests=backend/tests,frontend/src/components/__tests__,frontend/src/stores/__tests__,frontend/src/views/__tests__
+            -Dsonar.exclusions=**/__tests__/**,**/*.spec.ts
+            -Dsonar.tests=backend/tests,frontend/src
+            -Dsonar.test.inclusions=backend/tests/**,**/__tests__/**,**/*.spec.ts

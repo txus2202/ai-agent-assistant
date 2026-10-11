@@ -36,7 +36,12 @@ interface Particle3D {
 }
 
 const particles: Particle3D[] = []
-const ambientDust: any[] = []
+interface DustParticle {
+  x: number; y: number; z: number; size: number;
+  vx: number; vy: number; vz: number;
+}
+
+const ambientDust: DustParticle[] = []
 let globalRotationY = 0
 let globalRotationX = 0
 
@@ -51,28 +56,30 @@ const initParticles = () => {
     const xNorm = Math.sin(phi) * Math.cos(theta)
     const yNorm = Math.sin(phi) * Math.sin(theta)
     const zNorm = Math.cos(phi)
-    const radOffset = (Math.random() - 0.45) * 36
+    // Safe: Math.random() is used only for cosmetic visual jitter, not for anything security-sensitive.
+    const radOffset = (Math.random() - 0.45) * 36 // NOSONAR
 
     particles.push({
       ox: xNorm, oy: yNorm, oz: zNorm,
       x: 0, y: 0, z: 0,
-      size: Math.random() * 1.5 + 0.8, // Slightly larger particles
-      alpha: Math.random() * 0.5 + 0.3,
+      size: Math.random() * 1.5 + 0.8, // NOSONAR - cosmetic only // Slightly larger particles
+      alpha: Math.random() * 0.5 + 0.3, // NOSONAR - cosmetic only
       linkDistance: 1 + radOffset / BASE_RADIUS,
-      phase: Math.random() * Math.PI * 2,
+      phase: Math.random() * Math.PI * 2, // NOSONAR - cosmetic only
       groupId: i % TOTAL_AGENTS // Divide particles equally among agents
     })
   }
 
   for (let i = 0; i < AMBIENT_DUST_COUNT; i++) {
     ambientDust.push({
-      x: (Math.random() - 0.5) * orbWidth * 1.5,
-      y: (Math.random() - 0.5) * orbHeight * 1.5,
-      z: (Math.random() - 0.5) * 800,
-      size: Math.random() * 2,
-      vx: (Math.random() - 0.5) * 0.4,
-      vy: (Math.random() - 0.5) * 0.4,
-      vz: (Math.random() - 0.5) * 0.4
+      // NOSONAR below: Math.random() is used only for cosmetic particle placement/motion.
+      x: (Math.random() - 0.5) * orbWidth * 1.5, // NOSONAR
+      y: (Math.random() - 0.5) * orbHeight * 1.5, // NOSONAR
+      z: (Math.random() - 0.5) * 800, // NOSONAR
+      size: Math.random() * 2, // NOSONAR
+      vx: (Math.random() - 0.5) * 0.4, // NOSONAR
+      vy: (Math.random() - 0.5) * 0.4, // NOSONAR
+      vz: (Math.random() - 0.5) * 0.4 // NOSONAR
     })
   }
 }
@@ -93,145 +100,170 @@ const resizeCanvas = () => {
 const getRgbFromHex = (hex: string): string => {
   let c = hex.replace('#', '')
   if (c.length === 3) c = c.split('').map(char => char + char).join('')
-  const r = parseInt(c.substring(0, 2), 16)
-  const g = parseInt(c.substring(2, 4), 16)
-  const b = parseInt(c.substring(4, 6), 16)
-  return `${isNaN(r) ? 255 : r}, ${isNaN(g) ? 255 : g}, ${isNaN(b) ? 255 : b}`
+  const r = Number.parseInt(c.substring(0, 2), 16)
+  const g = Number.parseInt(c.substring(2, 4), 16)
+  const b = Number.parseInt(c.substring(4, 6), 16)
+  return `${Number.isNaN(r) ? 255 : r}, ${Number.isNaN(g) ? 255 : g}, ${Number.isNaN(b) ? 255 : b}`
 }
 
 let currentExpansion = 1.0
 
-const animateOrb = () => {
-  if (!ctx || !orbCanvasRef.value) return
-  
-  ctx.clearRect(0, 0, orbWidth, orbHeight)
-  const cx = orbWidth / 2
-  const cy = orbHeight / 2
-  
-  // Smoothly animate expansion when active
-  const targetExpansion = props.isDebating ? 1.25 : 1.0
-  currentExpansion += (targetExpansion - currentExpansion) * 0.05
-  
-  // Decide rotation speed based on state
-  const speedMultiplier = props.isDebating ? 2.5 : 1
-  globalRotationY += 0.002 * speedMultiplier
-  globalRotationX += 0.0005 * speedMultiplier
-  
+const FAR_Z = -700
+const WHITE_RGB = '255, 255, 255'
+
+interface FrameState {
+  cx: number
+  cy: number
+  speedMultiplier: number
+  activeColorRGB: string
+  currentAgentIndex: number
+}
+
+const project = (z: number) => 800 / (800 + z)
+
+const isActiveGroup = (p: Particle3D, frame: FrameState) =>
+  props.isDebating && p.groupId === frame.currentAgentIndex
+
+const updateParticlePositions = (speedMultiplier: number) => {
   const cosY = Math.cos(globalRotationY)
   const sinY = Math.sin(globalRotationY)
   const cosX = Math.cos(globalRotationX)
   const sinX = Math.sin(globalRotationX)
-  
-  const activeColorRGB = getRgbFromHex(props.activeAgentColor)
-  const currentAgentIndex = props.activeAgentIndex !== undefined ? props.activeAgentIndex : 0
 
-  // Calculate 3D positions
-  particles.forEach(p => {
-    let rx1 = p.ox * cosY - p.oz * sinY
-    let rz1 = p.oz * cosY + p.ox * sinY
-    let ry1 = p.oy * cosX - rz1 * sinX
-    let rz2 = rz1 * cosX + p.oy * sinX
-    
+  for (const p of particles) {
+    const rx1 = p.ox * cosY - p.oz * sinY
+    const rz1 = p.oz * cosY + p.ox * sinY
+    const ry1 = p.oy * cosX - rz1 * sinX
+    const rz2 = rz1 * cosX + p.oy * sinX
+
     p.phase += 0.02 * speedMultiplier
     const currentRadius = (BASE_RADIUS * p.linkDistance + Math.sin(p.phase) * 5) * currentExpansion
-    
+
     p.x = rx1 * currentRadius
     p.y = ry1 * currentRadius
     p.z = rz2 * currentRadius
-  })
+  }
+}
 
-  // Draw Plexus Connections
-  ctx!.lineWidth = 0.5
+const drawLink = (
+  c: CanvasRenderingContext2D, p1: Particle3D, p2: Particle3D,
+  distSq: number, color: string, isActive: boolean, frame: FrameState
+) => {
+  const persp1 = project(p1.z)
+  const persp2 = project(p2.z)
+  const alpha = (1 - Math.sqrt(distSq) / 50) * 0.3 * (isActive ? 0.8 : 0.3)
+  c.beginPath()
+  c.moveTo(frame.cx + p1.x * persp1, frame.cy + p1.y * persp1)
+  c.lineTo(frame.cx + p2.x * persp2, frame.cy + p2.y * persp2)
+  c.strokeStyle = `rgba(${color}, ${alpha})`
+  c.stroke()
+}
+
+const drawConnectionsFor = (
+  c: CanvasRenderingContext2D, i: number, frame: FrameState
+) => {
+  const p1 = particles[i]!
+  const isActive = isActiveGroup(p1, frame)
+  const color = isActive ? frame.activeColorRGB : WHITE_RGB
+
+  // Only check connections for a subset to save performance
+  for (let j = i + 1; j < particles.length; j += 2) {
+    const p2 = particles[j]!
+    if (p2.z < FAR_Z) continue
+    const dx = p1.x - p2.x
+    const dy = p1.y - p2.y
+    const dz = p1.z - p2.z
+    const distSq = dx * dx + dy * dy + dz * dz
+    if (distSq < 2500) drawLink(c, p1, p2, distSq, color, isActive, frame)
+  }
+}
+
+const drawConnections = (c: CanvasRenderingContext2D, frame: FrameState) => {
+  c.lineWidth = 0.5
   for (let i = 0; i < particles.length; i++) {
-    const p1 = particles[i]!
-    if (p1.z < -700) continue // Skip far particles for performance
-    
-    // Determine color based on active state and group
-    const isActiveParticle = props.isDebating && p1.groupId === currentAgentIndex
-    const p1Color = isActiveParticle ? activeColorRGB : '255, 255, 255'
-    
-    // Only check connections for a subset to save performance
-    for (let j = i + 1; j < particles.length; j += 2) {
-      const p2 = particles[j]!
-      if (p2.z < -700) continue
-      
-      const dx = p1.x - p2.x
-      const dy = p1.y - p2.y
-      const dz = p1.z - p2.z
-      const distSq = dx*dx + dy*dy + dz*dz
-      
-      if (distSq < 2500) { // Connect if distance is less than 50
-        const perspective1 = 800 / (800 + p1.z)
-        const perspective2 = 800 / (800 + p2.z)
-        
-        const px1 = cx + p1.x * perspective1
-        const py1 = cy + p1.y * perspective1
-        const px2 = cx + p2.x * perspective2
-        const py2 = cy + p2.y * perspective2
-        
-        const alpha = (1 - Math.sqrt(distSq) / 50) * 0.3 * (isActiveParticle ? 0.8 : 0.3)
-        ctx!.beginPath()
-        ctx!.moveTo(px1, py1)
-        ctx!.lineTo(px2, py2)
-        ctx!.strokeStyle = `rgba(${p1Color}, ${alpha})`
-        ctx!.stroke()
-      }
-    }
+    if (particles[i]!.z < FAR_Z) continue // Skip far particles for performance
+    drawConnectionsFor(c, i, frame)
+  }
+}
+
+const drawParticle = (c: CanvasRenderingContext2D, p: Particle3D, frame: FrameState) => {
+  const perspective = project(p.z)
+  const px = frame.cx + p.x * perspective
+  const py = frame.cy + p.y * perspective
+  const isActive = isActiveGroup(p, frame)
+  const baseColor = isActive ? frame.activeColorRGB : WHITE_RGB
+
+  const projSize = (isActive ? p.size * 1.5 : p.size) * perspective
+  const depthAlpha = Math.max(0.05, Math.min(1, (p.z + BASE_RADIUS) / (BASE_RADIUS * 2.5)))
+  const finalAlpha = isActive ? Math.min(1, p.alpha * depthAlpha * 2) : p.alpha * depthAlpha
+
+  c.beginPath()
+  c.arc(px, py, projSize, 0, Math.PI * 2)
+  c.fillStyle = `rgba(${baseColor}, ${finalAlpha})`
+  c.fill()
+
+  if (!isActive) return
+  // Subtle glow for active particles
+  c.beginPath()
+  c.arc(px, py, projSize * 3, 0, Math.PI * 2)
+  c.fillStyle = `rgba(${baseColor}, ${finalAlpha * 0.2})`
+  c.fill()
+}
+
+const drawParticles = (c: CanvasRenderingContext2D, frame: FrameState) => {
+  for (const p of particles) {
+    if (p.z > FAR_Z) drawParticle(c, p, frame)
+  }
+}
+
+const wrap = (value: number, limit: number) => {
+  if (value > limit) return -limit
+  if (value < -limit) return limit
+  return value
+}
+
+const drawAmbientDust = (c: CanvasRenderingContext2D, frame: FrameState) => {
+  const color = props.isDebating ? frame.activeColorRGB : WHITE_RGB
+  for (const d of ambientDust) {
+    d.x = wrap(d.x + d.vx * frame.speedMultiplier, orbWidth)
+    d.y = wrap(d.y + d.vy * frame.speedMultiplier, orbHeight)
+    d.z += d.vz * frame.speedMultiplier
+
+    if (d.z <= FAR_Z) continue
+    const perspective = project(d.z)
+    c.beginPath()
+    c.arc(frame.cx + d.x * perspective, frame.cy + d.y * perspective, d.size * perspective, 0, Math.PI * 2)
+    c.fillStyle = `rgba(${color}, ${0.1 * perspective})`
+    c.fill()
+  }
+}
+
+const animateOrb = () => {
+  if (!ctx || !orbCanvasRef.value) return
+
+  ctx.clearRect(0, 0, orbWidth, orbHeight)
+
+  // Smoothly animate expansion when active
+  const targetExpansion = props.isDebating ? 1.25 : 1.0
+  currentExpansion += (targetExpansion - currentExpansion) * 0.05
+
+  // Decide rotation speed based on state
+  const speedMultiplier = props.isDebating ? 2.5 : 1
+  globalRotationY += 0.002 * speedMultiplier
+  globalRotationX += 0.0005 * speedMultiplier
+
+  const frame: FrameState = {
+    cx: orbWidth / 2,
+    cy: orbHeight / 2,
+    speedMultiplier,
+    activeColorRGB: getRgbFromHex(props.activeAgentColor),
+    currentAgentIndex: props.activeAgentIndex ?? 0
   }
 
-  // Draw Particles
-  particles.forEach(p => {
-    if (p.z > -700) {
-      const perspective = 800 / (800 + p.z)
-      const px = cx + p.x * perspective
-      const py = cy + p.y * perspective
-      
-      const isActiveParticle = props.isDebating && p.groupId === currentAgentIndex
-      const baseColor = isActiveParticle ? activeColorRGB : '255, 255, 255'
-      
-      // Make active particles slightly larger and brighter
-      const projSize = (isActiveParticle ? p.size * 1.5 : p.size) * perspective
-      const depthAlpha = Math.max(0.05, Math.min(1, (p.z + BASE_RADIUS) / (BASE_RADIUS * 2.5)))
-      const finalAlpha = isActiveParticle ? Math.min(1, p.alpha * depthAlpha * 2) : p.alpha * depthAlpha
-      
-      ctx!.beginPath()
-      ctx!.arc(px, py, projSize, 0, Math.PI * 2)
-      ctx!.fillStyle = `rgba(${baseColor}, ${finalAlpha})`
-      ctx!.fill()
-      
-      // Add subtle glow to active particles
-      if (isActiveParticle) {
-        ctx!.beginPath()
-        ctx!.arc(px, py, projSize * 3, 0, Math.PI * 2)
-        ctx!.fillStyle = `rgba(${baseColor}, ${finalAlpha * 0.2})`
-        ctx!.fill()
-      }
-    }
-  })
-
-  // Draw Ambient dust
-  const globalBaseColor = props.isDebating ? activeColorRGB : '255, 255, 255'
-  ambientDust.forEach(d => {
-    d.x += d.vx * speedMultiplier
-    d.y += d.vy * speedMultiplier
-    d.z += d.vz * speedMultiplier
-    
-    if (d.x > orbWidth) d.x = -orbWidth
-    if (d.x < -orbWidth) d.x = orbWidth
-    if (d.y > orbHeight) d.y = -orbHeight
-    if (d.y < -orbHeight) d.y = orbHeight
-    
-    const perspective = 800 / (800 + d.z)
-    const px = cx + d.x * perspective
-    const py = cy + d.y * perspective
-    
-    if (d.z > -700) {
-      ctx!.beginPath()
-      ctx!.arc(px, py, d.size * perspective, 0, Math.PI * 2)
-      ctx!.fillStyle = `rgba(${globalBaseColor}, ${0.1 * perspective})`
-      ctx!.fill()
-    }
-  })
+  updateParticlePositions(speedMultiplier)
+  drawConnections(ctx, frame)
+  drawParticles(ctx, frame)
+  drawAmbientDust(ctx, frame)
 
   animationFrameId = requestAnimationFrame(animateOrb)
 }
@@ -335,8 +367,8 @@ const startSilenceDetection = (stream: MediaStream) => {
       
       analyser.getByteFrequencyData(dataArray)
       let sum = 0
-      for(let i = 0; i < dataArray.length; i++) {
-        sum += dataArray[i]!
+      for (const value of dataArray) {
+        sum += value
       }
       const average = sum / dataArray.length
       
@@ -345,15 +377,13 @@ const startSilenceDetection = (stream: MediaStream) => {
           clearTimeout(silenceTimeout)
           silenceTimeout = null
         }
-      } else { // Silent
-        if (!silenceTimeout) {
-          silenceTimeout = setTimeout(() => {
-            if (isRecording.value) {
-              console.log("Silence detected, auto-submitting...")
-              toggleRecording()
-            }
-          }, 2000)
-        }
+      } else if (!silenceTimeout) { // Silent
+        silenceTimeout = setTimeout(() => {
+          if (isRecording.value) {
+            console.log("Silence detected, auto-submitting...")
+            toggleRecording()
+          }
+        }, 2000)
       }
     }
     
@@ -403,7 +433,6 @@ const animateWaveform = () => {
 
   if (isRecording.value && analyser) {
     activeAnalyser = analyser
-    waveColor = '#ffffff'
   } else if (store.isTtsPlaying && store.globalAnalyser) {
     activeAnalyser = store.globalAnalyser
     waveColor = props.activeAgentColor

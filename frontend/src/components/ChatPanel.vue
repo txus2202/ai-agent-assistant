@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
-import { SendHorizontal, Paperclip, Activity, MessageSquare, Check, User, Bot, ChevronDown, Mic, MicOff, Volume2, VolumeX } from '@lucide/vue'
+import { SendHorizontal, Paperclip, Activity, MessageSquare, Check, User, Bot, ChevronDown } from '@lucide/vue'
 import { useDebateStore } from '../stores/debate'
 
 const props = defineProps<{
@@ -72,7 +72,9 @@ watch(() => store.isTtsPlaying, (isPlaying) => {
     if (!store.globalAudioPlayer.src || !store.globalAudioPlayer.src.startsWith('data:audio')) {
       try {
         store.globalAudioPlayer.pause()
-      } catch(e) {}
+      } catch {
+        // Ignore errors when pausing an unavailable player
+      }
       store.globalAudioPlayer.removeAttribute('src')
     }
     
@@ -94,9 +96,9 @@ const playVoiceResponse = async (text: string, role?: string) => {
   }
   
   // Clean text from markdown and split into sentences
-  const cleanText = text.replace(/[*#`_]/g, '').replace(/\[.*?\]/g, '')
+  const cleanText = text.replace(/[*#`_]/g, '').replace(/\[[^[\]]*\]/g, '')
   // Split by punctuation (., ?, !, \n) but keep the punctuation
-  const sentences = cleanText.match(/[^.!?\n]+[.!?\n]+/g) || [cleanText]
+  const sentences = cleanText.match(/[^.!?\n]+[.!?\n]*/g) || [cleanText]
   
   ttsTextQueue.push(...sentences.map(s => s.trim()).filter(s => s.length > 0))
   
@@ -246,7 +248,7 @@ const clearChat = () => {
 }
 
 // Auto-scroll to the start of the last message
-watch(() => props.messages.length, async (newLen, oldLen) => {
+watch(() => props.messages.length, async (newLen) => {
   await nextTick()
   if (chatScroll.value && newLen > 0) {
     // Find all message blocks
@@ -424,14 +426,22 @@ defineExpose({
             </div>
           </div>
 
-          <label v-if="selectedAgent === 'learning'" class="cursor-pointer text-space-400 hover:text-neon-cyan transition-colors flex items-center justify-center px-3 py-1.5 border border-cyan-900/50 rounded bg-[#030509] hover:bg-space-800 shadow-[0_0_10px_-2px_rgba(0,229,255,0.05)] hover:border-neon-cyan/50" title="Adjuntar archivo">
-            <input type="file" @change="handleFileChange" class="hidden" data-test="file-input" />
+          <label 
+            v-if="selectedAgent === 'learning'" 
+            for="chat-file-upload" 
+            class="cursor-pointer text-space-400 hover:text-neon-cyan transition-colors flex items-center justify-center px-3 py-1.5 border border-cyan-900/50 rounded bg-[#030509] hover:bg-space-800 shadow-[0_0_10px_-2px_rgba(0,229,255,0.05)] hover:border-neon-cyan/50" 
+            title="Adjuntar archivo"
+          >
+            <span class="sr-only">Adjuntar archivo</span>
+            <input id="chat-file-upload" type="file" @change="handleFileChange" class="hidden" data-test="file-input" />
             <Paperclip class="w-4 h-4" />
           </label>
         </div>
         
         <div class="relative flex items-center w-full">
+          <label for="chat-message-input" class="sr-only">Mensaje</label>
           <textarea 
+            id="chat-message-input"
             v-model="store.draftMessage"
             placeholder="Escribe tu consulta o pulsa el micrófono del orbe..."
             rows="1"

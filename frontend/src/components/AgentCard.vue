@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useId } from 'vue'
 import { useConfigStore } from '../stores/config'
 
 const props = defineProps<{
@@ -11,6 +11,9 @@ const props = defineProps<{
 }>()
 
 const store = useConfigStore()
+const uid = useId()
+const providerId = `${uid}-provider`
+const modelId = `${uid}-model`
 
 const agentConfig = computed(() => {
   return store.agentsConfig.find(c => c.id === props.role) || { provider: 'gemini', model_name: 'gemini-1.5-flash' }
@@ -39,7 +42,7 @@ const isGlowActive = computed(() => props.state === 'ACTIVE')
 
 const displayRole = computed(() => {
   if (props.roleName) return props.roleName
-  return props.role.replace(/_/g, ' ').toUpperCase()
+  return props.role.replaceAll('_', ' ').toUpperCase()
 })
 </script>
 
@@ -79,8 +82,9 @@ const displayRole = computed(() => {
     <!-- Config Selectors -->
     <div class="mt-4 pt-3 border-t border-space-700/50 flex flex-col gap-2">
       <div class="flex justify-between items-center">
-        <label class="text-[10px] text-space-400 uppercase tracking-widest font-mono">Provider</label>
+        <label :for="providerId" class="text-[10px] text-space-400 uppercase tracking-widest font-mono">Provider</label>
         <select 
+          :id="providerId"
           v-model="provider" 
           data-test="provider-select"
           class="bg-space-800/80 border border-space-600 rounded px-2 py-1 text-xs font-mono text-space-200 outline-none focus:border-cyan-500/50 transition-colors"
@@ -90,8 +94,9 @@ const displayRole = computed(() => {
       </div>
 
       <div class="flex justify-between items-center">
-        <label class="text-[10px] text-space-400 uppercase tracking-widest font-mono">Model</label>
+        <label :for="modelId" class="text-[10px] text-space-400 uppercase tracking-widest font-mono">Model</label>
         <select 
+          :id="modelId"
           v-model="modelName" 
           data-test="model-select"
           class="bg-space-800/80 border border-space-600 rounded px-2 py-1 text-xs font-mono text-space-200 outline-none focus:border-cyan-500/50 transition-colors max-w-[120px] truncate"

@@ -17,13 +17,65 @@ export interface ChatMessage {
   agentName?: string
 }
 
+export interface SupervisorEvent {
+  type: string
+  timestamp?: string
+  role?: string | null
+  content?: string
+  metadata?: {
+    checkpoint?: string
+    [key: string]: unknown
+  }
+  [key: string]: unknown
+}
+
+export interface DebateSession {
+  id?: string
+  created_at?: string
+  user_request?: string
+  status?: string
+  events?: SupervisorEvent[]
+  [key: string]: unknown
+}
+
+// Builds a valid 0.1s silent 8-bit mono WAV (Safari rejects malformed/tiny headers)
+function buildSilentWavUrl(): string {
+  const samples = 800
+  const buf = new ArrayBuffer(44 + samples)
+  const v = new DataView(buf)
+  const str = (o: number, s: string) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.codePointAt(i) ?? 0) }
+  str(0, 'RIFF'); v.setUint32(4, 36 + samples, true); str(8, 'WAVE')
+  str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true)
+  v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true)
+  str(36, 'data'); v.setUint32(40, samples, true)
+  new Uint8Array(buf, 44).fill(128)
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }))
+}
+
+export async function uploadFile(file: File): Promise<string> {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await fetch('/api/upload', {
+    method: 'POST',
+    body: formData
+  })
+
+  if (!response.ok) {
+    throw new Error('Upload failed')
+  }
+
+  const data = await response.json()
+  return data.path
+}
+
 export const useDebateStore = defineStore('debate', () => {
   const isConnected = ref(false)
   const isDebating = ref(false)
   const isHitlRequired = ref(false)
   const hitlCheckpoint = ref<string | null>(null)
   const messages = ref<ChatMessage[]>([])
-  const rawEvents = ref<any[]>([])
+  const rawEvents = ref<SupervisorEvent[]>([])
   const draftMessage = ref('')
   
   const agents = ref<Agent[]>([])
@@ -49,19 +101,6 @@ export const useDebateStore = defineStore('debate', () => {
   const globalAnalyser = ref<AnalyserNode | null>(null)
   let globalMediaSource: MediaElementAudioSourceNode | null = null
 
-  // Builds a valid 0.1s silent 8-bit mono WAV (Safari rejects malformed/tiny headers)
-  function buildSilentWavUrl(): string {
-    const samples = 800
-    const buf = new ArrayBuffer(44 + samples)
-    const v = new DataView(buf)
-    const str = (o: number, s: string) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)) }
-    str(0, 'RIFF'); v.setUint32(4, 36 + samples, true); str(8, 'WAVE')
-    str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true)
-    v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true)
-    str(36, 'data'); v.setUint32(40, samples, true)
-    new Uint8Array(buf, 44).fill(128)
-    return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }))
-  }
   let silentWavUrl: string | null = null
 
   function unlockAudioContext() {
@@ -156,7 +195,7 @@ export const useDebateStore = defineStore('debate', () => {
         }
         rawEvents.value.push(data)
         handleSupervisorEvent(data)
-      } catch (e) {
+      } catch {
         console.error('[WS] Failed to parse message', event.data)
       }
     }
@@ -189,24 +228,7 @@ export const useDebateStore = defineStore('debate', () => {
     }, delay)
   }
 
-  async function uploadFile(file: File): Promise<string> {
-    const formData = new FormData()
-    formData.append('file', file)
-
-    const response = await fetch('/api/upload', {
-      method: 'POST',
-      body: formData
-    })
-
-    if (!response.ok) {
-      throw new Error('Upload failed')
-    }
-
-    const data = await response.json()
-    return data.path
-  }
-
-  function loadDebate(debate: any) {
+  function loadDebate(debate: DebateSession) {
     messages.value = []
     rawEvents.value = []
     isHitlRequired.value = false
@@ -223,7 +245,7 @@ export const useDebateStore = defineStore('debate', () => {
     }
     
     if (debate.events && Array.isArray(debate.events)) {
-      debate.events.forEach((event: any) => {
+      debate.events.forEach((event: SupervisorEvent) => {
         rawEvents.value.push(event)
         handleSupervisorEvent(event)
       })
@@ -261,7 +283,7 @@ export const useDebateStore = defineStore('debate', () => {
     ws.send(JSON.stringify(payload))
   }
 
-  function handleSupervisorEvent(event: any) {
+  function handleSupervisorEvent(event: SupervisorEvent) {
     if (event.type === 'hitl_required') {
       isHitlRequired.value = true
       hitlCheckpoint.value = event.metadata?.checkpoint || null
@@ -288,7 +310,7 @@ export const useDebateStore = defineStore('debate', () => {
     isHitlRequired.value = false
     hitlCheckpoint.value = null
     
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: 'hitl_response',
         decision,
@@ -308,7 +330,7 @@ export const useDebateStore = defineStore('debate', () => {
   let wwProcessor: AudioWorkletNode | null = null
   let wwStream: MediaStream | null = null
 
-  async function startAutoListen() {
+  function startAutoListen() {
     if (isAutoListenEnabled.value) return
     isAutoListenEnabled.value = true
     isWakeWordTriggered.value = false
@@ -370,7 +392,7 @@ export const useDebateStore = defineStore('debate', () => {
         wwMicrophone.connect(wwProcessor)
 
         wwProcessor.port.onmessage = (e: MessageEvent<Float32Array>) => {
-          if (!wakeWordWs || wakeWordWs.readyState !== WebSocket.OPEN) return
+          if (wakeWordWs?.readyState !== WebSocket.OPEN) return
           
           // Do not listen for wake word if we are currently recording
           if (isRecording.value) return
@@ -403,7 +425,7 @@ export const useDebateStore = defineStore('debate', () => {
             isWakeWordTriggered.value = false
           }, 1000)
         }
-      } catch(e) {}
+      } catch {}
     }
 
     wakeWordWs.onclose = () => {

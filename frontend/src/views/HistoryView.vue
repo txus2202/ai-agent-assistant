@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useDebateStore } from '../stores/debate'
+import { useDebateStore, type SupervisorEvent, type DebateSession } from '../stores/debate'
 import { ArrowLeft, Trash2 } from '@lucide/vue'
 
-interface DebateRecord {
+interface DebateRecord extends DebateSession {
   id: string
   created_at: string
-  events: Array<any>
+  events: SupervisorEvent[]
   user_request?: string
 }
 

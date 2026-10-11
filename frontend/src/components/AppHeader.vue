@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useConfigStore } from '../stores/config'
 import { useDebateStore } from '../stores/debate'
-import { Cpu, Volume2, VolumeX, History, ChevronDown, Ear, EarOff } from 'lucide-vue-next'
+import { Cpu, Volume2, VolumeX, History, ChevronDown, Ear, EarOff } from '@lucide/vue'
 import packageJson from '../../package.json'
 
 const router = useRouter()

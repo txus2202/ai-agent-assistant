@@ -285,7 +285,7 @@ export const useDebateStore = defineStore('debate', () => {
   let wakeWordWs: WebSocket | null = null
   let wwAudioContext: AudioContext | null = null
   let wwMicrophone: MediaStreamAudioSourceNode | null = null
-  let wwProcessor: ScriptProcessorNode | null = null
+  let wwProcessor: AudioWorkletNode | null = null
   let wwStream: MediaStream | null = null
 
   async function startAutoListen() {
@@ -314,22 +314,52 @@ export const useDebateStore = defineStore('debate', () => {
         }
         wwMicrophone = wwAudioContext!.createMediaStreamSource(wwStream)
         
-        // Use ScriptProcessorNode to get raw PCM
-        wwProcessor = wwAudioContext!.createScriptProcessor(4096, 1, 1)
+        // Use an AudioWorklet (inline module) to get raw PCM in 4096-sample chunks
+        const workletCode = `
+          class PcmCaptureProcessor extends AudioWorkletProcessor {
+            constructor() {
+              super()
+              this.buffer = new Float32Array(4096)
+              this.offset = 0
+            }
+            process(inputs) {
+              const input = inputs[0] && inputs[0][0]
+              if (!input) return true
+              for (let i = 0; i < input.length; i++) {
+                this.buffer[this.offset++] = input[i]
+                if (this.offset === this.buffer.length) {
+                  this.port.postMessage(this.buffer.slice())
+                  this.offset = 0
+                }
+              }
+              return true
+            }
+          }
+          registerProcessor('pcm-capture-processor', PcmCaptureProcessor)
+        `
+        const workletUrl = URL.createObjectURL(
+          new Blob([workletCode], { type: 'application/javascript' }),
+        )
+        try {
+          await wwAudioContext!.audioWorklet.addModule(workletUrl)
+        } finally {
+          URL.revokeObjectURL(workletUrl)
+        }
+
+        wwProcessor = new AudioWorkletNode(wwAudioContext!, 'pcm-capture-processor')
         wwMicrophone.connect(wwProcessor)
-        wwProcessor.connect(wwAudioContext!.destination)
-        
-        wwProcessor.onaudioprocess = (e) => {
+
+        wwProcessor.port.onmessage = (e: MessageEvent<Float32Array>) => {
           if (!wakeWordWs || wakeWordWs.readyState !== WebSocket.OPEN) return
           
           // Do not listen for wake word if we are currently recording
           if (isRecording.value) return
 
-          const inputData = e.inputBuffer.getChannelData(0) // Float32Array
+          const inputData = e.data
           // Convert Float32 to Int16
           const pcm16 = new Int16Array(inputData.length)
           for (let i = 0; i < inputData.length; i++) {
-            let s = Math.max(-1, Math.min(1, inputData[i] || 0))
+            const s = Math.max(-1, Math.min(1, inputData[i] || 0))
             pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
           }
           wakeWordWs.send(pcm16.buffer)

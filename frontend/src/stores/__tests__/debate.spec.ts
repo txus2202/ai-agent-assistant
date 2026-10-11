@@ -220,7 +220,7 @@ describe('useDebateStore', () => {
     // Early return if already enabled
     const initialSocketsCount = activeSockets.length
     store.startAutoListen()
-    expect(activeSockets.length).toBe(initialSocketsCount)
+    expect(activeSockets).toHaveLength(initialSocketsCount)
 
     const wakeWordWs = activeSockets[activeSockets.length - 1]
     expect(wakeWordWs).toBeDefined()

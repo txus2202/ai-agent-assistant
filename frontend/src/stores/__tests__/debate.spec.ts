@@ -5,7 +5,7 @@ import { useDebateStore } from '../debate'
 describe('useDebateStore', () => {
   let originalWebSocket: typeof WebSocket
 
-  let mockSend: any
+  let mockSend: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -22,7 +22,7 @@ describe('useDebateStore', () => {
       onmessage = null
       onerror = null
     }
-    global.WebSocket = MockWebSocket as any
+    global.WebSocket = MockWebSocket as unknown as typeof WebSocket
   })
 
   afterEach(() => {
@@ -140,10 +140,146 @@ describe('useDebateStore', () => {
       close = vi.fn().mockResolvedValue(undefined)
       resume = vi.fn().mockResolvedValue(undefined)
     }
-    global.AudioContext = MockAudioContext as any
+    global.AudioContext = MockAudioContext as unknown as typeof AudioContext
 
     await store.startAutoListen()
     
     expect(store.isAutoListenEnabled).toBe(true)
+
+    // Stop auto listen
+    store.stopAutoListen()
+    expect(store.isAutoListenEnabled).toBe(false)
+  })
+
+  it('updates agent states on agent_started and agent_completed events', () => {
+    const store = useDebateStore()
+    store.agents = [
+      { role: 'diagrammer', name: 'Diagrammer', state: 'STANDBY' }
+    ]
+
+    store.handleSupervisorEvent({
+      type: 'agent_started',
+      role: 'diagrammer',
+      content: 'Generating diagrams'
+    })
+    expect(store.agents[0]!.state).toBe('ACTIVE')
+
+    store.handleSupervisorEvent({
+      type: 'agent_completed',
+      role: 'diagrammer',
+      content: 'Diagram created'
+    })
+    expect(store.agents[0]!.state).toBe('COMPLETED')
+  })
+
+  it('handles done, error, and message supervisor events', () => {
+    const store = useDebateStore()
+    store.isDebating = true
+
+    // message event
+    store.handleSupervisorEvent({
+      type: 'message',
+      role: 'senior_architect',
+      content: 'Design review looks solid.'
+    })
+    expect(store.messages).toHaveLength(1)
+    expect(store.messages[0]!.content).toBe('[senior_architect] Design review looks solid.')
+
+    // error event
+    store.handleSupervisorEvent({
+      type: 'error',
+      role: null,
+      content: 'Connection lost with agent'
+    })
+    expect(store.isDebating).toBe(false)
+    expect(store.messages).toHaveLength(2)
+    expect(store.messages[1]!.content).toContain('Error: Connection lost with agent')
+
+    // done event
+    store.handleSupervisorEvent({
+      type: 'done',
+      role: 'the_judge',
+      content: 'Consensus finalized.'
+    })
+    expect(store.isDebating).toBe(false)
+    expect(store.messages).toHaveLength(3)
+    expect(store.messages[2]!.content).toBe('[the_judge] Consensus finalized.')
+  })
+
+  it('handles submitHitlDecision by sending websocket payload and resetting checkpoint', () => {
+    const store = useDebateStore()
+    store.connect()
+    store.isConnected = true
+    store.isHitlRequired = true
+    store.hitlCheckpoint = 'CP-A'
+
+    store.submitHitlDecision('refine', 'Add authentication layers')
+
+    expect(store.isHitlRequired).toBe(false)
+    expect(store.hitlCheckpoint).toBeNull()
+    expect(mockSend).toHaveBeenCalledWith(JSON.stringify({
+      type: 'hitl_response',
+      decision: 'refine',
+      feedback: 'Add authentication layers'
+    }))
+  })
+
+  it('handles loadDebate by restoring sessions, agents to standby, and replaying events', () => {
+    const store = useDebateStore()
+    store.agents = [
+      { role: 'nl_interpreter', name: 'NL Interpreter', state: 'ACTIVE' }
+    ]
+
+    const historicalDebate = {
+      id: 'session-42',
+      status: 'completed' as const,
+      created_at: '2026-10-11T10:00:00Z',
+      user_request: 'Create a payment gateway architecture',
+      events: [
+        { type: 'agent_started', role: 'nl_interpreter', content: 'Parsing' },
+        { type: 'agent_completed', role: 'nl_interpreter', content: 'Finished' },
+        { type: 'done', role: 'the_judge', content: 'Debate concluded' }
+      ]
+    }
+
+    store.loadDebate(historicalDebate)
+
+    expect(store.agents[0]!.state).toBe('COMPLETED')
+    expect(store.isDebating).toBe(false)
+    expect(store.messages).toHaveLength(2) // 1 user request + 1 done message
+    expect(store.messages[0]!.content).toBe('Create a payment gateway architecture')
+    expect(store.rawEvents).toHaveLength(3)
+  })
+
+  it('handles loadAgents fallback when backend API fails', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error('Network error'))
+
+    const store = useDebateStore()
+    await store.loadAgents()
+
+    expect(store.isAgentsLoaded).toBe(true)
+    expect(store.agents.length).toBeGreaterThanOrEqual(6)
+    expect(store.agents.some(a => a.role === 'the_judge')).toBe(true)
+  })
+
+  it('handles startDebate when disconnected by showing error message and calling connect', () => {
+    const store = useDebateStore()
+    store.isConnected = false
+
+    store.startDebate('Offline request')
+
+    expect(store.messages).toHaveLength(1)
+    expect(store.messages[0]!.content).toContain('Cannot start debate, disconnected')
+  })
+
+  it('stops TTS and resets active role', () => {
+    const store = useDebateStore()
+    store.isTtsPlaying = true
+    store.activeTtsRole = 'the_judge'
+
+    store.stopTts()
+
+    expect(store.isTtsPlaying).toBe(false)
+    expect(store.activeTtsRole).toBeNull()
   })
 })

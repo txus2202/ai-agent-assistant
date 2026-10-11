@@ -350,16 +350,17 @@ describe('ParticleOrb.vue', () => {
 
     const micButton = wrapper.find('#micButton')
     await micButton.trigger('click')
-    await vi.runOnlyPendingTimersAsync()
+    await flushPromises()
 
     expect(store.isRecording).toBe(true)
 
-    // Advance 1000ms for initial delay
-    await vi.advanceTimersByTimeAsync(1100)
+    // Advance 1100ms for initial delay
+    vi.advanceTimersByTime(1100)
+    await flushPromises()
 
     // Advance 2100ms for silence timeout trigger
-    await vi.advanceTimersByTimeAsync(2100)
-    await vi.runOnlyPendingTimersAsync()
+    vi.advanceTimersByTime(2100)
+    await flushPromises()
 
     expect(store.isRecording).toBe(false)
   })
@@ -393,21 +394,23 @@ describe('ParticleOrb.vue', () => {
 
     const micButton = wrapper.find('#micButton')
     await micButton.trigger('click')
-    await vi.runOnlyPendingTimersAsync()
+    await flushPromises()
 
     // Pass initial delay
-    await vi.advanceTimersByTimeAsync(1100)
+    vi.advanceTimersByTime(1100)
+    await flushPromises()
 
     // User speaks before silence timeout
     voiceSpeaking = true
-    await vi.advanceTimersByTimeAsync(300)
+    vi.advanceTimersByTime(300)
+    await flushPromises()
 
     // Still recording because speaking reset the timer
     expect(store.isRecording).toBe(true)
 
     // Clean up
     await micButton.trigger('click')
-    await vi.runOnlyPendingTimersAsync()
+    await flushPromises()
   })
 
   it('handles window resize event and re-measures canvas dimensions', () => {

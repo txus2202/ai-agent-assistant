@@ -64,9 +64,7 @@ class QueryVault:
             if chunk.heading:
                 label += f" — {chunk.heading}"
             label += "]"
-            lines.append(label)
-            lines.append(chunk.content)
-            lines.append("")  # blank line between chunks
+            lines.extend([label, chunk.content, ""])  # "" = blank line between chunks
 
         lines.append("--- End Context ---")
         return "\n".join(lines)

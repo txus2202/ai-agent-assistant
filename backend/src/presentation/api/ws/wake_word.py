@@ -39,8 +39,8 @@ async def wake_word_endpoint(websocket: WebSocket):
                 
     except WebSocketDisconnect:
         logger.info("Wake-Word WebSocket disconnected by client")
-    except Exception as e:
-        logger.error(f"Error in wake-word websocket: {e}")
+    except Exception:
+        logger.exception("Error in wake-word websocket")
         try:
             await websocket.close(code=1011)
         except Exception:

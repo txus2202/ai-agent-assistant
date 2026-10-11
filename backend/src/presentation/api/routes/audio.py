@@ -25,7 +25,13 @@ def get_audio_service() -> LocalAudioService:
     return _audio_service
 
 
-@router.post("/transcribe")
+@router.post(
+    "/transcribe",
+    responses={
+        400: {"description": "No filename provided"},
+        500: {"description": "Internal server error during transcription"},
+    },
+)
 async def transcribe_audio(file: Annotated[UploadFile, File(...)]) -> dict:
     """
     Transcribes audio to text using local Whisper.
@@ -47,7 +53,13 @@ async def transcribe_audio(file: Annotated[UploadFile, File(...)]) -> dict:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/synthesize")
+@router.post(
+    "/synthesize",
+    responses={
+        400: {"description": "Text is required"},
+        500: {"description": "Internal server error during speech synthesis"},
+    },
+)
 async def synthesize_audio(request: dict) -> Response:
     """
     Synthesizes text to speech using Piper TTS.

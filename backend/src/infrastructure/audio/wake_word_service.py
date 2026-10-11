@@ -27,13 +27,13 @@ class WakeWordService:
             self.recognizer = KaldiRecognizer(self.model, 16000)
             self.is_initialized = True
             print("[WW] Vosk model loaded successfully!")
-        except Exception as e:
-            logger.error(f"Failed to load Vosk model: {e}")
+        except Exception:
+            logger.exception("Failed to load Vosk model")
             self.model = None
             self.recognizer = None
             self.is_initialized = True
         
-    def process_chunk(self, audio_chunk_pcm_16khz: bytes, threshold: float = 0.5) -> bool:
+    def process_chunk(self, audio_chunk_pcm_16khz: bytes) -> bool:
         """
         Process a chunk of 16kHz Int16 PCM audio.
         Returns True if the wake word is detected in this chunk.

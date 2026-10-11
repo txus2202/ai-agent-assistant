@@ -96,47 +96,132 @@ export const useDebateStore = defineStore('debate', () => {
   // Need to add crossOrigin to allow Web Audio API to process it
   globalAudioPlayer.crossOrigin = 'anonymous'
 
-  // Web Audio API Context for waveform visualization
+  // Web Audio API Context for waveform visualization & TTS playback
   let globalAudioContext: AudioContext | null = null
   const globalAnalyser = ref<AnalyserNode | null>(null)
-  let globalMediaSource: MediaElementAudioSourceNode | null = null
+  let currentTtsSource: AudioBufferSourceNode | null = null
 
   let silentWavUrl: string | null = null
 
-  function unlockAudioContext() {
-    // 1. Unlock HTMLMediaElement (must happen synchronously inside a user gesture)
-    if (!silentWavUrl) silentWavUrl = buildSilentWavUrl()
-    const unlockUrl = silentWavUrl
-    globalAudioPlayer.src = unlockUrl
-    globalAudioPlayer.play().then(() => {
-      // Only pause if nothing else has taken over the player meanwhile
-      if (globalAudioPlayer.src === unlockUrl) globalAudioPlayer.pause()
-    }).catch(() => {})
-
-    // 2. Create/Resume Web Audio Context for the waveform
+  function getOrCreateAudioContext(): AudioContext | null {
+    if (typeof window === 'undefined') return null
     try {
       if (!globalAudioContext) {
-        globalAudioContext = new AudioContext()
-        const analyser = globalAudioContext.createAnalyser()
-        analyser.fftSize = 256
-        globalAnalyser.value = analyser
-        
-        globalMediaSource = globalAudioContext.createMediaElementSource(globalAudioPlayer)
-        globalMediaSource.connect(analyser)
-        analyser.connect(globalAudioContext.destination)
+        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+        if (AudioCtx) {
+          globalAudioContext = new AudioCtx()
+          const analyser = globalAudioContext.createAnalyser()
+          analyser.fftSize = 256
+          globalAnalyser.value = analyser
+          analyser.connect(globalAudioContext.destination)
+        }
       }
-      
-      if (globalAudioContext.state === 'suspended') {
+      if (globalAudioContext?.state === 'suspended') {
         globalAudioContext.resume().catch(() => {})
+      }
+      return globalAudioContext
+    } catch (e) {
+      console.warn("Could not initialize AudioContext", e)
+      return null
+    }
+  }
+
+  function unlockAudioContext() {
+    // 1. Try unlocking HTMLMediaElement for fallback compatibility
+    try {
+      if (!silentWavUrl && typeof window !== 'undefined') silentWavUrl = buildSilentWavUrl()
+      if (silentWavUrl && globalAudioPlayer) {
+        const unlockUrl = silentWavUrl
+        globalAudioPlayer.src = unlockUrl
+        globalAudioPlayer.play().then(() => {
+          if (globalAudioPlayer.src === unlockUrl) globalAudioPlayer.pause()
+        }).catch(() => {})
+      }
+    } catch {}
+
+    // 2. Create/Resume Web Audio Context and prime with silent buffer (essential for Safari/WebKit)
+    try {
+      const ctx = getOrCreateAudioContext()
+      if (ctx) {
+        if (ctx.state === 'suspended') {
+          ctx.resume().catch(() => {})
+        }
+        try {
+          const silentBuf = ctx.createBuffer(1, 1, 22050)
+          const node = ctx.createBufferSource()
+          node.buffer = silentBuf
+          node.connect(ctx.destination)
+          node.start(0)
+        } catch {}
       }
     } catch (e) {
       console.warn("Could not unlock Web Audio Context", e)
     }
   }
 
+  async function playTtsAudioChunk(audioData: ArrayBuffer): Promise<void> {
+    if (!isTtsPlaying.value) return
+    const ctx = getOrCreateAudioContext()
+    if (!ctx?.decodeAudioData) return
+
+    if (ctx.state === 'suspended') {
+      await ctx.resume().catch(() => {})
+    }
+
+    const copy = audioData.slice(0)
+    const audioBuffer = await ctx.decodeAudioData(copy)
+
+    return new Promise((resolve) => {
+      if (!isTtsPlaying.value) {
+        resolve()
+        return
+      }
+
+      const source = ctx.createBufferSource()
+      source.buffer = audioBuffer
+
+      if (globalAnalyser.value) {
+        source.connect(globalAnalyser.value)
+      } else {
+        source.connect(ctx.destination)
+      }
+
+      currentTtsSource = source
+
+      source.onended = () => {
+        if (currentTtsSource === source) {
+          currentTtsSource = null
+        }
+        resolve()
+      }
+
+      source.start(0)
+    })
+  }
+
   function stopTts() {
     isTtsPlaying.value = false
     activeTtsRole.value = null
+    if (currentTtsSource) {
+      try {
+        currentTtsSource.stop()
+        currentTtsSource.disconnect()
+      } catch {}
+      currentTtsSource = null
+    }
+    try {
+      globalAudioPlayer.pause()
+      globalAudioPlayer.removeAttribute('src')
+    } catch {}
+  }
+
+  if (typeof window !== 'undefined') {
+    const unlockOnGesture = () => {
+      unlockAudioContext()
+    }
+    window.addEventListener('pointerdown', unlockOnGesture, { passive: true })
+    window.addEventListener('keydown', unlockOnGesture, { passive: true })
+    window.addEventListener('touchstart', unlockOnGesture, { passive: true })
   }
 
   // Fetch agent topology from backend
@@ -479,6 +564,7 @@ export const useDebateStore = defineStore('debate', () => {
     globalAudioPlayer,
     globalAnalyser,
     unlockAudioContext,
+    playTtsAudioChunk,
     stopTts,
     loadAgents,
     loadDebate,

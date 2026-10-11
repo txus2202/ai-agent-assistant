@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDebateStore } from '../stores/debate'
-import { ArrowLeft, Trash2 } from 'lucide-vue-next'
+import { ArrowLeft, Trash2 } from '@lucide/vue'
 
 interface DebateRecord {
   id: string

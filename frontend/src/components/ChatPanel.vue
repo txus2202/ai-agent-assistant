@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
-import { SendHorizontal, Paperclip, Activity, MessageSquare, Check, User, Bot, ChevronDown, Mic, MicOff, Volume2, VolumeX } from 'lucide-vue-next'
+import { SendHorizontal, Paperclip, Activity, MessageSquare, Check, User, Bot, ChevronDown, Mic, MicOff, Volume2, VolumeX } from '@lucide/vue'
 import { useDebateStore } from '../stores/debate'
 
 const props = defineProps<{

@@ -12,8 +12,8 @@ vi.mock('vue-router', () => ({
   })
 }))
 
-// Mock lucide-vue-next components
-vi.mock('lucide-vue-next', () => ({
+// Mock @lucide/vue components
+vi.mock('@lucide/vue', () => ({
   Cpu: { template: '<svg></svg>' },
   Volume2: { template: '<svg></svg>' },
   VolumeX: { template: '<svg></svg>' },

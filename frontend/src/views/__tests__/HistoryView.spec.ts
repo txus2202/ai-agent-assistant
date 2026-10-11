@@ -103,4 +103,76 @@ describe('HistoryView.vue', () => {
     await cardBtn.trigger('click')
     expect(pushSpy).toHaveBeenCalledWith('/')
   })
+
+  it('navigates back to home on back button click', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([])
+    })
+
+    const wrapper = mount(HistoryView, {
+      global: { plugins: [router, createPinia()] }
+    })
+    await flushPromises()
+
+    const pushSpy = vi.spyOn(router, 'push')
+    const backBtn = wrapper.find('header button')
+    await backBtn.trigger('click')
+    expect(pushSpy).toHaveBeenCalledWith('/')
+  })
+
+  it('does not delete debate if user cancels confirmation', async () => {
+    const mockDebates = [{ id: '123', created_at: '2023-10-01T12:00:00Z', events: [] }]
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockDebates)
+    })
+    global.confirm = vi.fn().mockReturnValue(false)
+
+    const wrapper = mount(HistoryView, {
+      global: { plugins: [router, createPinia()] }
+    })
+    await flushPromises()
+
+    const deleteBtn = wrapper.find('button[title="Delete Session"]')
+    await deleteBtn.trigger('click')
+    await flushPromises()
+
+    expect(global.confirm).toHaveBeenCalled()
+    expect(global.fetch).not.toHaveBeenCalledWith('/api/debates/123', { method: 'DELETE' })
+    expect(wrapper.text()).toContain('ID: 123')
+  })
+
+  it('handles fetch error and delete error gracefully', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    global.fetch = vi.fn().mockRejectedValue(new Error('Fetch debates failed'))
+
+    const wrapper = mount(HistoryView, {
+      global: { plugins: [router, createPinia()] }
+    })
+    await flushPromises()
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch debates:', expect.any(Error))
+    expect(wrapper.find('.animate-spin').exists()).toBe(false)
+
+    // Now test delete error
+    global.confirm = vi.fn().mockReturnValue(true)
+    global.fetch = vi.fn().mockImplementation((url, opts) => {
+      if (opts?.method === 'DELETE') {
+        return Promise.reject(new Error('Delete debate failed'))
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([{ id: '999', created_at: '2023', events: [] }]) })
+    })
+
+    const wrapper2 = mount(HistoryView, {
+      global: { plugins: [router, createPinia()] }
+    })
+    await flushPromises()
+
+    const deleteBtn = wrapper2.find('button[title="Delete Session"]')
+    await deleteBtn.trigger('click')
+    await flushPromises()
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to delete debate:', expect.any(Error))
+  })
 })

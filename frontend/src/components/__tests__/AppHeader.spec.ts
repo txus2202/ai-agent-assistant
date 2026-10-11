@@ -157,4 +157,51 @@ describe('AppHeader.vue', () => {
       body: JSON.stringify({ provider: 'Gemini', model_name: 'Gemini Pro 1.5' })
     })
   })
+
+  it('closes dropdown and resets selected provider on click outside or toggle', async () => {
+    const wrapper = mount(AppHeader, {
+      attachTo: document.body
+    })
+    await flushPromises()
+
+    const supervisorBtn = wrapper.findAll('button').find(b => b.text().includes('SUPERVISOR:'))
+    await supervisorBtn!.trigger('click')
+    expect(wrapper.text()).toContain('Select Provider')
+
+    // Click outside
+    document.dispatchEvent(new MouseEvent('click'))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).not.toContain('Select Provider')
+
+    // Open and toggle close
+    await supervisorBtn!.trigger('click')
+    expect(wrapper.text()).toContain('Select Provider')
+    await supervisorBtn!.trigger('click')
+    expect(wrapper.text()).not.toContain('Select Provider')
+
+    wrapper.unmount()
+  })
+
+  it('handles backend errors gracefully when loading or saving supervisor config', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    global.fetch = vi.fn().mockRejectedValue(new Error('Supervisor API offline'))
+
+    const wrapper = mount(AppHeader)
+    await flushPromises()
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Error fetching supervisor config:', expect.any(Error))
+
+    const supervisorBtn = wrapper.findAll('button').find(b => b.text().includes('SUPERVISOR:'))
+    await supervisorBtn!.trigger('click')
+
+    const providerBtn = wrapper.findAll('button').find(b => b.text().includes('Gemini'))
+    await providerBtn!.trigger('click')
+
+    const modelBtn = wrapper.findAll('button').find(b => b.text().includes('Gemini Pro 1.5'))
+    await modelBtn!.trigger('click')
+    await flushPromises()
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to save supervisor config:', expect.any(Error))
+  })
 })

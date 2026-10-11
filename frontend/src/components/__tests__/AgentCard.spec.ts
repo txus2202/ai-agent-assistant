@@ -8,7 +8,7 @@ vi.mock('../../stores/config', () => ({
   useConfigStore: () => ({
     agentsConfig: [{ id: 'THE_JUDGE', provider: 'gemini', model_name: 'gemini-1.5-flash' }, { id: 'the_judge', provider: 'gemini', model_name: 'gemini-1.5-flash' }],
     providers: [
-      { id: 'gemini', name: 'Gemini', models: [{ id: 'gemini-1.5-flash', name: 'Gemini Flash' }] },
+      { id: 'gemini', name: 'Gemini', models: [{ id: 'gemini-1.5-flash', name: 'Gemini Flash' }, { id: 'gemini-1.5-pro', name: 'Gemini Pro' }] },
       { id: 'openai', name: 'OpenAI', models: [{ id: 'gpt-4o-mini', name: 'GPT 4o Mini' }] }
     ],
     updateAgentConfig: mockUpdateAgentConfig
@@ -102,5 +102,22 @@ describe('AgentCard.vue', () => {
 
     await providerSelect.setValue('openai')
     expect(mockUpdateAgentConfig).toHaveBeenCalledWith('the_judge', 'openai', 'gpt-4o-mini')
+
+    await modelSelect.setValue('gemini-1.5-pro')
+    expect(mockUpdateAgentConfig).toHaveBeenCalledWith('the_judge', 'gemini', 'gemini-1.5-pro')
+  })
+
+  it('uses custom roleName when provided', () => {
+    const wrapper = mount(AgentCard, {
+      props: {
+        role: 'the_judge',
+        roleName: 'High Arbiter',
+        state: 'STANDBY',
+        colorClass: 'text-rose-400',
+        glowClass: 'glow-red'
+      }
+    })
+
+    expect(wrapper.text()).toContain('High Arbiter')
   })
 })

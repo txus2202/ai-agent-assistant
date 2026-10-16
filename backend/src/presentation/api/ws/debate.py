@@ -16,14 +16,16 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from src.application.agents.sub_agent_runner import SubAgentRunner
 from src.application.agents.supervisor_agent import SupervisorAgent
 from src.application.services.learn_from_source import LearnFromSource, SourceType
-from src.domain.agents.agent_role import AgentRole
+from src.domain.agents.sub_agent_profiles import AgentRole
 from src.domain.agents.supervisor_events import HITLResponse, SupervisorEvent, EventType
+from src.domain.ports.observability_port import TraceContext, SpanContext
 from src.domain.value_objects.debate_record import DebateRecord
 from src.infrastructure.llm.registry import get_llm_provider
 from src.infrastructure.persistence.sqlite_agent_config_repository import SqliteAgentConfigRepository
 from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
 from src.infrastructure.rag.chroma_document_store import ChromaDBDocumentStore
 from src.presentation.api.config import get_settings
+from src.presentation.api.routes.observability import get_observability_service
 from src.presentation.api.ws.serializers import dict_to_hitl_response, event_to_dict
 
 router = APIRouter(tags=["debate"])
@@ -43,15 +45,59 @@ class DebateWebSocketHandler:
             persist_directory=str(self.settings.chroma_persist_dir)
         )
         self.debate_record: DebateRecord | None = None
+        self.observability = get_observability_service()
+        self.current_trace: TraceContext | None = None
+        self.active_spans: dict[str, SpanContext] = {}
 
     async def send_event(self, event: SupervisorEvent) -> None:
-        """Helper to send event to WS and append to SQLite."""
+        """Helper to send event to WS, append to SQLite, and stream observability spans."""
         event_dict = event_to_dict(event)
         await self.websocket.send_json(event_dict)
         if self.debate_record:
             self.debate_repo.append_event(self.debate_record.id, json.dumps(event_dict))
             if event.type == EventType.DONE:
                 self.debate_repo.update_status(self.debate_record.id, "completed")
+
+        if self.current_trace:
+            if event.type == EventType.AGENT_STARTED and event.role:
+                role_val = event.role.value if hasattr(event.role, "value") else str(event.role)
+                config = self.agent_config_repo.find_by_role(role_val)
+                model_name = config.model_name if config else self.settings.default_model
+                self.active_spans[role_val] = self.observability.start_agent_span(
+                    trace_context=self.current_trace,
+                    agent_role=role_val,
+                    input_prompt=self.debate_record.user_request if self.debate_record else "",
+                    metadata={"phase": "debate", "model": model_name},
+                    model_name=model_name,
+                )
+            elif event.type == EventType.AGENT_COMPLETED and event.role:
+                role_val = event.role.value if hasattr(event.role, "value") else str(event.role)
+                span = self.active_spans.pop(role_val, None)
+                if span:
+                    meta = event.metadata or {}
+                    latency = float(meta.get("latency_seconds", 0.0))
+                    token_counts = {
+                        "input": int(meta.get("prompt_tokens", 0)),
+                        "output": int(meta.get("completion_tokens", 0)),
+                        "total": int(meta.get("total_tokens", meta.get("tokens", 0))),
+                    }
+                    model_name = meta.get("model") or getattr(span, "model_name", None)
+                    self.observability.end_agent_span(
+                        span_context=span,
+                        output=event.content,
+                        token_counts=token_counts,
+                        latency=latency,
+                        status="SUCCESS",
+                        model_name=model_name,
+                    )
+            elif event.type == EventType.DONE:
+                self.observability.end_trace(
+                    trace_context=self.current_trace,
+                    status="SUCCESS",
+                    output=event.content
+                )
+                self.current_trace = None
+
 
     async def hitl_callback(self, event: SupervisorEvent) -> HITLResponse:
         """
@@ -97,11 +143,12 @@ class DebateWebSocketHandler:
                 results.append(f"✅ Successfully learned from {attachment_path}. Generated {res.generated_file.name}")
                 
         content = "\n".join(results) or "No attachments provided to learn from."
+        learn_meta = {"model": mod_name}
         await self.send_event(SupervisorEvent(
-            type=EventType.AGENT_COMPLETED, role=AgentRole.LEARNING, content=content
+            type=EventType.AGENT_COMPLETED, role=AgentRole.LEARNING, content=content, metadata=learn_meta
         ))
         await self.send_event(SupervisorEvent(
-            type=EventType.DONE, role=AgentRole.LEARNING, content=content
+            type=EventType.DONE, role=AgentRole.LEARNING, content=content, metadata=learn_meta
         ))
 
     async def _handle_sub_agent(self, target_agent: str, user_request: str) -> None:
@@ -124,11 +171,19 @@ class DebateWebSocketHandler:
                 model_name=mod_name
             )
             
+            sub_meta = {
+                "model": resp.model_name or mod_name,
+                "prompt_tokens": str(resp.tokens.get("input", 0)),
+                "completion_tokens": str(resp.tokens.get("output", 0)),
+                "total_tokens": str(resp.tokens.get("total", 0)),
+                "latency_seconds": str(resp.latency),
+                "tokens": str(resp.tokens.get("total", 0)),
+            }
             await self.send_event(SupervisorEvent(
-                type=EventType.AGENT_COMPLETED, role=role_enum, content=resp.content
+                type=EventType.AGENT_COMPLETED, role=role_enum, content=resp.content, metadata=sub_meta
             ))
             await self.send_event(SupervisorEvent(
-                type=EventType.DONE, role=role_enum, content=resp.content
+                type=EventType.DONE, role=role_enum, content=resp.content, metadata=sub_meta
             ))
             
         except ValueError:
@@ -168,6 +223,15 @@ class DebateWebSocketHandler:
             )
             self.debate_repo.create(self.debate_record)
 
+            self.current_trace = self.observability.start_trace(
+                name=f"debate_{target_agent}",
+                session_id=self.debate_record.id,
+                metadata={
+                    "user_request": user_request,
+                    "target_agent": target_agent,
+                }
+            )
+
             if target_agent == "supervisor":
                 await self._handle_supervisor(user_request)
             elif target_agent == AgentRole.LEARNING.value:
@@ -183,6 +247,17 @@ class DebateWebSocketHandler:
                     self.debate_repo.update_status(self.debate_record.id, "aborted")
             except Exception:
                 pass
+
+        if self.current_trace:
+            try:
+                self.observability.end_trace(
+                    trace_context=self.current_trace,
+                    status="ABORTED",
+                    output="Debate execution was aborted"
+                )
+            except Exception:
+                pass
+            self.current_trace = None
 
 
 @router.websocket("/ws/debate")
@@ -207,9 +282,20 @@ async def debate_ws(websocket: WebSocket) -> None:
         handler.abort()
     except Exception as e:
         logger.exception("Error during debate WebSocket execution")
+        if handler.current_trace:
+            try:
+                handler.observability.end_trace(
+                    trace_context=handler.current_trace,
+                    status="ERROR",
+                    output=str(e)
+                )
+            except Exception:
+                pass
+            handler.current_trace = None
         handler.abort()
         try:
             await websocket.send_json({"type": "error", "content": str(e)})
             await websocket.close(code=1011)
         except Exception:
             pass
+

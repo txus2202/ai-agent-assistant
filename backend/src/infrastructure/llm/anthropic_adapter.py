@@ -45,9 +45,24 @@ class AnthropicAdapter(ILLMProvider):
                 max_tokens=_DEFAULT_MAX_TOKENS,
                 messages=[{"role": "user", "content": prompt}],
             )
+            if hasattr(message, "usage") and message.usage:
+                in_t = getattr(message.usage, "input_tokens", 0) or 0
+                out_t = getattr(message.usage, "output_tokens", 0) or 0
+                self._last_usage = {
+                    "input": in_t,
+                    "output": out_t,
+                    "total": in_t + out_t,
+                }
+            else:
+                self._last_usage = {}
             return message.content[0].text
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
+
+    def get_last_usage(self) -> dict[str, int]:
+        """Return the token usage of the most recent complete() call."""
+        return getattr(self, "_last_usage", {})
+
 
     def list_models(self) -> list[dict[str, str]]:
         return [

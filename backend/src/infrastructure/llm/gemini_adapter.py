@@ -53,23 +53,24 @@ class GeminiAdapter(ILLMProvider):
                     ) from exc
 
     def complete(self, prompt: str, model_name: str) -> str:
+        clean_model = model_name.strip().lower().replace(" ", "-")
         try:
             # Gemini Context Caching requires >= 32768 tokens.
             # We count tokens first to decide whether to cache.
             token_count_resp = self._client.models.count_tokens(
-                model=model_name,
+                model=clean_model,
                 contents=prompt,
             )
             
             if token_count_resp.total_tokens >= 32768:
                 # Use explicit context caching
                 cache = self._client.caches.create(
-                    model=model_name,
+                    model=clean_model,
                     contents=prompt,
                     config={'ttl': '3600s'} # 1 hour
                 )
                 response = self._client.models.generate_content(
-                    model=model_name,
+                    model=clean_model,
                     contents="", # The prompt is entirely in the cache
                     config={'cached_content': cache.name}
                 )
@@ -78,12 +79,28 @@ class GeminiAdapter(ILLMProvider):
             else:
                 # Normal request for smaller contexts
                 response = self._client.models.generate_content(
-                    model=model_name,
+                    model=clean_model,
                     contents=prompt,
                 )
+
+            if hasattr(response, "usage_metadata") and response.usage_metadata:
+                self._last_usage = {
+                    "input": getattr(response.usage_metadata, "prompt_token_count", 0) or 0,
+                    "output": getattr(response.usage_metadata, "candidates_token_count", 0) or 0,
+                    "total": getattr(response.usage_metadata, "total_token_count", 0) or 0,
+                }
+            else:
+                self._last_usage = {}
+
             return response.text
+
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
+
+    def get_last_usage(self) -> dict[str, int]:
+        """Return the token usage of the most recent complete() call."""
+        return getattr(self, "_last_usage", {})
+
 
     def list_models(self) -> list[dict[str, str]]:
         try:

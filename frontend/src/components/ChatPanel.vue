@@ -1,37 +1,43 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { SendHorizontal, Paperclip, Activity, MessageSquare, Check, User, Bot, ChevronDown } from '@lucide/vue'
-import { useDebateStore } from '../stores/debate'
+import { useDebateStore, type ChatMessage } from '../stores/debate'
+import ObservabilityPanel from './ObservabilityPanel.vue'
 
 const props = defineProps<{
-  messages: Array<{ role: 'user' | 'assistant', content: string, agentName?: string }>
+  messages: ChatMessage[]
   isDebating: boolean
 }>()
 
 const store = useDebateStore()
 const chatScroll = ref<HTMLElement | null>(null)
+const activeTab = ref<'chat' | 'observability'>('chat')
 
 // Voice Integration (Phase 5)
 
 
 
-const agentsList = [
-  { value: 'supervisor', label: 'Supervisor' },
-  { value: 'nl_interpreter', label: 'NL Interpreter' },
-  { value: 'innovator_architect', label: 'Innovator Architect' },
-  { value: 'senior_architect', label: 'Senior Architect' },
-  { value: 'the_judge', label: 'The Judge' },
-  { value: 'diagrammer', label: 'Diagrammer' },
-  { value: 'devops_secops', label: 'DevOps & SecOps' },
-  { value: 'learning', label: 'Learning Agent' }
-]
+const agentsList = computed(() => {
+  const fromStore = (store.agents || []).map(a => ({
+    value: a.role,
+    label: a.name,
+    colorHex: a.color_hex
+  }))
+  if (fromStore.some(a => a.value === 'supervisor')) {
+    return fromStore
+  }
+  return [
+    { value: 'supervisor', label: 'Supervisor', colorHex: '#f59e0b' },
+    ...fromStore
+  ]
+})
 
 const selectedAgent = ref('supervisor')
 const selectedFile = ref<File | null>(null)
 const isAgentDropdownOpen = ref(false)
 const agentDropdownRef = ref<HTMLElement | null>(null)
 const selectedAgentLabel = computed(() => {
-  return agentsList.find(a => a.value === selectedAgent.value)?.label || 'Supervisor'
+  return agentsList.value.find(a => a.value === selectedAgent.value)?.label || 'Supervisor'
 })
 
 const toggleAgentDropdown = () => {
@@ -170,7 +176,6 @@ const playNextAudio = async () => {
   }
 }
 
-// Hook to play TTS when debating finishes or hits HITL
 watch(() => props.messages.length, (newLen, oldLen) => {
   if (newLen > oldLen) {
     const lastMsg = props.messages[newLen - 1]
@@ -179,7 +184,7 @@ watch(() => props.messages.length, (newLen, oldLen) => {
     if (newLen === oldLen + 1 && lastMsg && lastMsg.role === 'assistant') {
       // Extract role from the brackets if it exists (e.g. "[nl_interpreter] ...")
       const match = lastMsg.content.match(/^\[(.*?)\]\s/)
-      const role = match ? match[1] : undefined
+      const role = lastMsg.agentRole || (match ? match[1] : undefined)
       playVoiceResponse(lastMsg.content, role)
     }
   }
@@ -249,17 +254,32 @@ defineExpose({
     <!-- Top Tabs -->
     <div class="flex items-center justify-between p-4 border-b border-space-800">
       <div class="flex space-x-6">
-        <button class="flex items-center space-x-2 text-space-500 font-mono text-[10px] tracking-widest uppercase hover:text-slate-400 transition-colors">
+        <button 
+          @click="activeTab = 'observability'"
+          data-test="tab-observability"
+          :class="activeTab === 'observability' ? 'text-neon-cyan border border-neon-cyan/30 bg-[#002b36] px-3 py-1.5 rounded' : 'text-space-500 hover:text-slate-400'"
+          class="flex items-center space-x-2 font-mono text-[10px] tracking-widest uppercase transition-colors"
+        >
           <Activity class="w-3.5 h-3.5" />
           <span>Observabilidad</span>
+          <span v-if="activeTab === 'observability'" class="bg-neon-cyan/20 text-neon-cyan px-1.5 py-0.5 rounded-sm text-[8px] ml-2">ACTIVO</span>
         </button>
-        <button class="flex items-center space-x-2 text-neon-cyan font-mono text-[10px] tracking-widest uppercase border border-neon-cyan/30 bg-[#002b36] px-3 py-1.5 rounded">
+        <button 
+          @click="activeTab = 'chat'"
+          data-test="tab-chat"
+          :class="activeTab === 'chat' ? 'text-neon-cyan border border-neon-cyan/30 bg-[#002b36] px-3 py-1.5 rounded' : 'text-space-500 hover:text-slate-400'"
+          class="flex items-center space-x-2 font-mono text-[10px] tracking-widest uppercase transition-colors"
+        >
           <MessageSquare class="w-3.5 h-3.5" />
           <span>Chat con IA</span>
-          <span class="bg-neon-cyan/20 text-neon-cyan px-1.5 py-0.5 rounded-sm text-[8px] ml-2">ACTIVO</span>
+          <span v-if="activeTab === 'chat'" class="bg-neon-cyan/20 text-neon-cyan px-1.5 py-0.5 rounded-sm text-[8px] ml-2">ACTIVO</span>
         </button>
       </div>
     </div>
+
+    <!-- Active View Content -->
+    <ObservabilityPanel v-if="activeTab === 'observability'" />
+    <div v-else class="flex flex-col flex-1 overflow-hidden">
 
     <!-- Context Header -->
     <div class="p-5 border-b border-space-800/50 relative">
@@ -317,11 +337,19 @@ defineExpose({
         <template v-else>
           <div class="flex flex-col items-start max-w-[95%]">
             <div class="flex items-center space-x-2 mb-2">
-              <div class="w-5 h-5 rounded-full border border-neon-green/50 flex items-center justify-center bg-neon-green/10 text-neon-green">
+              <div 
+                class="w-5 h-5 rounded-full border flex items-center justify-center transition-colors"
+                :style="msg.colorHex ? { borderColor: `${msg.colorHex}80`, backgroundColor: `${msg.colorHex}1a`, color: msg.colorHex } : {}"
+                :class="!msg.colorHex ? 'border-neon-green/50 bg-neon-green/10 text-neon-green' : ''"
+              >
                 <Bot class="w-3 h-3" />
               </div>
               <span class="text-[11px] font-bold text-white tracking-widest font-mono">A.T.E.N.E.A.</span>
-              <span class="px-2 py-0.5 bg-neon-green/10 border border-neon-green/30 text-neon-green text-[8px] font-mono uppercase tracking-widest rounded shadow-sm">
+              <span 
+                class="px-2 py-0.5 border text-[8px] font-mono uppercase tracking-widest rounded shadow-sm transition-colors"
+                :style="msg.colorHex ? { borderColor: `${msg.colorHex}4d`, backgroundColor: `${msg.colorHex}1a`, color: msg.colorHex } : {}"
+                :class="!msg.colorHex ? 'bg-neon-green/10 border-neon-green/30 text-neon-green' : ''"
+              >
                 {{ msg.agentName || 'SUPERVISOR AGENT' }}
               </span>
               
@@ -336,7 +364,11 @@ defineExpose({
                 <span>Silenciar</span>
               </button>
             </div>
-            <div class="w-full bg-[#030509] border border-neon-green/40 rounded-xl rounded-tl-none px-5 py-4 text-[13px] text-slate-300 leading-relaxed whitespace-pre-wrap shadow-[0_0_15px_-3px_rgba(0,255,157,0.1)]">
+            <div 
+              class="w-full bg-[#030509] border rounded-xl rounded-tl-none px-5 py-4 text-[13px] text-slate-300 leading-relaxed whitespace-pre-wrap transition-colors"
+              :style="msg.colorHex ? { borderColor: `${msg.colorHex}4d`, boxShadow: `0 0 15px -3px ${msg.colorHex}1a` } : {}"
+              :class="!msg.colorHex ? 'border-neon-green/40 shadow-[0_0_15px_-3px_rgba(0,255,157,0.1)]' : ''"
+            >
               {{ msg.content }}
             </div>
           </div>
@@ -395,7 +427,13 @@ defineExpose({
                   class="w-full text-left px-3 py-2 transition-colors flex items-center justify-between"
                   :class="selectedAgent === agent.value ? 'bg-neon-cyan/10 text-neon-cyan' : 'text-slate-300 hover:bg-space-800 hover:text-cyan-200'"
                 >
-                  <span class="font-bold text-[10px] md:text-[11px]">{{ agent.label }}</span>
+                  <span class="flex items-center space-x-2">
+                    <span 
+                      class="w-1.5 h-1.5 rounded-full shrink-0" 
+                      :style="agent.colorHex ? { backgroundColor: agent.colorHex } : {}"
+                    ></span>
+                    <span class="font-bold text-[10px] md:text-[11px]">{{ agent.label }}</span>
+                  </span>
                   <span v-if="selectedAgent === agent.value" class="w-1.5 h-1.5 rounded-full bg-neon-cyan glow-cyan"></span>
                 </button>
               </div>
@@ -435,6 +473,7 @@ defineExpose({
           </button>
         </div>
       </form>
+    </div>
     </div>
   </div>
 </template>

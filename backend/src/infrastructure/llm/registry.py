@@ -24,8 +24,9 @@ def get_llm_provider(name: str) -> ILLMProvider:
         ValueError: If the provider is unknown or if the required API key is missing.
     """
     settings = get_settings()
+    provider_name = name.lower().strip()
     
-    if name == "gemini":
+    if provider_name == "gemini":
         # Do not fail early; GeminiAdapter has fallback logic for Vertex AI and Gemini CLI
         return GeminiAdapter(
             api_key=settings.gemini_api_key,
@@ -33,15 +34,16 @@ def get_llm_provider(name: str) -> ILLMProvider:
             location=settings.google_cloud_location
         )
         
-    elif name == "openai":
+    elif provider_name == "openai":
         if not settings.openai_api_key:
             raise ValueError("OPENAI_API_KEY is not configured")
         return OpenAIAdapter(api_key=settings.openai_api_key)
         
-    elif name == "anthropic":
+    elif provider_name == "anthropic":
         if not settings.anthropic_api_key:
             raise ValueError("ANTHROPIC_API_KEY is not configured")
         return AnthropicAdapter(api_key=settings.anthropic_api_key)
         
     else:
         raise ValueError(f"Unknown LLM provider: '{name}'")
+

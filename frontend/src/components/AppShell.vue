@@ -5,22 +5,25 @@ import ChatPanel from './ChatPanel.vue'
 import ParticleOrb from './ParticleOrb.vue'
 import AgentTopology from './AgentTopology.vue'
 import HITLActionButton from './HITLActionButton.vue'
-import EventStream from './EventStream.vue'
 import AppHeader from './AppHeader.vue'
-import { AGENT_THEME, DEFAULT_AGENT_THEME } from '../config/agentTheme'
 
 const store = useDebateStore()
 const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null)
 
+const DEFAULT_COLOR = '#00e5ff'
+
 const activeAgentColor = computed(() => {
   if (store.activeTtsRole) {
-    return AGENT_THEME[store.activeTtsRole]?.hex || DEFAULT_AGENT_THEME.hex
+    const ttsAgent = store.findAgent ? store.findAgent(store.activeTtsRole) : store.agents.find(a => a.role === store.activeTtsRole)
+    if (ttsAgent?.color_hex) return ttsAgent.color_hex
+    if (store.activeTtsRole === 'supervisor') return '#f59e0b'
+    return DEFAULT_COLOR
   }
   
   const activeAgent = store.agents.find(a => a.state === 'ACTIVE')
-  if (!activeAgent) return DEFAULT_AGENT_THEME.hex
+  if (!activeAgent) return DEFAULT_COLOR
   
-  return AGENT_THEME[activeAgent.role]?.hex || DEFAULT_AGENT_THEME.hex
+  return activeAgent.color_hex || DEFAULT_COLOR
 })
 
 
@@ -123,11 +126,6 @@ const handleHitlAction = (decision: 'approve' | 'refine' | 'reject') => {
           </div>
         </template>
       </AgentTopology>
-
-      <!-- NEW OBSERVABILITY PANEL -->
-      <div class="h-64 border-t border-space-800 bg-space-950 flex flex-col">
-        <EventStream :events="store.rawEvents" />
-      </div>
     </div>
 
     </div>

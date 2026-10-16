@@ -56,4 +56,21 @@ describe('AgentTopology.vue', () => {
       block: 'center'
     })
   })
+
+  it('filters out the supervisor agent from rendered cards', () => {
+    const wrapper = mount(AgentTopology, {
+      props: {
+        agents: [
+          { role: 'supervisor', name: 'Supervisor', state: 'STANDBY', color_hex: '#f59e0b' },
+          { role: 'nl_interpreter', name: 'NL Interpreter', state: 'STANDBY', color_hex: '#00e5ff' },
+          { role: 'senior_architect', name: 'Senior Architect', state: 'STANDBY', color_hex: '#00ff9d' }
+        ]
+      }
+    })
+
+    const text = wrapper.text()
+    expect(text).not.toContain('Supervisor')
+    expect(text).toContain('NL Interpreter')
+    expect(text).toContain('Senior Architect')
+  })
 })

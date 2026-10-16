@@ -12,6 +12,10 @@ const mockStore = {
   isDebating: false,
   messages: [] as ChatMessage[],
   rawEvents: [] as SupervisorEvent[],
+  agents: [
+    { role: 'nl_interpreter', name: 'NL Interpreter', state: 'STANDBY', color_hex: '#00e5ff' },
+    { role: 'learning', name: 'Learning Agent', state: 'STANDBY', color_hex: '#1d4ed8' }
+  ],
   startDebate: mockStartDebate,
   uploadFile: mockUploadFile,
   draftMessage: '',
@@ -317,4 +321,19 @@ describe('ChatPanel.vue', () => {
 
     expect(unlockSpy).toHaveBeenCalled()
   })
+
+  it('switches to observability tab and displays ObservabilityPanel', async () => {
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: false }
+    })
+
+    const obsTabBtn = wrapper.find('[data-test="tab-observability"]')
+    expect(obsTabBtn.exists()).toBe(true)
+
+    await obsTabBtn.trigger('click')
+
+    expect(wrapper.text()).toContain('SYSTEM OBSERVABILITY')
+    expect(wrapper.find('[data-test="tab-observability"]').classes()).toContain('text-neon-cyan')
+  })
 })
+

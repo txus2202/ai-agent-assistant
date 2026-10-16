@@ -16,12 +16,12 @@ import pytest
 
 class TestAgentRole:
     def test_has_eight_roles(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
 
         assert len(list(AgentRole)) == 8
 
     def test_expected_roles_exist(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
 
         expected = {
             "NL_INTERPRETER",
@@ -37,7 +37,7 @@ class TestAgentRole:
         assert actual == expected
 
     def test_role_values_are_strings(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
 
         for role in AgentRole:
             assert isinstance(role.value, str)
@@ -45,7 +45,7 @@ class TestAgentRole:
 
 class TestSubAgentProfiles:
     def test_all_roles_have_a_profile(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
         from src.domain.agents.sub_agent_profiles import get_profile
 
         for role in AgentRole:
@@ -53,8 +53,20 @@ class TestSubAgentProfiles:
             assert profile is not None
             assert profile.role == role
 
+    def test_get_all_profiles_and_roles_preserve_canonical_order(self):
+        from src.domain.agents.sub_agent_profiles import AgentRole
+        from src.domain.agents.sub_agent_profiles import get_all_profiles, get_all_roles
+
+        profiles = get_all_profiles()
+        roles = get_all_roles()
+
+        assert len(profiles) == len(list(AgentRole))
+        assert len(roles) == len(list(AgentRole))
+        assert [p.role for p in profiles] == roles
+        assert roles[0] == AgentRole.SUPERVISOR
+
     def test_profile_is_frozen_immutable(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
         from src.domain.agents.sub_agent_profiles import get_profile
 
         profile = get_profile(AgentRole.NL_INTERPRETER)
@@ -62,7 +74,7 @@ class TestSubAgentProfiles:
             profile.system_prompt = "mutated"  # type: ignore[misc]
 
     def test_profile_has_display_name(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
         from src.domain.agents.sub_agent_profiles import get_profile
 
         for role in AgentRole:
@@ -71,14 +83,14 @@ class TestSubAgentProfiles:
             assert len(profile.display_name) > 0
 
     def test_nl_interpreter_does_not_use_rag(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
         from src.domain.agents.sub_agent_profiles import get_profile
 
         profile = get_profile(AgentRole.NL_INTERPRETER)
         assert profile.uses_rag is False
 
     def test_senior_architect_uses_rag_with_status_filter(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
         from src.domain.agents.sub_agent_profiles import get_profile
 
         profile = get_profile(AgentRole.SENIOR_ARCHITECT)
@@ -87,7 +99,7 @@ class TestSubAgentProfiles:
         assert profile.rag_filter.status == "implemented"
 
     def test_innovator_uses_rag_with_type_spec_filter(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
         from src.domain.agents.sub_agent_profiles import get_profile
 
         profile = get_profile(AgentRole.INNOVATOR)
@@ -96,7 +108,7 @@ class TestSubAgentProfiles:
         assert profile.rag_filter.type == "spec"
 
     def test_the_judge_uses_rag_with_type_adr_filter(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
         from src.domain.agents.sub_agent_profiles import get_profile
 
         profile = get_profile(AgentRole.THE_JUDGE)
@@ -105,16 +117,35 @@ class TestSubAgentProfiles:
         assert profile.rag_filter.type == "adr"
 
     def test_diagrammer_system_prompt_mentions_mermaid(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
         from src.domain.agents.sub_agent_profiles import get_profile
 
         profile = get_profile(AgentRole.DIAGRAMMER)
         assert "mermaid" in profile.system_prompt.lower()
 
     def test_all_profiles_have_non_empty_system_prompt(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
         from src.domain.agents.sub_agent_profiles import get_profile
 
         for role in AgentRole:
             profile = get_profile(role)
             assert len(profile.system_prompt.strip()) > 50  # meaningful, not empty
+
+    def test_all_profiles_have_non_empty_description(self):
+        from src.domain.agents.sub_agent_profiles import AgentRole
+        from src.domain.agents.sub_agent_profiles import get_profile
+
+        for role in AgentRole:
+            profile = get_profile(role)
+            assert profile.description is not None
+            assert len(profile.description.strip()) > 10
+
+    def test_all_profiles_have_valid_color_hex(self):
+        from src.domain.agents.sub_agent_profiles import AgentRole
+        from src.domain.agents.sub_agent_profiles import get_profile
+
+        for role in AgentRole:
+            profile = get_profile(role)
+            assert profile.color_hex is not None
+            assert profile.color_hex.startswith("#")
+            assert len(profile.color_hex) == 7

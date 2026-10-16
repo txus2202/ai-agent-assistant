@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { useDebateStore } from '../debate'
+import { useDebateStore, normalizeAgentRole } from '../debate'
 
 interface MockWebSocketInstance {
   readyState: number
@@ -299,13 +299,17 @@ describe('useDebateStore', () => {
       content: 'Generating diagrams'
     })
     expect(store.agents[0]!.state).toBe('ACTIVE')
+    expect(store.agents[0]!.startedAt).toBeDefined()
 
     store.handleSupervisorEvent({
       type: 'agent_completed',
       role: 'diagrammer',
-      content: 'Diagram created'
+      content: 'Diagram created with flow',
+      metadata: { latency_seconds: '1.25', tokens: '42' }
     })
     expect(store.agents[0]!.state).toBe('COMPLETED')
+    expect(store.agents[0]!.latency).toBe(1.25)
+    expect(store.agents[0]!.tokens).toBe(42)
   })
 
   it('handles done, error, and message supervisor events', () => {
@@ -340,6 +344,37 @@ describe('useDebateStore', () => {
     expect(store.isDebating).toBe(false)
     expect(store.messages).toHaveLength(3)
     expect(store.messages[2]!.content).toBe('[the_judge] Consensus finalized.')
+  })
+
+  it('populates agentRole, agentName, and colorHex on hitl_required and done events', () => {
+    const store = useDebateStore()
+    store.agents = [
+      { role: 'nl_interpreter', name: 'Natural Language Interpreter', color_hex: '#00e5ff', state: 'STANDBY' },
+      { role: 'supervisor', name: 'Supervisor', color_hex: '#f59e0b', state: 'STANDBY' }
+    ]
+
+    store.handleSupervisorEvent({
+      type: 'hitl_required',
+      role: 'nl_interpreter',
+      content: 'Please confirm user request interpretation',
+      metadata: { checkpoint: '1_interpreter' }
+    })
+
+    expect(store.isHitlRequired).toBe(true)
+    expect(store.messages[0]!.agentRole).toBe('nl_interpreter')
+    expect(store.messages[0]!.agentName).toBe('Natural Language Interpreter')
+    expect(store.messages[0]!.colorHex).toBe('#00e5ff')
+    expect(store.messages[0]!.content).toContain('[nl_interpreter]')
+
+    store.handleSupervisorEvent({
+      type: 'done',
+      role: 'supervisor',
+      content: 'Debate consolidated recommendation'
+    })
+
+    expect(store.messages[1]!.agentRole).toBe('supervisor')
+    expect(store.messages[1]!.agentName).toBe('Supervisor')
+    expect(store.messages[1]!.colorHex).toBe('#f59e0b')
   })
 
   it('handles submitHitlDecision by sending websocket payload and resetting checkpoint', () => {
@@ -387,16 +422,32 @@ describe('useDebateStore', () => {
     expect(store.rawEvents).toHaveLength(3)
   })
 
-  it('handles loadAgents fallback when backend API fails', async () => {
+  it('handles loadAgents error when backend API fails by clearing agents and resetting isAgentsLoaded', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     global.fetch = vi.fn().mockRejectedValue(new Error('Network error'))
 
     const store = useDebateStore()
     await store.loadAgents()
 
+    expect(store.isAgentsLoaded).toBe(false)
+    expect(store.agents).toEqual([])
+  })
+
+  it('handles loadAgents successfully mapping description and color_hex from API', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([
+        { id: 'nl_interpreter', name: 'NL Interpreter', description: 'Formaliza intención', color_hex: '#00e5ff' }
+      ])
+    })
+
+    const store = useDebateStore()
+    await store.loadAgents()
+
     expect(store.isAgentsLoaded).toBe(true)
-    expect(store.agents.length).toBeGreaterThanOrEqual(6)
-    expect(store.agents.some(a => a.role === 'the_judge')).toBe(true)
+    expect(store.agents).toHaveLength(1)
+    expect(store.agents[0]!.description).toBe('Formaliza intención')
+    expect(store.agents[0]!.color_hex).toBe('#00e5ff')
   })
 
   it('handles startDebate when disconnected by showing error message and calling connect', () => {
@@ -488,5 +539,18 @@ describe('useDebateStore', () => {
     const playPromise = store.playTtsAudioChunk(new ArrayBuffer(16))
     expect(playPromise).toBeInstanceOf(Promise)
     await playPromise
+  })
+
+  it('normalizes agent roles correctly (both standalone and on store)', () => {
+    const store = useDebateStore()
+    expect(normalizeAgentRole('')).toBe('')
+    expect(normalizeAgentRole(null)).toBe('')
+    expect(normalizeAgentRole(undefined)).toBe('')
+    expect(normalizeAgentRole('INNOVATOR')).toBe('innovator_architect')
+    expect(normalizeAgentRole('innovator')).toBe('innovator_architect')
+    expect(normalizeAgentRole('nl-interpreter')).toBe('nl_interpreter')
+    expect(normalizeAgentRole('supervisor')).toBe('supervisor')
+
+    expect(store.normalizeAgentRole('innovator')).toBe('innovator_architect')
   })
 })

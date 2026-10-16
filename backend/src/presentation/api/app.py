@@ -18,9 +18,30 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import asyncio
+import atexit
+import os
+import sys
+
 from src.presentation.api.config import get_settings
 from src.infrastructure.persistence.sqlite_agent_config_repository import SqliteAgentConfigRepository
 from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
+from src.infrastructure.observability.docker_manager import DockerObservabilityManager
+
+
+def _cleanup_docker_on_exit() -> None:
+    """Safety fallback to ensure Docker stack stops when the Python process exits."""
+    if "pytest" in sys.modules or os.environ.get("ENV") == "test":
+        return
+    try:
+        settings = get_settings()
+        if settings.langfuse_metrics_enabled:
+            DockerObservabilityManager().stop_stack()
+    except Exception:
+        pass
+
+
+atexit.register(_cleanup_docker_on_exit)
 
 
 @asynccontextmanager
@@ -35,10 +56,16 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
     SqliteAgentConfigRepository(db_path)
     SqliteDebateRepository(db_path)
     
+    # Ensure Langfuse Docker stack matches LANGFUSE_METRICS_ENABLED
+    docker_manager = DockerObservabilityManager()
+    await asyncio.to_thread(docker_manager.ensure_stack_state, settings.langfuse_metrics_enabled)
+    
     # Future: ChromaDB, LLMProviderRegistry init
     yield
     # ── Shutdown ─────────────────────────────────────────────────────────
-    # Future: close DB connections
+    if settings.langfuse_metrics_enabled:
+        await asyncio.to_thread(docker_manager.stop_stack)
+
 
 
 def create_app() -> FastAPI:
@@ -61,7 +88,7 @@ def create_app() -> FastAPI:
     )
 
     # ── Routers ──────────────────────────────────────────────────────────
-    from src.presentation.api.routes import health, config, upload, history, models, audio
+    from src.presentation.api.routes import health, config, upload, history, models, audio, observability
     from src.presentation.api.ws import debate, wake_word
 
     # Register routes
@@ -71,6 +98,7 @@ def create_app() -> FastAPI:
     app.include_router(history.router)
     app.include_router(models.router)
     app.include_router(audio.router)
+    app.include_router(observability.router)
     app.include_router(debate.router)
     app.include_router(wake_word.router)
     

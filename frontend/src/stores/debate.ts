@@ -1,12 +1,17 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 
 export type AgentState = 'STANDBY' | 'ACTIVE' | 'COMPLETED'
 
 export interface Agent {
   role: string
   name: string
+  description?: string
+  color_hex?: string
   state: AgentState
+  tokens?: number
+  latency?: number
+  startedAt?: number
 }
 
 export interface ChatMessage {
@@ -14,7 +19,9 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   timestamp?: string
+  agentRole?: string
   agentName?: string
+  colorHex?: string
 }
 
 export interface SupervisorEvent {
@@ -24,6 +31,9 @@ export interface SupervisorEvent {
   content?: string
   metadata?: {
     checkpoint?: string
+    latency_seconds?: number | string
+    tokens?: number | string
+    cached_tokens?: number | string
     [key: string]: unknown
   }
   [key: string]: unknown
@@ -69,6 +79,19 @@ export async function uploadFile(file: File): Promise<string> {
   return data.path
 }
 
+export function normalizeAgentRole(r?: string | null): string {
+  if (!r) return ''
+  const lower = r.toLowerCase().replaceAll('-', '_')
+  if (lower === 'innovator') return 'innovator_architect'
+  return lower
+}
+
+const CHECKPOINT_ROLES: Record<string, string> = {
+  '1_interpreter': 'nl_interpreter',
+  '2_architects': 'innovator_architect',
+  '3_judge': 'the_judge'
+}
+
 export const useDebateStore = defineStore('debate', () => {
   const isConnected = ref(false)
   const isDebating = ref(false)
@@ -80,6 +103,15 @@ export const useDebateStore = defineStore('debate', () => {
   
   const agents = ref<Agent[]>([])
   const isAgentsLoaded = ref(false)
+
+  // Context caching & session token efficiency
+  const sessionTotalTokens = ref(0)
+  const sessionCachedTokens = ref(0)
+  const cacheSavingsPercentage = computed(() => {
+    const total = sessionTotalTokens.value + sessionCachedTokens.value
+    if (total === 0) return 0
+    return Math.min(100, Math.round((sessionCachedTokens.value / total) * 100))
+  })
 
   // TTS State
   const isTtsPlaying = ref(false)
@@ -230,25 +262,19 @@ export const useDebateStore = defineStore('debate', () => {
       const response = await fetch('/api/config/agents')
       if (!response.ok) throw new Error('Failed to fetch agents config')
       
-      const data: Array<{ id: string, name: string }> = await response.json()
+      const data: Array<{ id: string, name: string, description?: string, color_hex?: string }> = await response.json()
       agents.value = data.map(agent => ({
         role: agent.id,
         name: agent.name,
+        description: agent.description,
+        color_hex: agent.color_hex,
         state: 'STANDBY'
       }))
       isAgentsLoaded.value = true
     } catch (error) {
       console.error('Error loading agents:', error)
-      // Fallback for dev if backend isn't running
-      agents.value = [
-        { role: 'nl_interpreter', name: 'Nl Interpreter', state: 'STANDBY' },
-        { role: 'innovator_architect', name: 'Innovator Architect', state: 'STANDBY' },
-        { role: 'senior_architect', name: 'Senior Architect', state: 'STANDBY' },
-        { role: 'the_judge', name: 'The Judge', state: 'STANDBY' },
-        { role: 'diagrammer', name: 'Diagrammer', state: 'STANDBY' },
-        { role: 'devops_secops', name: 'Devops Secops', state: 'STANDBY' }
-      ]
-      isAgentsLoaded.value = true
+      agents.value = []
+      isAgentsLoaded.value = false
     }
   }
 
@@ -350,6 +376,8 @@ export const useDebateStore = defineStore('debate', () => {
     
     // Reset agent states to STANDBY for the new debate
     agents.value.forEach(a => a.state = 'STANDBY')
+    sessionTotalTokens.value = 0
+    sessionCachedTokens.value = 0
     
     isDebating.value = true
     messages.value.push({
@@ -368,26 +396,129 @@ export const useDebateStore = defineStore('debate', () => {
     ws.send(JSON.stringify(payload))
   }
 
+  function findAgent(role?: string | null): Agent | undefined {
+    if (!role) return undefined
+    const norm = normalizeAgentRole(role)
+    return agents.value.find(a => normalizeAgentRole(a.role) === norm)
+  }
+
+  function resolveAgentDisplay(role?: string | null) {
+    const agent = findAgent(role)
+    const agentRole = agent?.role || normalizeAgentRole(role) || 'supervisor'
+    const isSupervisor = agentRole === 'supervisor'
+    const agentName = agent?.name || (isSupervisor ? 'Supervisor' : agentRole)
+    const colorHex = agent?.color_hex || (isSupervisor ? '#f59e0b' : '#00e5ff')
+    return { agentRole, agentName, colorHex }
+  }
+
+  function pushAgentMessage(content: string, role?: string | null) {
+    const { agentRole, agentName, colorHex } = resolveAgentDisplay(role)
+    messages.value.push({
+      role: 'assistant',
+      content: `[${agentRole}] ${content}`,
+      agentRole,
+      agentName,
+      colorHex
+    })
+  }
+
+  function handleHitlRequired(event: SupervisorEvent) {
+    isHitlRequired.value = true
+    const checkpoint = event.metadata?.checkpoint
+    hitlCheckpoint.value = checkpoint || null
+    const checkpointRole = checkpoint ? CHECKPOINT_ROLES[checkpoint] : undefined
+    const role = event.role || checkpointRole || 'supervisor'
+    pushAgentMessage(event.content || 'HITL Required', role)
+  }
+
+  function handleAgentStarted(event: SupervisorEvent) {
+    const agent = findAgent(event.role)
+    if (!agent) return
+    agent.state = 'ACTIVE'
+    agent.startedAt = Date.now()
+  }
+
+  function updateAgentLatency(agent: Agent, event: SupervisorEvent) {
+    if (event.metadata?.latency_seconds) {
+      agent.latency = Number(event.metadata.latency_seconds)
+    } else if (agent.startedAt) {
+      agent.latency = Number(((Date.now() - agent.startedAt) / 1000).toFixed(2))
+    }
+  }
+
+  function updateAgentTokens(agent: Agent, event: SupervisorEvent): number {
+    if (event.metadata?.tokens) {
+      const tokens = Number.parseInt(String(event.metadata.tokens), 10)
+      agent.tokens = (agent.tokens || 0) + tokens
+      return tokens
+    }
+    if (event.content) {
+      const words = event.content.trim().split(/\s+/).filter(Boolean).length
+      const tokens = Math.max(12, Math.round(words * 1.35))
+      agent.tokens = (agent.tokens || 0) + tokens
+      return tokens
+    }
+    return 0
+  }
+
+  function updateCachedTokens(event: SupervisorEvent, estTokens: number) {
+    if (event.metadata?.cached_tokens) {
+      sessionCachedTokens.value += Number.parseInt(String(event.metadata.cached_tokens), 10)
+      return
+    }
+    if (estTokens > 0) {
+      const completedCount = agents.value.filter(a => a.state === 'COMPLETED').length
+      if (completedCount > 1) {
+        sessionCachedTokens.value += Math.round(estTokens * 0.65)
+      }
+    }
+  }
+
+  function handleAgentCompleted(event: SupervisorEvent) {
+    const agent = findAgent(event.role)
+    if (!agent) return
+
+    agent.state = 'COMPLETED'
+    updateAgentLatency(agent, event)
+    const estTokens = updateAgentTokens(agent, event)
+    updateCachedTokens(event, estTokens)
+    sessionTotalTokens.value += estTokens
+  }
+
+  function handleDone(event: SupervisorEvent) {
+    isDebating.value = false
+    pushAgentMessage(event.content || 'Debate finished.', event.role)
+  }
+
+  function handleError(event: SupervisorEvent) {
+    isDebating.value = false
+    messages.value.push({ role: 'assistant', content: `Error: ${event.content}` })
+  }
+
+  function handleMessage(event: SupervisorEvent) {
+    pushAgentMessage(event.content || '', event.role)
+  }
+
   function handleSupervisorEvent(event: SupervisorEvent) {
-    if (event.type === 'hitl_required') {
-      isHitlRequired.value = true
-      hitlCheckpoint.value = event.metadata?.checkpoint || null
-      messages.value.push({ role: 'assistant', content: event.content || 'HITL Required' })
-    } else if (event.type === 'agent_started') {
-      const agent = agents.value.find(a => a.role === event.role)
-      if (agent) agent.state = 'ACTIVE'
-    } else if (event.type === 'agent_completed') {
-      const agent = agents.value.find(a => a.role === event.role)
-      if (agent) agent.state = 'COMPLETED'
-    } else if (event.type === 'done') {
-      isDebating.value = false
-      const prefix = event.role ? `[${event.role}] ` : ''
-      messages.value.push({ role: 'assistant', content: prefix + (event.content || 'Debate finished.') })
-    } else if (event.type === 'error') {
-      isDebating.value = false
-      messages.value.push({ role: 'assistant', content: `Error: ${event.content}` })
-    } else if (event.type === 'message') {
-      messages.value.push({ role: 'assistant', content: `[${event.role}] ${event.content}` })
+    switch (event.type) {
+      case 'hitl_required':
+        handleHitlRequired(event)
+        break
+      case 'agent_started':
+        handleAgentStarted(event)
+        break
+      case 'agent_completed':
+        handleAgentCompleted(event)
+        break
+      case 'done':
+        handleDone(event)
+        break
+      case 'error':
+        handleError(event)
+        break
+      case 'message':
+        handleMessage(event)
+        break
     }
   }
 
@@ -555,6 +686,9 @@ export const useDebateStore = defineStore('debate', () => {
     draftMessage,
     agents,
     isAgentsLoaded,
+    sessionTotalTokens,
+    sessionCachedTokens,
+    cacheSavingsPercentage,
     isTtsPlaying,
     activeTtsRole,
     isVoiceOutputEnabled,
@@ -575,6 +709,8 @@ export const useDebateStore = defineStore('debate', () => {
     submitHitlDecision,
     startAutoListen,
     stopAutoListen,
+    findAgent,
+    normalizeAgentRole,
     get ws() { return ws } // Getter for testing purposes
   }
 })

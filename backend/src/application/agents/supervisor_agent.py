@@ -23,11 +23,12 @@ ADR-015: No ADK dependency. hitl_callback is now an async callable.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 from collections.abc import AsyncGenerator, Awaitable, Callable
 
 from src.application.agents.sub_agent_runner import SubAgentRunner
-from src.domain.agents.agent_role import AgentRole
+from src.domain.agents.sub_agent_profiles import AgentRole
 from src.domain.agents.supervisor_events import (
     EventType,
     HITLDecision,
@@ -90,6 +91,16 @@ class SupervisorAgent:
         )
 
 
+class DebateState:
+    def __init__(self) -> None:
+        self.agent_outputs: dict[str, str] = {}
+        self.agent_metadata: dict[str, dict[str, str]] = {}
+        self.formalized: str = ""
+        self.selected_solutions: list[str] = []
+        self.final_solutions: list[str] = []
+        self.hitl2_content: str = ""
+
+
 async def _debate_generator(
     user_request: str,
     document_store: IDocumentStore,
@@ -101,6 +112,8 @@ async def _debate_generator(
     # Setup global defaults if config not found
     from src.presentation.api.config import get_settings
     settings = get_settings()
+
+    state = DebateState()
 
     async def run_role(r: AgentRole, req: str) -> tuple[AgentRole, str]:
         # Lookup configuration for this specific role
@@ -119,9 +132,15 @@ async def _debate_generator(
             document_store=document_store,
             model_name=model_name,
         )
+        state.agent_metadata[r.value] = {
+            "model": resp.model_name or model_name,
+            "prompt_tokens": str(resp.tokens.get("input", 0)),
+            "completion_tokens": str(resp.tokens.get("output", 0)),
+            "total_tokens": str(resp.tokens.get("total", 0)),
+            "latency_seconds": str(resp.latency),
+            "tokens": str(resp.tokens.get("total", 0)),
+        }
         return r, resp.content
-
-    state = DebateState()
     
     async for event in _run_phase_1(state, user_request, run_role, hitl_callback):
         yield event
@@ -143,14 +162,6 @@ async def _debate_generator(
     yield await _run_consolidation(state, supervisor_provider, sup_model_name)
 
 
-class DebateState:
-    def __init__(self) -> None:
-        self.agent_outputs: dict[str, str] = {}
-        self.formalized: str = ""
-        self.selected_solutions: list[str] = []
-        self.final_solutions: list[str] = []
-        self.hitl2_content: str = ""
-
 async def _run_phase_1(
     state: DebateState,
     user_request: str,
@@ -167,11 +178,12 @@ async def _run_phase_1(
             type=EventType.AGENT_COMPLETED,
             role=AgentRole.NL_INTERPRETER,
             content=nl_content,
+            metadata=state.agent_metadata.get(AgentRole.NL_INTERPRETER.value, {}),
         )
         
         hitl_event = SupervisorEvent(
             type=EventType.HITL_REQUIRED,
-            role=None,
+            role=AgentRole.NL_INTERPRETER,
             content=f"## Interpretation\n{nl_content}",
             metadata={"checkpoint": "1_interpreter"},
         )
@@ -200,7 +212,12 @@ async def _run_phase_2(
         
         for role, content in results:
             state.agent_outputs[role.value] = content
-            yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=role, content=content)
+            yield SupervisorEvent(
+                type=EventType.AGENT_COMPLETED,
+                role=role,
+                content=content,
+                metadata=state.agent_metadata.get(role.value, {}),
+            )
 
         state.hitl2_content = (
             f"## {AgentRole.INNOVATOR.value}\n{state.agent_outputs[AgentRole.INNOVATOR.value]}\n\n"
@@ -208,7 +225,7 @@ async def _run_phase_2(
         )
         hitl_event = SupervisorEvent(
             type=EventType.HITL_REQUIRED,
-            role=None,
+            role=AgentRole.INNOVATOR,
             content=state.hitl2_content,
             metadata={"checkpoint": "2_architects"},
         )
@@ -240,11 +257,16 @@ async def _run_phase_3(
         yield SupervisorEvent(type=EventType.AGENT_STARTED, role=AgentRole.THE_JUDGE, content="")
         _, judge_content = await run_role(AgentRole.THE_JUDGE, req)
         state.agent_outputs[AgentRole.THE_JUDGE.value] = judge_content
-        yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=AgentRole.THE_JUDGE, content=judge_content)
+        yield SupervisorEvent(
+            type=EventType.AGENT_COMPLETED,
+            role=AgentRole.THE_JUDGE,
+            content=judge_content,
+            metadata=state.agent_metadata.get(AgentRole.THE_JUDGE.value, {}),
+        )
 
         hitl_event = SupervisorEvent(
             type=EventType.HITL_REQUIRED,
-            role=None,
+            role=AgentRole.THE_JUDGE,
             content=f"## {AgentRole.THE_JUDGE.value}\n{judge_content}",
             metadata={"checkpoint": "3_judge"},
         )
@@ -272,7 +294,12 @@ async def _run_phase_4(
     
     for role, content in results_impl:
         state.agent_outputs[role.value] = content
-        yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=role, content=content)
+        yield SupervisorEvent(
+            type=EventType.AGENT_COMPLETED,
+            role=role,
+            content=content,
+            metadata=state.agent_metadata.get(role.value, {}),
+        )
 
 async def _run_consolidation(
     state: DebateState,
@@ -284,6 +311,31 @@ async def _run_consolidation(
     )
     consolidation_prompt = _CONSOLIDATION_PROMPT.format(debate_context=debate_context)
     
+    start_time = time.perf_counter()
     final_response = await asyncio.to_thread(default_provider.complete, consolidation_prompt, default_model)
+    latency = round(time.perf_counter() - start_time, 2)
 
-    return SupervisorEvent(type=EventType.DONE, role=AgentRole.SUPERVISOR, content=final_response)
+    usage = {}
+    if hasattr(default_provider, "get_last_usage"):
+        usage = default_provider.get_last_usage() or {}
+
+    if not usage or usage.get("total", 0) == 0:
+        in_tkn = max(1, len(consolidation_prompt) // 4)
+        out_tkn = max(1, len(final_response) // 4)
+        usage = {"input": in_tkn, "output": out_tkn, "total": in_tkn + out_tkn}
+
+    meta = {
+        "model": default_model,
+        "prompt_tokens": str(usage.get("input", 0)),
+        "completion_tokens": str(usage.get("output", 0)),
+        "total_tokens": str(usage.get("total", 0)),
+        "latency_seconds": str(latency),
+        "tokens": str(usage.get("total", 0)),
+    }
+
+    return SupervisorEvent(
+        type=EventType.DONE,
+        role=AgentRole.SUPERVISOR,
+        content=final_response,
+        metadata=meta,
+    )

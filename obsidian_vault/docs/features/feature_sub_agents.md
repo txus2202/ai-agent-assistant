@@ -138,8 +138,7 @@ Then it contains the instruction to output a mermaid code block
 
 ## Implementation Notes
 
-- `AgentRole` → `src/domain/agents/agent_role.py`
-- `SubAgentProfile` + profiles → `src/domain/agents/sub_agent_profiles.py`
+- `AgentRole`, `SubAgentProfile` + profiles → `src/domain/agents/sub_agent_profiles.py`
 - `SubAgentRunner` + `SubAgentResponse` → `src/application/agents/sub_agent_runner.py`
 - Tests live in `tests/domain/agents/` and `tests/application/agents/`
 - Tests mock both `ILLMProvider` and `IDocumentStore` — no real calls

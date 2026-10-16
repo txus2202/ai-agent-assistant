@@ -3,6 +3,8 @@ import { defineStore } from 'pinia'
 export interface AgentConfig {
   id: string
   name: string
+  description?: string
+  color_hex?: string
   provider: string
   model_name: string
 }

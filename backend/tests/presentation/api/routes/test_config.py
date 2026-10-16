@@ -15,10 +15,19 @@ def test_get_agents_config(client):
     # Check that learning is present
     roles = [a["id"] for a in data]
     assert "learning" in roles
+    assert "supervisor" in roles
+    supervisor_agent = next(a for a in data if a["id"] == "supervisor")
+    assert supervisor_agent["color_hex"] == "#f59e0b"
+    assert supervisor_agent["name"] == "Supervisor"
     
-    # By default, should have provider and model_name
+    # By default, should have provider, model_name, name, description, and color_hex
     assert "provider" in data[0]
     assert "model_name" in data[0]
+    assert "name" in data[0]
+    assert "description" in data[0]
+    assert len(data[0]["description"]) > 10
+    assert "color_hex" in data[0]
+    assert data[0]["color_hex"].startswith("#")
 
 def test_put_agent_config(client):
     # Test updating the judge

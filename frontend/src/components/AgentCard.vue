@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import { computed, useId } from 'vue'
-import { useConfigStore } from '../stores/config'
+import { useConfigStore, type AgentConfig } from '../stores/config'
 
 const props = defineProps<{
   role: string
   roleName?: string
+  description?: string
+  colorHex?: string
   state: 'STANDBY' | 'ACTIVE' | 'COMPLETED'
-  colorClass: string
-  glowClass: string
+  colorClass?: string
+  glowClass?: string
+  tokensConsumed?: number
+  latencySeconds?: number
 }>()
 
 const store = useConfigStore()
@@ -15,8 +19,15 @@ const uid = useId()
 const providerId = `${uid}-provider`
 const modelId = `${uid}-model`
 
-const agentConfig = computed(() => {
-  return store.agentsConfig.find(c => c.id === props.role) || { provider: 'gemini', model_name: 'gemini-1.5-flash' }
+const agentConfig = computed<AgentConfig>(() => {
+  return store.agentsConfig.find(c => c.id === props.role) || {
+    id: props.role,
+    name: props.roleName || props.role,
+    provider: 'gemini',
+    model_name: 'gemini-1.5-flash',
+    description: '',
+    color_hex: '#00e5ff'
+  }
 })
 
 const provider = computed({
@@ -44,28 +55,42 @@ const displayRole = computed(() => {
   if (props.roleName) return props.roleName
   return props.role.replaceAll('_', ' ').toUpperCase()
 })
+
+const agentDescription = computed(() => {
+  return props.description || agentConfig.value.description || ''
+})
+
+const agentColor = computed(() => {
+  return props.colorHex || agentConfig.value.color_hex || '#00e5ff'
+})
 </script>
 
 <template>
   <div 
     data-test="card-container"
     class="relative overflow-hidden rounded-xl bg-space-850/80 border border-space-700 p-4 transition-all duration-300"
-    :class="[isGlowActive ? glowClass : '']"
+    :class="[isGlowActive ? (glowClass || '') : '']"
+    :style="isGlowActive ? { borderColor: agentColor, boxShadow: `0 0 20px ${agentColor}40, inset 0 0 15px ${agentColor}1a` } : {}"
   >
     <div class="flex items-center space-x-3">
       <!-- Status Dot -->
       <div 
         class="h-3 w-3 rounded-full"
         :class="[
-          state === 'ACTIVE' ? 'animate-pulse bg-white' : '',
+          state === 'ACTIVE' ? 'animate-pulse' : '',
           state === 'COMPLETED' ? 'bg-space-700' : '',
           state === 'STANDBY' ? 'bg-space-700' : ''
         ]"
+        :style="state === 'ACTIVE' ? { backgroundColor: agentColor, boxShadow: `0 0 8px ${agentColor}` } : {}"
       ></div>
       
       <!-- Role and Status Text -->
       <div>
-        <h3 class="font-mono text-sm tracking-wider" :class="colorClass">
+        <h3 
+          class="font-mono text-sm tracking-wider" 
+          :class="colorClass"
+          :style="{ color: agentColor }"
+        >
           {{ displayRole }}
         </h3>
         <p class="text-xs text-slate-400 font-mono mt-1">
@@ -74,9 +99,18 @@ const displayRole = computed(() => {
       </div>
     </div>
 
+    <!-- Agent Mission / Responsibility Description (Always Visible) -->
+    <p data-test="agent-description" class="text-[11px] text-space-300 font-sans leading-relaxed mt-2.5">
+      {{ agentDescription }}
+    </p>
+
     <!-- Progress Bar (Visible only when ACTIVE) -->
     <div v-if="state === 'ACTIVE'" data-test="progress-bar" class="mt-4 h-1 w-full bg-space-800 rounded-full overflow-hidden">
-      <div class="h-full bg-current opacity-50 animate-[shimmer_2s_infinite]" :class="colorClass"></div>
+      <div 
+        class="h-full opacity-60 animate-[shimmer_2s_infinite]" 
+        :class="colorClass"
+        :style="{ backgroundColor: agentColor }"
+      ></div>
     </div>
 
     <!-- Config Selectors -->
@@ -107,6 +141,18 @@ const displayRole = computed(() => {
             </template>
           </template>
         </select>
+      </div>
+
+      <!-- Observability Metrics Badges -->
+      <div v-if="tokensConsumed !== undefined || latencySeconds !== undefined" class="pt-2 border-t border-space-800/80 flex items-center justify-between text-[9px] font-mono">
+        <span v-if="tokensConsumed !== undefined" class="flex items-center space-x-1 text-space-400">
+          <span class="text-space-500 uppercase">Tokens:</span>
+          <span class="text-slate-300 font-semibold">{{ tokensConsumed }}</span>
+        </span>
+        <span v-if="latencySeconds !== undefined" class="flex items-center space-x-1 text-space-400">
+          <span class="text-space-500 uppercase">Lat:</span>
+          <span class="text-slate-300 font-semibold">{{ latencySeconds.toFixed(2) }}s</span>
+        </span>
       </div>
     </div>
   </div>

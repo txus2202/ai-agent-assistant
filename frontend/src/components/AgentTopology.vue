@@ -1,30 +1,34 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
-import { useDebateStore } from '../stores/debate'
+import { ref, computed, watch, nextTick } from 'vue'
+import { useDebateStore, type Agent } from '../stores/debate'
 import AgentCard from './AgentCard.vue'
-import { AGENT_THEME, DEFAULT_AGENT_THEME } from '../config/agentTheme'
 
 const store = useDebateStore()
 
 const props = defineProps<{
-  agents: Array<{
-    role: string
-    name?: string
-    state: 'STANDBY' | 'ACTIVE' | 'COMPLETED'
-  }>
+  agents: Agent[]
 }>()
 
 const listContainer = ref<HTMLElement | null>(null)
 
-const getTheme = (role: string) => {
-  return AGENT_THEME[role] || DEFAULT_AGENT_THEME
+const displayedAgents = computed(() => {
+  return (props.agents || []).filter(a => a.role !== 'supervisor')
+})
+
+const isAgentActive = (agentRole: string, agentState: string) => {
+  if (store.activeTtsRole) {
+    const normTts = store.normalizeAgentRole ? store.normalizeAgentRole(store.activeTtsRole) : store.activeTtsRole
+    const normAgent = store.normalizeAgentRole ? store.normalizeAgentRole(agentRole) : agentRole
+    if (normTts === normAgent) return true
+  }
+  return agentState === 'ACTIVE'
 }
 
-// Watch for changes in agents or activeTtsRole to trigger scrollIntoView on the active one
+// Watch for changes in displayedAgents or activeTtsRole to trigger scrollIntoView on the active one
 watch(
-  () => [props.agents, store.activeTtsRole],
+  () => [displayedAgents.value, store.activeTtsRole],
   async () => {
-    const activeIndex = props.agents.findIndex(a => a.state === 'ACTIVE' || store.activeTtsRole === a.role)
+    const activeIndex = displayedAgents.value.findIndex(a => isAgentActive(a.role, a.state))
     if (activeIndex !== -1) {
       await nextTick()
       const activeEl = listContainer.value?.children[activeIndex] as HTMLElement
@@ -53,14 +57,19 @@ watch(
       data-test="topology-scroll-container" 
       class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4"
     >
+      <div v-if="displayedAgents.length === 0" data-test="empty-agents-message" class="text-xs text-slate-500 font-mono text-center py-8">
+        No agents available
+      </div>
       <AgentCard
-        v-for="agent in agents"
+        v-for="agent in displayedAgents"
         :key="agent.role"
         :role="agent.role"
         :roleName="agent.name"
-        :state="store.activeTtsRole === agent.role ? 'ACTIVE' : agent.state"
-        :colorClass="getTheme(agent.role).colorClass"
-        :glowClass="getTheme(agent.role).glowClass"
+        :description="agent.description"
+        :colorHex="agent.color_hex"
+        :state="isAgentActive(agent.role, agent.state) ? 'ACTIVE' : agent.state"
+        :tokensConsumed="agent.tokens"
+        :latencySeconds="agent.latency"
       />
     </div>
 

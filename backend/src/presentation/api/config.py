@@ -48,6 +48,17 @@ class Settings(BaseSettings):
     kokoro_voices_path: Path = Path("voices/voices-v1.0.bin")
     kokoro_voice_name: str = "ef_dora"
 
+    # Observability (Phase 6 / Langfuse)
+    langfuse_metrics_enabled: bool = False
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_host: str = "http://localhost:3000"
+    langfuse_base_url: str = ""
+
+    @property
+    def effective_langfuse_host(self) -> str:
+        return self.langfuse_base_url or self.langfuse_host or "http://localhost:3000"
+
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
         env_file_encoding="utf-8",

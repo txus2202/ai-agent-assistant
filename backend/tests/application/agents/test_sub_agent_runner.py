@@ -55,7 +55,7 @@ def _chunk(chunk_id: str, content: str, metadata: dict | None = None) -> Documen
 class TestSubAgentRunner:
     @pytest.mark.anyio
     async def test_nl_interpreter_returns_response(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
         from src.application.agents.sub_agent_runner import SubAgentRunner
 
         llm = FakeLLM("Formalized: use hexagonal architecture")
@@ -73,7 +73,7 @@ class TestSubAgentRunner:
 
     @pytest.mark.anyio
     async def test_nl_interpreter_does_not_call_rag(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
         from src.application.agents.sub_agent_runner import SubAgentRunner
 
         llm = FakeLLM()
@@ -92,7 +92,7 @@ class TestSubAgentRunner:
 
     @pytest.mark.anyio
     async def test_senior_architect_retrieves_rag_with_implemented_filter(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
         from src.application.agents.sub_agent_runner import SubAgentRunner
 
         store = InMemoryDocumentStore()
@@ -115,7 +115,7 @@ class TestSubAgentRunner:
 
     @pytest.mark.anyio
     async def test_innovator_retrieves_rag_with_spec_filter(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
         from src.application.agents.sub_agent_runner import SubAgentRunner
 
         store = InMemoryDocumentStore()
@@ -138,7 +138,7 @@ class TestSubAgentRunner:
 
     @pytest.mark.anyio
     async def test_prompt_includes_system_prompt(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
         from src.domain.agents.sub_agent_profiles import get_profile
         from src.application.agents.sub_agent_runner import SubAgentRunner
 
@@ -158,7 +158,7 @@ class TestSubAgentRunner:
 
     @pytest.mark.anyio
     async def test_prompt_includes_context_when_rag_used(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
         from src.application.agents.sub_agent_runner import SubAgentRunner
 
         llm = FakeLLM()
@@ -180,7 +180,7 @@ class TestSubAgentRunner:
 
     @pytest.mark.anyio
     async def test_response_role_matches_requested_role(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
         from src.application.agents.sub_agent_runner import SubAgentRunner
 
         response = await SubAgentRunner.run(
@@ -195,7 +195,7 @@ class TestSubAgentRunner:
 
     @pytest.mark.anyio
     async def test_response_content_is_llm_output(self):
-        from src.domain.agents.agent_role import AgentRole
+        from src.domain.agents.sub_agent_profiles import AgentRole
         from src.application.agents.sub_agent_runner import SubAgentRunner
 
         response = await SubAgentRunner.run(

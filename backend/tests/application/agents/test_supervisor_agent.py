@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.domain.agents.agent_role import AgentRole
+from src.domain.agents.sub_agent_profiles import AgentRole
 from src.domain.agents.supervisor_events import (
     EventType,
     HITLDecision,

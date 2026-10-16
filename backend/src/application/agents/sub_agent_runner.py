@@ -16,11 +16,11 @@ asyncio.to_thread() here so the event loop is not blocked.
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 
 from src.application.services.query_vault import QueryVault
-from src.domain.agents.agent_role import AgentRole
-from src.domain.agents.sub_agent_profiles import get_profile
+from src.domain.agents.sub_agent_profiles import AgentRole, get_profile
 from src.domain.ports.document_store import IDocumentStore
 from src.domain.ports.llm_provider import ILLMProvider
 from src.domain.value_objects.document_chunk import DocumentChunk
@@ -33,6 +33,9 @@ class SubAgentResponse:
     role: AgentRole
     content: str
     context_chunks: list[DocumentChunk] = field(default_factory=list)
+    tokens: dict[str, int] = field(default_factory=dict)
+    latency: float = 0.0
+    model_name: str = ""
 
 
 class SubAgentRunner:
@@ -85,10 +88,25 @@ class SubAgentRunner:
         prompt = "\n\n".join(parts)
 
         # ── 3. LLM call (offloaded to thread pool — ILLMProvider is sync) ─
+        start_time = time.perf_counter()
         content = await asyncio.to_thread(llm_provider.complete, prompt, model_name)
+        latency = round(time.perf_counter() - start_time, 2)
+
+        usage = {}
+        if hasattr(llm_provider, "get_last_usage"):
+            usage = llm_provider.get_last_usage() or {}
+
+        if not usage or usage.get("total", 0) == 0:
+            in_tkn = max(1, len(prompt) // 4)
+            out_tkn = max(1, len(content) // 4)
+            usage = {"input": in_tkn, "output": out_tkn, "total": in_tkn + out_tkn}
 
         return SubAgentResponse(
             role=role,
             content=content,
             context_chunks=context_chunks,
+            tokens=usage,
+            latency=latency,
+            model_name=model_name,
         )
+

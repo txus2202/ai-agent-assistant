@@ -42,9 +42,22 @@ class OpenAIAdapter(ILLMProvider):
                 model=model_name,
                 messages=[{"role": "user", "content": prompt}],
             )
+            if hasattr(response, "usage") and response.usage:
+                self._last_usage = {
+                    "input": getattr(response.usage, "prompt_tokens", 0) or 0,
+                    "output": getattr(response.usage, "completion_tokens", 0) or 0,
+                    "total": getattr(response.usage, "total_tokens", 0) or 0,
+                }
+            else:
+                self._last_usage = {}
             return response.choices[0].message.content
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
+
+    def get_last_usage(self) -> dict[str, int]:
+        """Return the token usage of the most recent complete() call."""
+        return getattr(self, "_last_usage", {})
+
 
     def list_models(self) -> list[dict[str, str]]:
         try:

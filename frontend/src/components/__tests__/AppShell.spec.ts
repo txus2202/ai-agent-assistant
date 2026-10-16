@@ -3,7 +3,6 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import AppShell from '../AppShell.vue'
 import { useDebateStore } from '../../stores/debate'
-import { AGENT_THEME, DEFAULT_AGENT_THEME } from '../../config/agentTheme'
 
 // Mock fetch for AppHeader and others
 global.fetch = vi.fn().mockResolvedValue({
@@ -34,8 +33,7 @@ describe('AppShell.vue', () => {
             name: 'ParticleOrb',
             template: '<div data-test="particle-orb" :data-color="activeAgentColor"></div>',
             props: ['activeAgentColor', 'isDebating']
-          },
-          EventStream: { template: '<div data-test="event-stream"></div>' }
+          }
         }
       }
     })
@@ -47,7 +45,6 @@ describe('AppShell.vue', () => {
     expect(wrapper.find('[data-test="app-header"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="chat-panel"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="particle-orb"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="event-stream"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('No checkpoints requiring attention')
   })
 
@@ -60,30 +57,55 @@ describe('AppShell.vue', () => {
 
     const wrapper = createWrapper()
     const orb = wrapper.findComponent({ name: 'ParticleOrb' })
-    expect(orb.props('activeAgentColor')).toBe(DEFAULT_AGENT_THEME.hex)
+    expect(orb.props('activeAgentColor')).toBe('#00e5ff')
   })
 
-  it('computes active agent color based on currently active agent role', () => {
+  it('computes active agent color based on currently active agent color_hex', () => {
     const store = useDebateStore()
     store.agents = [
-      { role: 'innovator_architect', name: 'Innovator Architect', state: 'ACTIVE' }
+      { role: 'innovator_architect', name: 'Innovator Architect', color_hex: '#22c55e', state: 'ACTIVE' }
     ]
 
     const wrapper = createWrapper()
     const orb = wrapper.findComponent({ name: 'ParticleOrb' })
-    expect(orb.props('activeAgentColor')).toBe(AGENT_THEME['innovator_architect']?.hex)
+    expect(orb.props('activeAgentColor')).toBe('#22c55e')
   })
 
   it('computes active agent color prioritizing activeTtsRole over active agent state', () => {
     const store = useDebateStore()
     store.agents = [
-      { role: 'innovator_architect', name: 'Innovator Architect', state: 'ACTIVE' }
+      { role: 'innovator_architect', name: 'Innovator Architect', color_hex: '#22c55e', state: 'ACTIVE' },
+      { role: 'the_judge', name: 'The Judge', color_hex: '#ef4444', state: 'STANDBY' }
     ]
     store.activeTtsRole = 'the_judge'
 
     const wrapper = createWrapper()
     const orb = wrapper.findComponent({ name: 'ParticleOrb' })
-    expect(orb.props('activeAgentColor')).toBe(AGENT_THEME['the_judge']?.hex)
+    expect(orb.props('activeAgentColor')).toBe('#ef4444')
+  })
+
+  it('computes supervisor color when activeTtsRole is supervisor', () => {
+    const store = useDebateStore()
+    store.agents = [
+      { role: 'supervisor', name: 'Supervisor', color_hex: '#f59e0b', state: 'STANDBY' }
+    ]
+    store.activeTtsRole = 'supervisor'
+
+    const wrapper = createWrapper()
+    const orb = wrapper.findComponent({ name: 'ParticleOrb' })
+    expect(orb.props('activeAgentColor')).toBe('#f59e0b')
+  })
+
+  it('computes normalized role color when activeTtsRole uses short name innovator', () => {
+    const store = useDebateStore()
+    store.agents = [
+      { role: 'innovator_architect', name: 'Innovator Architect', color_hex: '#22c55e', state: 'STANDBY' }
+    ]
+    store.activeTtsRole = 'innovator'
+
+    const wrapper = createWrapper()
+    const orb = wrapper.findComponent({ name: 'ParticleOrb' })
+    expect(orb.props('activeAgentColor')).toBe('#22c55e')
   })
 
   it('handles HITL approve action', async () => {

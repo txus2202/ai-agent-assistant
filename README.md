@@ -33,3 +33,62 @@ chmod +x scripts/download_models.sh
 ```
 
 *This will download the Kokoro ONNX TTS model and the Vosk Wake Word model into the appropriate `backend/` directories. (Total size ~380MB)*
+
+### 2. Environment Configuration (`.env`)
+
+Copy the template configuration file and configure your API keys:
+
+```bash
+cp .env.example .env
+```
+
+#### 📊 Observability Toggle (`LANGFUSE_METRICS_ENABLED`)
+The full observability stack (Docker containers and backend telemetry) is controlled dynamically via:
+
+```env
+# Set to 'true' to launch Docker containers and collect metrics/traces
+# Set to 'false' to run in lightweight local mode without Docker
+LANGFUSE_METRICS_ENABLED=true
+```
+
+- **When `true`:** The backend's FastAPI lifespan automatically orchestrates the Docker stack (`docker compose up -d`) with Postgres, ClickHouse, Redis, MinIO, and Langfuse Web/Worker. The frontend enables the Langfuse Dashboard link.
+- **When `false`:** Docker is kept off (or stopped) to save system resources, telemetries are gracefully bypassed with zero overhead, and the UI button is hidden.
+
+### 3. Launching the System
+
+You can run Atenea using either the unified startup script or separate development terminals:
+
+#### 🟢 Option A: Unified Startup Script (Recommended)
+Runs Backend, Frontend, and manages Docker in a single command, with clean shutdown on `Ctrl+C`:
+
+```bash
+./scripts/start.sh
+```
+
+#### 🟡 Option B: Manual Two-Terminal Setup (Development Mode)
+If you want independent logs for backend and frontend:
+
+**Terminal 1 — Backend & Docker Orchestration:**
+```bash
+cd backend
+source .venv/bin/activate
+uvicorn src.presentation.api.app:app --reload
+```
+
+**Terminal 2 — Frontend (Vue 3 / Vite):**
+```bash
+cd frontend
+npm run dev
+```
+
+### 4. Available Services & Endpoints
+
+Once started, the following services will be available:
+
+| Service | URL | Condition |
+| :--- | :--- | :--- |
+| **Frontend UI (Atenea)** | [http://localhost:5173](http://localhost:5173) | Always Active |
+| **Backend API & Swagger Docs** | [http://localhost:8000/docs](http://localhost:8000/docs) | Always Active |
+| **Langfuse Telemetry Dashboard** | [http://localhost:3000](http://localhost:3000) | Active when `LANGFUSE_METRICS_ENABLED=true` |
+| **MinIO Console (S3 Storage)** | [http://localhost:9091](http://localhost:9091) | Active when `LANGFUSE_METRICS_ENABLED=true` |
+

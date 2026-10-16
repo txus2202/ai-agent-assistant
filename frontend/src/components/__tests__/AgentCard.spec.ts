@@ -6,7 +6,10 @@ const mockUpdateAgentConfig = vi.fn()
 
 vi.mock('../../stores/config', () => ({
   useConfigStore: () => ({
-    agentsConfig: [{ id: 'THE_JUDGE', provider: 'gemini', model_name: 'gemini-1.5-flash' }, { id: 'the_judge', provider: 'gemini', model_name: 'gemini-1.5-flash' }],
+    agentsConfig: [
+      { id: 'THE_JUDGE', provider: 'gemini', model_name: 'gemini-1.5-flash', description: "Evaluates trade-offs and acts as Devil's Advocate" },
+      { id: 'the_judge', provider: 'gemini', model_name: 'gemini-1.5-flash', description: "Evaluates trade-offs and acts as Devil's Advocate" }
+    ],
     providers: [
       { id: 'gemini', name: 'Gemini', models: [{ id: 'gemini-1.5-flash', name: 'Gemini Flash' }, { id: 'gemini-1.5-pro', name: 'Gemini Pro' }] },
       { id: 'openai', name: 'OpenAI', models: [{ id: 'gpt-4o-mini', name: 'GPT 4o Mini' }] }
@@ -107,17 +110,65 @@ describe('AgentCard.vue', () => {
     expect(mockUpdateAgentConfig).toHaveBeenCalledWith('the_judge', 'gemini', 'gemini-1.5-pro')
   })
 
-  it('uses custom roleName when provided', () => {
+  it('renders tokens consumed and latency badges when provided', () => {
     const wrapper = mount(AgentCard, {
       props: {
         role: 'the_judge',
-        roleName: 'High Arbiter',
+        state: 'ACTIVE',
+        colorClass: 'text-rose-400',
+        glowClass: 'glow-red',
+        tokensConsumed: 1250,
+        latencySeconds: 0.85
+      }
+    })
+
+    expect(wrapper.text()).toContain('1250')
+    expect(wrapper.text()).toContain('0.85s')
+  })
+
+  it('renders always-visible agent mission description', () => {
+    const wrapper = mount(AgentCard, {
+      props: {
+        role: 'the_judge',
         state: 'STANDBY',
         colorClass: 'text-rose-400',
         glowClass: 'glow-red'
       }
     })
 
-    expect(wrapper.text()).toContain('High Arbiter')
+    const desc = wrapper.find('[data-test="agent-description"]')
+    expect(desc.exists()).toBe(true)
+    expect(desc.text()).toContain("Devil's Advocate")
+  })
+
+  it('renders description from props when provided', () => {
+    const wrapper = mount(AgentCard, {
+      props: {
+        role: 'the_judge',
+        description: 'Descripción recibida desde el backend',
+        state: 'STANDBY',
+        colorClass: 'text-rose-400',
+        glowClass: 'glow-red'
+      }
+    })
+
+    const desc = wrapper.find('[data-test="agent-description"]')
+    expect(desc.text()).toBe('Descripción recibida desde el backend')
+  })
+
+  it('applies dynamic colorHex to title and active card border', () => {
+    const wrapper = mount(AgentCard, {
+      props: {
+        role: 'INNOVATOR',
+        state: 'ACTIVE',
+        colorHex: '#22c55e'
+      }
+    })
+
+    const title = wrapper.find('h3')
+    expect(title.attributes('style')).toContain('color: rgb(34, 197, 94)')
+    const cardEl = wrapper.find('[data-test="card-container"]')
+    expect(cardEl.attributes('style')).toContain('border-color: rgb(34, 197, 94)')
   })
 })
+

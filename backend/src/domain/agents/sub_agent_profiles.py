@@ -13,9 +13,28 @@ All 6 profiles are defined as module-level constants and accessed via get_profil
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 
-from src.domain.agents.agent_role import AgentRole
 from src.domain.value_objects.document_chunk import SearchFilter
+
+
+class AgentRole(str, Enum):
+    """
+    Enum defining all specialized roles in the ATENEA multi-agent system.
+    Each role corresponds to a SubAgentProfile with dedicated metadata and system prompt.
+    """
+    SUPERVISOR       = "supervisor"
+    NL_INTERPRETER   = "nl_interpreter"
+    INNOVATOR        = "innovator_architect"
+    SENIOR_ARCHITECT = "senior_architect"
+    THE_JUDGE        = "the_judge"
+    DEVOPS_SECOPS    = "devops_secops"
+    DIAGRAMMER       = "diagrammer"
+    LEARNING         = "learning"
+
+    @property
+    def profile(self) -> SubAgentProfile:
+        return get_profile(self)
 
 
 @dataclass(frozen=True)
@@ -24,9 +43,11 @@ class SubAgentProfile:
 
     role: AgentRole
     display_name: str
+    description: str
+    color_hex: str
     system_prompt: str
     uses_rag: bool
-    rag_filter: SearchFilter | None
+    rag_filter: SearchFilter | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -36,6 +57,8 @@ class SubAgentProfile:
 _NL_INTERPRETER = SubAgentProfile(
     role=AgentRole.NL_INTERPRETER,
     display_name="Natural Language Interpreter",
+    description="Formaliza la intención del usuario, objetivos técnicos y restricciones no funcionales.",
+    color_hex="#00e5ff",
     uses_rag=False,
     rag_filter=None,
     system_prompt=(
@@ -53,6 +76,8 @@ _NL_INTERPRETER = SubAgentProfile(
 _INNOVATOR = SubAgentProfile(
     role=AgentRole.INNOVATOR,
     display_name="Innovator Architect",
+    description="Diseña propuestas modernas, reactivas, microservicios y soluciones cloud-native.",
+    color_hex="#22c55e",
     uses_rag=True,
     rag_filter=SearchFilter(type="spec"),
     system_prompt=(
@@ -71,6 +96,8 @@ _INNOVATOR = SubAgentProfile(
 _SENIOR_ARCHITECT = SubAgentProfile(
     role=AgentRole.SENIOR_ARCHITECT,
     display_name="Senior Architect",
+    description="Evalúa estabilidad empresarial, mantenibilidad, estándares y compatibilidad.",
+    color_hex="#00ff9d",
     uses_rag=True,
     rag_filter=SearchFilter(status="implemented"),
     system_prompt=(
@@ -89,6 +116,8 @@ _SENIOR_ARCHITECT = SubAgentProfile(
 _THE_JUDGE = SubAgentProfile(
     role=AgentRole.THE_JUDGE,
     display_name="The Judge (Devil's Advocate)",
+    description="Auditor crítico (Devil's Advocate): desafía SPOFs, cuellos de botella y vectores de fallo.",
+    color_hex="#ef4444",
     uses_rag=True,
     rag_filter=SearchFilter(type="adr"),
     system_prompt=(
@@ -106,6 +135,8 @@ _THE_JUDGE = SubAgentProfile(
 _DEVOPS_SECOPS = SubAgentProfile(
     role=AgentRole.DEVOPS_SECOPS,
     display_name="DevOps & SecOps Agent",
+    description="Define CI/CD, seguridad, límites de contenedores y despliegue en homelab.",
+    color_hex="#ff8800",
     uses_rag=True,
     rag_filter=None,  # needs full vault context
     system_prompt=(
@@ -123,6 +154,8 @@ _DEVOPS_SECOPS = SubAgentProfile(
 _DIAGRAMMER = SubAgentProfile(
     role=AgentRole.DIAGRAMMER,
     display_name="Diagrammer Agent",
+    description="Genera especificaciones y diagramas Mermaid interactivos de componentes y flujos.",
+    color_hex="#b347ff",
     uses_rag=True,
     rag_filter=None,  # needs full vault context
     system_prompt=(
@@ -142,6 +175,8 @@ _DIAGRAMMER = SubAgentProfile(
 _LEARNING = SubAgentProfile(
     role=AgentRole.LEARNING,
     display_name="Learning Agent",
+    description="Ingesta y extrae conocimiento semántico de fuentes y documentos hacia el vault.",
+    color_hex="#1d4ed8",
     uses_rag=False,
     rag_filter=None,
     system_prompt=(
@@ -156,6 +191,8 @@ _LEARNING = SubAgentProfile(
 _SUPERVISOR = SubAgentProfile(
     role=AgentRole.SUPERVISOR,
     display_name="Supervisor",
+    description="Orquesta el debate multi-agente, controla el flujo HITL y consolida el consenso.",
+    color_hex="#f59e0b",
     uses_rag=False,
     rag_filter=None,
     system_prompt=(
@@ -166,21 +203,36 @@ _SUPERVISOR = SubAgentProfile(
 
 
 # ---------------------------------------------------------------------------
-# Registry
+# Registry (Derived automatically from canonical profile definitions)
 # ---------------------------------------------------------------------------
 
-_PROFILES: dict[AgentRole, SubAgentProfile] = {
-    AgentRole.NL_INTERPRETER:   _NL_INTERPRETER,
-    AgentRole.INNOVATOR:        _INNOVATOR,
-    AgentRole.SENIOR_ARCHITECT: _SENIOR_ARCHITECT,
-    AgentRole.THE_JUDGE:        _THE_JUDGE,
-    AgentRole.DEVOPS_SECOPS:    _DEVOPS_SECOPS,
-    AgentRole.DIAGRAMMER:       _DIAGRAMMER,
-    AgentRole.LEARNING:         _LEARNING,
-    AgentRole.SUPERVISOR:       _SUPERVISOR,
-}
+_ALL_PROFILES: tuple[SubAgentProfile, ...] = (
+    _SUPERVISOR,
+    _NL_INTERPRETER,
+    _INNOVATOR,
+    _SENIOR_ARCHITECT,
+    _THE_JUDGE,
+    _DEVOPS_SECOPS,
+    _DIAGRAMMER,
+    _LEARNING,
+)
+
+_PROFILES: dict[AgentRole, SubAgentProfile] = {p.role: p for p in _ALL_PROFILES}
+
+# Integrity check: every role declared in AgentRole must have a profile
+assert len(_PROFILES) == len(AgentRole), "Every AgentRole member must have a registered SubAgentProfile"
 
 
 def get_profile(role: AgentRole) -> SubAgentProfile:
     """Return the SubAgentProfile for ``role``. Always succeeds (all roles are registered)."""
     return _PROFILES[role]
+
+
+def get_all_profiles() -> list[SubAgentProfile]:
+    """Return all registered SubAgentProfile instances in canonical definition order."""
+    return list(_ALL_PROFILES)
+
+
+def get_all_roles() -> list[AgentRole]:
+    """Return all registered AgentRole instances in canonical definition order."""
+    return [p.role for p in _ALL_PROFILES]

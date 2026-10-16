@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from src.domain.agents.agent_role import AgentRole
+from src.domain.agents.sub_agent_profiles import AgentRole
 from src.domain.agents.supervisor_events import (
     EventType,
     HITLDecision,
@@ -187,3 +187,33 @@ class TestDebateWebSocket:
             ev = websocket.receive_json()
             assert ev["type"] == EventType.DONE.value
             assert "approve" in ev["content"]
+
+    def test_debate_records_observability_traces(self, ws_client, monkeypatch):
+        """Verifies start_trace, spans, and end_trace are emitted to observability service."""
+        from unittest.mock import MagicMock
+        from src.domain.ports.observability_port import TraceContext, SpanContext
+        from src.presentation.api.ws import debate
+
+        mock_obs = MagicMock()
+        mock_obs.start_trace.return_value = TraceContext(trace_id="t1", session_id="s1", name="test")
+        mock_obs.start_agent_span.return_value = SpanContext(span_id="sp1", trace_id="t1", name="span", agent_role="nl_interpreter")
+        monkeypatch.setattr(debate, "get_observability_service", lambda: mock_obs)
+
+
+        with ws_client.websocket_connect("/ws/debate") as websocket:
+            websocket.send_json({"type": "start", "user_request": "Build observability"})
+            
+            # Consume events
+            websocket.receive_json() # AGENT_STARTED
+            websocket.receive_json() # HITL 1
+            websocket.send_json({"type": "hitl_response", "decision": "approve"})
+            websocket.receive_json() # HITL 2
+            websocket.send_json({"type": "hitl_response", "decision": "approve"})
+            websocket.receive_json() # HITL 3
+            websocket.send_json({"type": "hitl_response", "decision": "approve"})
+            websocket.receive_json() # DONE
+
+        assert mock_obs.start_trace.called
+        assert mock_obs.start_agent_span.called
+        assert mock_obs.end_trace.called
+

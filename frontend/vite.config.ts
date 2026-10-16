@@ -1,10 +1,14 @@
 import { fileURLToPath, URL } from 'node:url'
 
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
 import tailwindcss from '@tailwindcss/vite'
+
+const env = loadEnv(process.env.NODE_ENV || 'development', '../', '')
+const langfuseMetricsEnabled =
+  env.LANGFUSE_METRICS_ENABLED || process.env.LANGFUSE_METRICS_ENABLED || 'false'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -13,6 +17,9 @@ export default defineConfig({
     vueDevTools(),
     tailwindcss(),
   ],
+  define: {
+    'import.meta.env.VITE_LANGFUSE_METRICS_ENABLED': JSON.stringify(langfuseMetricsEnabled),
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -28,3 +35,5 @@ export default defineConfig({
     },
   },
 })
+
+

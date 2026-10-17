@@ -18,7 +18,7 @@ def test_get_agents_config(client):
     assert "supervisor" in roles
     supervisor_agent = next(a for a in data if a["id"] == "supervisor")
     assert supervisor_agent["color_hex"] == "#f59e0b"
-    assert supervisor_agent["name"] == "Supervisor"
+    assert supervisor_agent["name"] == "Atenea"
     
     # By default, should have provider, model_name, name, description, and color_hex
     assert "provider" in data[0]

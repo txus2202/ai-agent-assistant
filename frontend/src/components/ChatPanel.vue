@@ -27,7 +27,7 @@ const agentsList = computed(() => {
     return fromStore
   }
   return [
-    { value: 'supervisor', label: 'Supervisor', colorHex: '#f59e0b' },
+    { value: 'supervisor', label: 'Atenea', colorHex: '#f59e0b' },
     ...fromStore
   ]
 })
@@ -37,7 +37,7 @@ const selectedFile = ref<File | null>(null)
 const isAgentDropdownOpen = ref(false)
 const agentDropdownRef = ref<HTMLElement | null>(null)
 const selectedAgentLabel = computed(() => {
-  return agentsList.value.find(a => a.value === selectedAgent.value)?.label || 'Supervisor'
+  return agentsList.value.find(a => a.value === selectedAgent.value)?.label || 'Atenea'
 })
 
 const toggleAgentDropdown = () => {
@@ -350,7 +350,7 @@ defineExpose({
                 :style="msg.colorHex ? { borderColor: `${msg.colorHex}4d`, backgroundColor: `${msg.colorHex}1a`, color: msg.colorHex } : {}"
                 :class="!msg.colorHex ? 'bg-neon-green/10 border-neon-green/30 text-neon-green' : ''"
               >
-                {{ msg.agentName || 'SUPERVISOR AGENT' }}
+                {{ msg.agentName || 'ATENEA' }}
               </span>
               
               <!-- Stop TTS Button -->

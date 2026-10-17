@@ -63,7 +63,8 @@ def test_start_stack_when_not_running(tmp_path: Path):
         assert res is True
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
-        assert "up" in cmd and "-d" in cmd
+        assert "up" in cmd
+        assert "-d" in cmd
 
 
 def test_stop_stack_when_running(tmp_path: Path):

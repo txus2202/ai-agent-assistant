@@ -312,20 +312,29 @@ describe('ParticleOrb.vue', () => {
     await flushPromises()
 
     expect(store.isRecording).toBe(true)
+    wrapper.unmount()
+    store.isWakeWordTriggered = false
+    store.isRecording = false
   })
 
   it('displays correct voice state text and indicator style when TTS is playing', async () => {
     const store = useDebateStore()
+    store.globalAnalyser = {
+      frequencyBinCount: 16,
+      getByteTimeDomainData: vi.fn((arr: Uint8Array) => arr.fill(130))
+    } as unknown as AnalyserNode
+    store.isTtsPlaying = true
+
     const wrapper = mount(ParticleOrb, {
       props: { isDebating: false, activeAgentColor: '#a855f7' }
     })
 
-    store.isTtsPlaying = true
-    await wrapper.vm.$nextTick()
-
     expect(wrapper.text()).toContain('ESTADO VOZ: ACTIVO')
     const dot = wrapper.find('#voiceIndicatorDot')
     expect(dot.attributes('style')).toContain('background-color: rgb(168, 85, 247)')
+    wrapper.unmount()
+    store.isTtsPlaying = false
+    store.globalAnalyser = null
   })
 
   it('displays correct voice state text when auto listen is enabled', async () => {
@@ -338,10 +347,12 @@ describe('ParticleOrb.vue', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.text()).toContain('ESTADO VOZ: ESPERANDO WAKE WORD')
+    wrapper.unmount()
+    store.isAutoListenEnabled = false
   })
 
   it('performs silence detection with timers and auto-submits when quiet', async () => {
-    vi.useFakeTimers()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
     const store = useDebateStore()
 
     const wrapper = mount(ParticleOrb, {
@@ -363,10 +374,11 @@ describe('ParticleOrb.vue', () => {
     await flushPromises()
 
     expect(store.isRecording).toBe(false)
+    wrapper.unmount()
   })
 
   it('resets silence timer if audio frequency indicates user speaking', async () => {
-    vi.useFakeTimers()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
     const store = useDebateStore()
 
     let voiceSpeaking = false
@@ -411,6 +423,7 @@ describe('ParticleOrb.vue', () => {
     // Clean up
     await micButton.trigger('click')
     await flushPromises()
+    wrapper.unmount()
   })
 
   it('handles window resize event and re-measures canvas dimensions', () => {

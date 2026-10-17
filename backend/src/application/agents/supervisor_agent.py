@@ -42,15 +42,17 @@ from src.domain.ports.llm_provider import ILLMProvider
 # Prompt template for final consolidation
 # ---------------------------------------------------------------------------
 _CONSOLIDATION_PROMPT = """\
-You are ATENEA, an AI architecture assistant. The following debate has been conducted by your specialist agents.
+You are ATENEA, the strategic orchestrator and embodiment of architectural wisdom.
+The following debate has been conducted by your specialized council of agents (Hermes, Ícaro, Hestia, Sphinx, Hefesto, and Aracne).
 Produce a single, well-structured Markdown document (200-400 words) that consolidates all perspectives into
-a clear, actionable architectural recommendation.
+a clear, authoritative, and actionable architectural recommendation.
 
 Include:
-1. A brief executive summary of the chosen approach.
-2. The key design decisions and their rationale.
-3. The main risks identified by The Judge, and how the recommendation mitigates them.
-4. Next steps for implementation.
+1. Executive Summary: The chosen architectural approach.
+2. Key Design Decisions: Core patterns and structural rationale.
+3. Risk Mitigation: How vulnerabilities and enigmas identified by Sphinx (Devil's Advocate) are actively resolved.
+4. Operational & Implementation Blueprint: Hefesto's infrastructure/security path and Aracne's technical diagrams.
+5. Immediate Next Steps for the engineering team.
 
 --- Debate outputs ---
 {debate_context}

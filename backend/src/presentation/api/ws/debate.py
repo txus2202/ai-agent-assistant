@@ -49,54 +49,78 @@ class DebateWebSocketHandler:
         self.current_trace: TraceContext | None = None
         self.active_spans: dict[str, SpanContext] = {}
 
+    def _persist_event(self, event_dict: dict[str, Any], event: SupervisorEvent) -> None:
+        if not self.debate_record:
+            return
+        self.debate_repo.append_event(self.debate_record.id, json.dumps(event_dict))
+        if event.type == EventType.DONE:
+            self.debate_repo.update_status(self.debate_record.id, "completed")
+
+    def _on_agent_started(self, event: SupervisorEvent) -> None:
+        if not (self.current_trace and event.role):
+            return
+        role_val = event.role.value if hasattr(event.role, "value") else str(event.role)
+        config = self.agent_config_repo.find_by_role(role_val)
+        model_name = config.model_name if config else self.settings.default_model
+        input_prompt = self.debate_record.user_request if self.debate_record else ""
+        self.active_spans[role_val] = self.observability.start_agent_span(
+            trace_context=self.current_trace,
+            agent_role=role_val,
+            input_prompt=input_prompt,
+            metadata={"phase": "debate", "model": model_name},
+            model_name=model_name,
+        )
+
+    def _on_agent_completed(self, event: SupervisorEvent) -> None:
+        if not (self.current_trace and event.role):
+            return
+        role_val = event.role.value if hasattr(event.role, "value") else str(event.role)
+        span = self.active_spans.pop(role_val, None)
+        if not span:
+            return
+        meta = event.metadata or {}
+        latency = float(meta.get("latency_seconds", 0.0))
+        token_counts = {
+            "input": int(meta.get("prompt_tokens", 0)),
+            "output": int(meta.get("completion_tokens", 0)),
+            "total": int(meta.get("total_tokens", meta.get("tokens", 0))),
+        }
+        model_name = meta.get("model") or getattr(span, "model_name", None)
+        self.observability.end_agent_span(
+            span_context=span,
+            output=event.content,
+            token_counts=token_counts,
+            latency=latency,
+            status="SUCCESS",
+            model_name=model_name,
+        )
+
+    def _on_debate_done(self, event: SupervisorEvent) -> None:
+        if not self.current_trace:
+            return
+        self.observability.end_trace(
+            trace_context=self.current_trace,
+            status="SUCCESS",
+            output=event.content,
+        )
+        self.current_trace = None
+
+    def _track_event_observability(self, event: SupervisorEvent) -> None:
+        if not self.current_trace:
+            return
+        if event.type == EventType.AGENT_STARTED:
+            self._on_agent_started(event)
+        elif event.type == EventType.AGENT_COMPLETED:
+            self._on_agent_completed(event)
+        elif event.type == EventType.DONE:
+            self._on_debate_done(event)
+
     async def send_event(self, event: SupervisorEvent) -> None:
         """Helper to send event to WS, append to SQLite, and stream observability spans."""
         event_dict = event_to_dict(event)
         await self.websocket.send_json(event_dict)
-        if self.debate_record:
-            self.debate_repo.append_event(self.debate_record.id, json.dumps(event_dict))
-            if event.type == EventType.DONE:
-                self.debate_repo.update_status(self.debate_record.id, "completed")
-
-        if self.current_trace:
-            if event.type == EventType.AGENT_STARTED and event.role:
-                role_val = event.role.value if hasattr(event.role, "value") else str(event.role)
-                config = self.agent_config_repo.find_by_role(role_val)
-                model_name = config.model_name if config else self.settings.default_model
-                self.active_spans[role_val] = self.observability.start_agent_span(
-                    trace_context=self.current_trace,
-                    agent_role=role_val,
-                    input_prompt=self.debate_record.user_request if self.debate_record else "",
-                    metadata={"phase": "debate", "model": model_name},
-                    model_name=model_name,
-                )
-            elif event.type == EventType.AGENT_COMPLETED and event.role:
-                role_val = event.role.value if hasattr(event.role, "value") else str(event.role)
-                span = self.active_spans.pop(role_val, None)
-                if span:
-                    meta = event.metadata or {}
-                    latency = float(meta.get("latency_seconds", 0.0))
-                    token_counts = {
-                        "input": int(meta.get("prompt_tokens", 0)),
-                        "output": int(meta.get("completion_tokens", 0)),
-                        "total": int(meta.get("total_tokens", meta.get("tokens", 0))),
-                    }
-                    model_name = meta.get("model") or getattr(span, "model_name", None)
-                    self.observability.end_agent_span(
-                        span_context=span,
-                        output=event.content,
-                        token_counts=token_counts,
-                        latency=latency,
-                        status="SUCCESS",
-                        model_name=model_name,
-                    )
-            elif event.type == EventType.DONE:
-                self.observability.end_trace(
-                    trace_context=self.current_trace,
-                    status="SUCCESS",
-                    output=event.content
-                )
-                self.current_trace = None
+        self._persist_event(event_dict, event)
+        self._track_event_observability(event)
 
 
     async def hitl_callback(self, event: SupervisorEvent) -> HITLResponse:

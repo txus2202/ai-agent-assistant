@@ -39,13 +39,10 @@ class LangfuseObservabilityAdapter(IObservabilityService):
         self._active_traces: dict[str, Any] = {}
         self._active_spans: dict[str, Any] = {}
 
-        if not enabled:
-            self._client = None
-            self._is_enabled = False
-        elif client is not None:
+        if enabled and client is not None:
             self._client = client
             self._is_enabled = True
-        elif public_key and secret_key:
+        elif enabled and public_key and secret_key:
             try:
                 from langfuse import Langfuse
                 self._client = Langfuse(
@@ -112,11 +109,49 @@ class LangfuseObservabilityAdapter(IObservabilityService):
             except Exception as exc:
                 logger.warning("Failed to update Langfuse trace: %s", exc)
 
+        self._flush_client()
+
+    def _flush_client(self) -> None:
         if self._client and hasattr(self._client, "flush"):
             try:
                 self._client.flush()
             except Exception as exc:
                 logger.warning("Failed to flush Langfuse client: %s", exc)
+
+    @staticmethod
+    def _create_langfuse_span(
+        lf_trace: Any,
+        span_name: str,
+        input_prompt: str,
+        span_meta: dict[str, Any],
+        effective_model: str,
+    ) -> Any:
+        if hasattr(lf_trace, "generation"):
+            gen_kwargs: dict[str, Any] = {
+                "name": span_name,
+                "input": input_prompt,
+                "metadata": span_meta,
+            }
+            if effective_model:
+                gen_kwargs["model"] = effective_model
+            return lf_trace.generation(**gen_kwargs)
+        if hasattr(lf_trace, "span"):
+            return lf_trace.span(name=span_name, input=input_prompt, metadata=span_meta)
+        return None
+
+    @staticmethod
+    def _build_span_usage(tokens: dict[str, int]) -> dict[str, Any] | None:
+        in_tkn = int(tokens.get("input", tokens.get("prompt", 0)))
+        out_tkn = int(tokens.get("output", tokens.get("completion", 0)))
+        tot_tkn = int(tokens.get("total", in_tkn + out_tkn))
+        if tot_tkn > 0:
+            return {
+                "unit": "TOKENS",
+                "input": in_tkn,
+                "output": out_tkn,
+                "total": tot_tkn,
+            }
+        return None
 
     def start_agent_span(
         self,
@@ -141,23 +176,9 @@ class LangfuseObservabilityAdapter(IObservabilityService):
                 if effective_model:
                     span_meta["model"] = effective_model
 
-                lf_span = None
-                if hasattr(lf_trace, "generation"):
-                    gen_kwargs: dict[str, Any] = {
-                        "name": span_name,
-                        "input": input_prompt,
-                        "metadata": span_meta,
-                    }
-                    if effective_model:
-                        gen_kwargs["model"] = effective_model
-                    lf_span = lf_trace.generation(**gen_kwargs)
-                elif hasattr(lf_trace, "span"):
-                    lf_span = lf_trace.span(
-                        name=span_name,
-                        input=input_prompt,
-                        metadata=span_meta,
-                    )
-
+                lf_span = self._create_langfuse_span(
+                    lf_trace, span_name, input_prompt, span_meta, effective_model
+                )
                 if lf_span is not None:
                     span_id = getattr(lf_span, "id", str(uuid.uuid4()))
                     self._active_spans[span_id] = lf_span
@@ -197,38 +218,26 @@ class LangfuseObservabilityAdapter(IObservabilityService):
                     or str(span_context.metadata.get("model", ""))
                 )
                 tokens = token_counts or {}
-                in_tkn = int(tokens.get("input", tokens.get("prompt", 0)))
-                out_tkn = int(tokens.get("output", tokens.get("completion", 0)))
-                tot_tkn = int(tokens.get("total", in_tkn + out_tkn))
+                meta_dict: dict[str, Any] = {"latency": latency, "tokens": tokens}
+                if effective_model:
+                    meta_dict["model"] = effective_model
 
                 end_kwargs: dict[str, Any] = {
                     "output": output,
-                    "metadata": {
-                        "latency": latency,
-                        "tokens": tokens,
-                        **({"model": effective_model} if effective_model else {}),
-                    },
+                    "metadata": meta_dict,
                 }
                 if effective_model:
                     end_kwargs["model"] = effective_model
 
-                if tot_tkn > 0:
-                    end_kwargs["usage"] = {
-                        "unit": "TOKENS",
-                        "input": in_tkn,
-                        "output": out_tkn,
-                        "total": tot_tkn,
-                    }
+                usage = self._build_span_usage(tokens)
+                if usage:
+                    end_kwargs["usage"] = usage
 
                 lf_span.end(**end_kwargs)
             except Exception as exc:
                 logger.warning("Failed to end Langfuse span: %s", exc)
 
-        if self._client and hasattr(self._client, "flush"):
-            try:
-                self._client.flush()
-            except Exception as exc:
-                logger.warning("Failed to flush Langfuse client: %s", exc)
+        self._flush_client()
 
 
     def get_system_metrics(self) -> SystemMetrics:

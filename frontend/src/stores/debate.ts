@@ -406,7 +406,7 @@ export const useDebateStore = defineStore('debate', () => {
     const agent = findAgent(role)
     const agentRole = agent?.role || normalizeAgentRole(role) || 'supervisor'
     const isSupervisor = agentRole === 'supervisor'
-    const agentName = agent?.name || (isSupervisor ? 'Supervisor' : agentRole)
+    const agentName = agent?.name || (isSupervisor ? 'Atenea' : agentRole)
     const colorHex = agent?.color_hex || (isSupervisor ? '#f59e0b' : '#00e5ff')
     return { agentRole, agentName, colorHex }
   }

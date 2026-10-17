@@ -113,6 +113,7 @@ class NoOpObservabilityService:
         status: str = "SUCCESS",
         output: Any = None,
     ) -> None:
+        # No-op implementation when telemetry is disabled or unconfigured
         pass
 
     def start_agent_span(
@@ -123,12 +124,15 @@ class NoOpObservabilityService:
         metadata: dict[str, Any] | None = None,
         model_name: str | None = None,
     ) -> SpanContext:
+        meta = dict(metadata or {})
+        if input_prompt:
+            meta["input_prompt"] = input_prompt
         return SpanContext(
             span_id=str(uuid.uuid4()),
             trace_id=trace_context.trace_id,
             name=f"{agent_role}_execution",
             agent_role=agent_role,
-            metadata=metadata or {},
+            metadata=meta,
             model_name=model_name or "",
         )
 
@@ -141,6 +145,7 @@ class NoOpObservabilityService:
         status: str = "SUCCESS",
         model_name: str | None = None,
     ) -> None:
+        # No-op implementation when telemetry is disabled or unconfigured
         pass
 
     def get_system_metrics(self) -> SystemMetrics:

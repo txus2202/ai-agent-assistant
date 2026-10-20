@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -131,13 +132,14 @@ class DebateWebSocketHandler:
         raw_resp = await self.websocket.receive_json()
         return dict_to_hitl_response(raw_resp)
 
-    async def _handle_supervisor(self, user_request: str) -> None:
+    async def _handle_supervisor(self, user_request: str, chat_history: list[dict[str, Any]] | None = None) -> None:
         async for event in SupervisorAgent.run(
             user_request=user_request,
             document_store=self.document_store,
             agent_config_repo=self.agent_config_repo,
             llm_factory=get_llm_provider,
             hitl_callback=self.hitl_callback,
+            chat_history=chat_history,
         ):
             await self.send_event(event)
 
@@ -175,7 +177,7 @@ class DebateWebSocketHandler:
             type=EventType.DONE, role=AgentRole.LEARNING, content=content, metadata=learn_meta
         ))
 
-    async def _handle_sub_agent(self, target_agent: str, user_request: str) -> None:
+    async def _handle_sub_agent(self, target_agent: str, user_request: str, chat_history: list[dict[str, Any]] | None = None) -> None:
         try:
             role_enum = AgentRole(target_agent)
             await self.send_event(SupervisorEvent(
@@ -187,12 +189,14 @@ class DebateWebSocketHandler:
             mod_name = config.model_name if config else self.settings.default_model
             llm_prov = get_llm_provider(prov_name)
             
+            runner_kwargs = {"chat_history": chat_history} if chat_history else {}
             resp = await SubAgentRunner.run(
                 role=role_enum,
                 user_request=user_request,
                 llm_provider=llm_prov,
                 document_store=self.document_store,
-                model_name=mod_name
+                model_name=mod_name,
+                **runner_kwargs,
             )
             
             sub_meta = {
@@ -227,6 +231,7 @@ class DebateWebSocketHandler:
             user_request = raw_start.get("user_request", "")
             target_agent = raw_start.get("target_agent", "supervisor")
             attachments = raw_start.get("attachments", [])
+            chat_history = raw_start.get("history", [])
             
             logger.error(f"DEBUG: type(user_request)={type(user_request)} value={user_request}")
 
@@ -240,12 +245,30 @@ class DebateWebSocketHandler:
                 await self.websocket.send_json({"type": "error", "content": f"Default provider error: {str(e)}"})
                 continue
 
-            self.debate_record = DebateRecord(
-                user_request=user_request,
-                target_agent=target_agent,
-                status="running"
-            )
-            self.debate_repo.create(self.debate_record)
+            session_id = raw_start.get("session_id")
+            existing_record = self.debate_repo.find_by_id(session_id) if session_id else None
+
+            if existing_record:
+                self.debate_record = existing_record
+                self.debate_record.target_agent = target_agent
+                self.debate_repo.update_session(self.debate_record.id, status="running", target_agent=target_agent)
+            else:
+                self.debate_record = DebateRecord(
+                    id=session_id or str(uuid.uuid4()),
+                    user_request=user_request,
+                    target_agent=target_agent,
+                    status="running"
+                )
+                self.debate_repo.create(self.debate_record)
+
+            # Persist user message in chronological event history
+            user_event_dict = {
+                "type": "user_message",
+                "role": "user",
+                "content": user_request,
+                "metadata": {"target_agent": target_agent}
+            }
+            self.debate_repo.append_event(self.debate_record.id, json.dumps(user_event_dict))
 
             self.current_trace = self.observability.start_trace(
                 name=f"debate_{target_agent}",
@@ -257,11 +280,11 @@ class DebateWebSocketHandler:
             )
 
             if target_agent == "supervisor":
-                await self._handle_supervisor(user_request)
+                await self._handle_supervisor(user_request, chat_history=chat_history)
             elif target_agent == AgentRole.LEARNING.value:
                 await self._handle_learning(attachments)
             else:
-                await self._handle_sub_agent(target_agent, user_request)
+                await self._handle_sub_agent(target_agent, user_request, chat_history=chat_history)
 
     def abort(self) -> None:
         if self.debate_record:

@@ -32,8 +32,14 @@ async def wake_word_endpoint(websocket: WebSocket):
             detected = wake_word_service.process_chunk(data)
             
             if detected:
-                logger.info("Wake word detected! Notifying client.")
-                await websocket.send_text(json.dumps({"type": "WAKE_WORD_DETECTED"}))
+                role = getattr(detected, "agent_role", None) or "supervisor"
+                name = getattr(detected, "display_name", None) or "Atenea"
+                logger.info(f"Wake word detected for {name} ({role})! Notifying client.")
+                await websocket.send_text(json.dumps({
+                    "type": "WAKE_WORD_DETECTED",
+                    "agent_role": role,
+                    "display_name": name,
+                }))
                 # Reset to avoid multiple rapid triggers
                 wake_word_service.reset()
                 

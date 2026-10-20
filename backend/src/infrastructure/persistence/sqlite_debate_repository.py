@@ -64,11 +64,18 @@ class SqliteDebateRepository(IDebateRepository):
             raise RepositoryError(f"Failed to append event to debate {debate_id}: {exc}") from exc
 
     def update_status(self, debate_id: str, status: str) -> None:
+        self.update_session(debate_id, status=status)
+
+    def update_session(self, debate_id: str, status: str, target_agent: Optional[str] = None) -> None:
         try:
             with self._connection() as conn:
-                conn.execute("UPDATE debates SET status = ? WHERE id = ?", (status, debate_id))
+                if target_agent is not None:
+                    conn.execute("UPDATE debates SET status = ?, target_agent = ? WHERE id = ?", (status, target_agent, debate_id))
+                else:
+                    conn.execute("UPDATE debates SET status = ? WHERE id = ?", (status, debate_id))
         except sqlite3.Error as exc:
-            raise RepositoryError(f"Failed to update status for debate {debate_id}: {exc}") from exc
+            raise RepositoryError(f"Failed to update session for debate {debate_id}: {exc}") from exc
+
 
     def find_all(self) -> List[DebateRecord]:
         try:

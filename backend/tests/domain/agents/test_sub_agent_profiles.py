@@ -149,3 +149,27 @@ class TestSubAgentProfiles:
             assert profile.color_hex is not None
             assert profile.color_hex.startswith("#")
             assert len(profile.color_hex) == 7
+
+    def test_all_profiles_have_phonetic_aliases_tuple(self):
+        from src.domain.agents.sub_agent_profiles import AgentRole, get_profile
+
+        for role in AgentRole:
+            profile = get_profile(role)
+            assert isinstance(profile.phonetic_aliases, tuple)
+            assert len(profile.phonetic_aliases) > 0
+
+    def test_senior_architect_has_hestia_phonetic_aliases(self):
+        from src.domain.agents.sub_agent_profiles import AgentRole, get_profile
+
+        profile = get_profile(AgentRole.SENIOR_ARCHITECT)
+        assert "bestia" in profile.phonetic_aliases
+        assert "este a" in profile.phonetic_aliases
+        assert "hestia" in profile.phonetic_aliases
+        assert "es tía" in profile.phonetic_aliases
+
+    def test_the_judge_has_sphinx_phonetic_aliases(self):
+        from src.domain.agents.sub_agent_profiles import AgentRole, get_profile
+
+        profile = get_profile(AgentRole.THE_JUDGE)
+        assert "esfinge" in profile.phonetic_aliases
+        assert "sphinx" in profile.phonetic_aliases

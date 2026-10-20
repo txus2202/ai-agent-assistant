@@ -22,9 +22,14 @@ const mockStore = {
   isVoiceOutputEnabled: false,
   isTtsPlaying: false,
   activeTtsRole: null as string | null,
+  selectedAgent: 'supervisor',
   playTtsAudioChunk: vi.fn(),
   stopTts: vi.fn(),
-  unlockAudioContext: vi.fn()
+  unlockAudioContext: vi.fn(),
+  clearSession: vi.fn(() => {
+    mockStore.messages.splice(0, mockStore.messages.length)
+    mockStore.rawEvents.splice(0, mockStore.rawEvents.length)
+  })
 }
 
 vi.mock('../../stores/debate', () => ({
@@ -34,6 +39,7 @@ vi.mock('../../stores/debate', () => ({
 describe('ChatPanel.vue', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    mockStore.selectedAgent = 'supervisor'
     Element.prototype.scrollIntoView = vi.fn()
   })
 

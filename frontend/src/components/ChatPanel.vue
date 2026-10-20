@@ -32,7 +32,14 @@ const agentsList = computed(() => {
   ]
 })
 
-const selectedAgent = ref('supervisor')
+const selectedAgent = ref(store.selectedAgent || 'supervisor')
+
+watch(() => store.selectedAgent, (newAgent) => {
+  if (newAgent) {
+    selectedAgent.value = newAgent
+  }
+})
+
 const selectedFile = ref<File | null>(null)
 const isAgentDropdownOpen = ref(false)
 const agentDropdownRef = ref<HTMLElement | null>(null)
@@ -47,6 +54,7 @@ const toggleAgentDropdown = () => {
 
 const selectAgent = (value: string) => {
   selectedAgent.value = value
+  store.selectedAgent = value
   isAgentDropdownOpen.value = false
 }
 
@@ -223,8 +231,12 @@ const onSubmit = async () => {
 
 const clearChat = () => {
   if (confirm('¿Seguro que deseas limpiar la conversación actual?')) {
-    store.messages.splice(0, store.messages.length)
-    store.rawEvents.splice(0, store.rawEvents.length)
+    if (typeof store.clearSession === 'function') {
+      store.clearSession()
+    } else {
+      store.messages.splice(0, store.messages.length)
+      store.rawEvents.splice(0, store.rawEvents.length)
+    }
   }
 }
 

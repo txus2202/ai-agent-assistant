@@ -97,6 +97,7 @@ export const useDebateStore = defineStore('debate', () => {
   const isDebating = ref(false)
   const isHitlRequired = ref(false)
   const hitlCheckpoint = ref<string | null>(null)
+  const currentSessionId = ref<string | null>(null)
   const messages = ref<ChatMessage[]>([])
   const rawEvents = ref<SupervisorEvent[]>([])
   const draftMessage = ref('')
@@ -124,6 +125,7 @@ export const useDebateStore = defineStore('debate', () => {
   const isRecording = ref(false)
   const isAutoListenEnabled = ref(false)
   const isWakeWordTriggered = ref(false)
+  const selectedAgent = ref<string>('supervisor')
   
   // Need to add crossOrigin to allow Web Audio API to process it
   globalAudioPlayer.crossOrigin = 'anonymous'
@@ -339,19 +341,36 @@ export const useDebateStore = defineStore('debate', () => {
     }, delay)
   }
 
-  function loadDebate(debate: DebateSession) {
+  function clearSession() {
     messages.value = []
     rawEvents.value = []
+    currentSessionId.value = null
+    sessionTotalTokens.value = 0
+    sessionCachedTokens.value = 0
     isHitlRequired.value = false
     hitlCheckpoint.value = null
+    isDebating.value = false
+    agents.value.forEach(a => {
+      a.state = 'STANDBY'
+      a.tokens = 0
+      a.latency = 0
+    })
+  }
+
+  function loadDebate(debate: DebateSession) {
+    clearSession()
+    if (debate.id) {
+      currentSessionId.value = debate.id
+    }
     
-    // Reset agent states to STANDBY
-    agents.value.forEach(a => a.state = 'STANDBY')
-    
-    if (debate.user_request) {
+    // Check if any event is of type user_message
+    const hasUserMessageEvents = debate.events && Array.isArray(debate.events) && debate.events.some(e => e.type === 'user_message')
+    if (!hasUserMessageEvents && debate.user_request) {
       messages.value.push({
+        id: crypto.randomUUID(),
         role: 'user',
         content: debate.user_request,
+        timestamp: new Date().toISOString()
       } as ChatMessage)
     }
     
@@ -374,10 +393,22 @@ export const useDebateStore = defineStore('debate', () => {
       return
     }
     
-    // Reset agent states to STANDBY for the new debate
+    // Initialize session_id if starting a fresh session
+    if (!currentSessionId.value) {
+      currentSessionId.value = crypto.randomUUID()
+      sessionTotalTokens.value = 0
+      sessionCachedTokens.value = 0
+    }
+
+    // Reset agent states to STANDBY for the new turn
     agents.value.forEach(a => a.state = 'STANDBY')
-    sessionTotalTokens.value = 0
-    sessionCachedTokens.value = 0
+    
+    // Capture session chat history before adding the new user message
+    const history = messages.value.slice(-10).map(m => ({
+      role: m.role,
+      content: m.content,
+      agent: m.agentName || m.agentRole
+    }))
     
     isDebating.value = true
     messages.value.push({
@@ -389,9 +420,11 @@ export const useDebateStore = defineStore('debate', () => {
     
     const payload = {
       type: 'start',
+      session_id: currentSessionId.value,
       user_request: userRequest,
       target_agent: targetAgent,
-      attachments: attachmentUrl ? [attachmentUrl] : []
+      attachments: attachmentUrl ? [attachmentUrl] : [],
+      history
     }
     ws.send(JSON.stringify(payload))
   }
@@ -519,6 +552,14 @@ export const useDebateStore = defineStore('debate', () => {
       case 'message':
         handleMessage(event)
         break
+      case 'user_message':
+        messages.value.push({
+          id: crypto.randomUUID(),
+          role: 'user',
+          content: event.content || '',
+          timestamp: new Date().toISOString()
+        })
+        break
     }
   }
 
@@ -632,8 +673,11 @@ export const useDebateStore = defineStore('debate', () => {
       try {
         const data = JSON.parse(event.data)
         if (data.type === 'WAKE_WORD_DETECTED') {
-          console.log('[WW] Wake word detected!')
+          console.log('[WW] Wake word detected for agent:', data.agent_role || 'supervisor')
           stopTts() // Interrupt any ongoing TTS
+          if (data.agent_role) {
+            selectedAgent.value = data.agent_role
+          }
           isWakeWordTriggered.value = true // UI should watch this to start recording
           
           // Reset after a short delay so it can be triggered again later
@@ -695,11 +739,14 @@ export const useDebateStore = defineStore('debate', () => {
     isAutoListenEnabled,
     isRecording,
     isWakeWordTriggered,
+    selectedAgent,
     globalAudioPlayer,
     globalAnalyser,
     unlockAudioContext,
     playTtsAudioChunk,
     stopTts,
+    currentSessionId,
+    clearSession,
     loadAgents,
     loadDebate,
     connect,

@@ -16,6 +16,11 @@ class IDebateRepository(ABC):
         """Updates the status of a debate."""
 
     @abstractmethod
+    def update_session(self, debate_id: str, status: str, target_agent: Optional[str] = None) -> None:
+        """Updates status and target agent for an existing continuous debate session."""
+
+
+    @abstractmethod
     def find_all(self) -> List[DebateRecord]:
         """Returns all debates."""
 

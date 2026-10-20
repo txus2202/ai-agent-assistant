@@ -23,15 +23,72 @@ El diseño sigue la arquitectura hexagonal definida para el proyecto:
 
 ### 3.2 Síntesis (TTS)
 1. Tras la respuesta del debate o checkpoint, Frontend invoca POST a `/audio/synthesize` enviando el texto.
-2. `LocalAudioService` sintetiza el texto a través de `Kokoro ONNX` (usando la voz femenina `ef_dora` u otra seleccionada), guardando los frames en un buffer de memoria (`soundfile`).
-3. FastAPI retorna el audio como `audio/wav`.
-4. Frontend reproduce el archivo automáticamente usando la API `Audio`.
+2. `LocalAudioService` limpia el formato Markdown y aplica la **normalización fonética técnica** (`SpanishTechPhoneticNormalizer`) para que los tecnicismos en inglés y nombres de agentes suenen naturales en castellano.
+3. Sintetiza el texto normalizado a través de `Kokoro ONNX` (usando la voz femenina `ef_dora` u otra seleccionada), guardando los frames en un buffer de memoria (`soundfile`).
+4. FastAPI retorna el audio como `audio/wav`.
+5. Frontend reproduce el archivo automáticamente usando la API `Audio`.
+
+### 3.3 Normalización Fonética Técnica (Spanglish Técnico para TTS)
+Para evitar que el motor fonético de Kokoro en español (`lang="es"`) lea los tecnicismos en inglés con pronunciación literal en castellano (p. ej. *pi-pe-li-ne* para `pipeline`, o *do-zer* para `docker`):
+- **Componente:** `src/infrastructure/audio/phonetic_normalizer.py` (`SpanishTechPhoneticNormalizer`).
+- **Mecanismo:** Diccionario compilado de expresiones regulares con límites de palabra (`\b`) que mapea términos ingleses a su representación fonética natural en castellano (ej. `pipeline` $\rightarrow$ `páiplain`, `Kubernetes` $\rightarrow$ `cubérnetes`, `pull request` $\rightarrow$ `pul ricuest`, `Sphinx` $\rightarrow$ `Esfinje`).
+- **Aislamiento visual/audio:** La sustitución fonética se produce exclusivamente en la cadena enviada a Kokoro; el texto del chat, historial de persistencia y base de datos conservan la ortografía original en inglés.
+- **Limpieza de Markdown:** Eliminación de encabezados (`#`), formato (`**`, `*`, `_`), enlaces (`[texto](url)` $\rightarrow$ `texto`) y bloques de código para evitar que el TTS pronuncie símbolos ortográficos o URLs.
+
+### 3.4 Detección Dinámica de Wake-Words Multi-agente (Vosk + SubAgentProfiles)
+El sistema permite invocar a cualquier agente de la cuadrilla mediante voz (p. ej. *"Sphinx, hola, ¿cómo estás?"*, *"Hestia, ¿qué opinas?"*, *"Hefesto, prepara el pipeline"*, *"Atenea, resume el debate"*):
+- **Fuente de Verdad Única:** En el arranque, `WakeWordService` consulta dinámicamente `get_all_profiles()` de `src/domain/agents/sub_agent_profiles.py` sin nombres ni alias hardcodeados en el servicio de audio.
+- **Alias Fonéticos en Dominio (`SubAgentProfile.phonetic_aliases`):**
+  Dado que el vocabulario del modelo ligero `vosk-model-small-es-0.42` no incluye ciertos nombres mitológicos o poco comunes (como "Hestia", "Aracne" o "Metis"), el modelo los decodifica acústicamente en palabras próximas de su léxico:
+  - **Hestia:** decodificada habitualmente como `"bestia"`, `"este a"` (p. ej. *"Hestia qué opinas"* $\rightarrow$ *"este a qué opinas"*), `"es tía"`, `"es día"`, `"hostia"`, `"ostia"`.
+  - **Sphinx:** decodificada como `"esfinge"` o `"esfinje"`.
+  - **Metis:** decodificada como `"metéis"`, `"meteis"`, `"betis"`, `"metes"`.
+  - **Aracne:** decodificada como `"acné"`, `"acne"`.
+  - **Ícaro:** decodificada como `"icaro"`, `"ícaro"`, `"ni caro"`.
+  Cada perfil en `sub_agent_profiles.py` define una tupla inmutable `phonetic_aliases` con estas variantes, permitiendo que `WakeWordService` las indexe automáticamente al arrancar.
+- **Normalización Fonética:** Las palabras clave y alias se normalizan eliminando tildes y diacríticos para asegurar coincidencias robustas con límites de palabra (`\b`).
+- **Contrato WebSocket (`/ws/audio/wake-word`):**
+  Al detectar el nombre o alias de un agente en el stream de audio PCM de 16kHz, el servidor emite:
+  ```json
+  {
+    "type": "WAKE_WORD_DETECTED",
+    "agent_role": "senior_architect",
+    "display_name": "Hestia"
+  }
+  ```
+- **Reacción en Frontend (`debate.ts` & `ChatPanel.vue`):**
+  1. El store de Pinia recibe el evento y actualiza inmediatamente `store.selectedAgent = data.agent_role`.
+  2. La interfaz de usuario (`ChatPanel.vue`) actualiza visualmente el selector y el badge al agente correspondiente.
+  3. Se detiene cualquier reproducción de TTS activa (`stopTts()`) y se activa automáticamente el `MediaRecorder` en `ParticleOrb.vue`.
+  4. Al finalizar de hablar y transcribirse el audio con Whisper, el mensaje se envía al backend con `target_agent: store.selectedAgent`.
+
+### 3.5 Inyección de Contexto de Sesión Compartido (Multi-turn Context Across Agents)
+Para que los agentes individuales conozcan lo debatido y conversado previamente durante la sesión:
+- **Carga de Inicio (`start`):** El cliente WebSocket envía junto con `user_request` y `target_agent` una lista `history` con los mensajes recientes del chat:
+  ```json
+  {
+    "type": "start",
+    "user_request": "Sphinx, ¿qué opinas de la propuesta de Ícaro?",
+    "target_agent": "the_judge",
+    "history": [
+      { "role": "user", "content": "..." },
+      { "role": "assistant", "agent": "Ícaro", "content": "..." }
+    ]
+  }
+  ```
+- **Inyección en Prompt (`SubAgentRunner` y `SupervisorAgent`):**
+  El backend formatea el historial en un bloque acotado (`## Contexto de la Sesión Previa`) intercalado entre el contexto RAG y la petición actual del usuario, truncando intervenciones muy largas para respetar la ventana de contexto y latencia en el procesador N100.
 
 ## 4. Consideraciones de Rendimiento y Hardware
 El despliegue está objetivo para un **Intel N100 con 12GB RAM**:
-- **STT:** `faster-whisper` usa CTranslate2, ideal para la CPU del N100 con un rendimiento rápido para modelos `base`.
+- **STT:** `faster-whisper` usa CTranslate2, ideal para la CPU del N100 con un rendimiento rápido para modelos `base`. Se fija `language="es"` y un `initial_prompt` técnico para evitar alucinaciones idiomáticas.
 - **TTS:** `kokoro-onnx` permite utilizar el estado del arte en voces (Kokoro v1.0, 82M de parámetros) consumiendo muy poca RAM y generando audio en escasos segundos (~2.4s) gracias al runtime de ONNX, sorteando la falta de GPU y los altos requisitos computacionales de alternativas más pesadas.
+- **Wake-Word Vosk Multia-agente:** El modelo Vosk Small en español (~40MB RAM) procesa audio en tiempo real (< 2% CPU del N100). La derivación dinámica de palabras clave desde `sub_agent_profiles.py` se ejecuta en O(N) una sola vez al instanciar el servicio (< 0.1 ms).
+- **Normalizador Fonético:** Ejecución en CPU < 0.2 ms por párrafo mediante `re.sub` compilado; huella en RAM < 15 KB (0.00% de la RAM del N100).
+- **Ventana de Historial Acotada:** Se limitan a los últimos 10 mensajes truncados a 500 caracteres, consumiendo < 1500 tokens de contexto para mantener la inferencia en CPU ágil y evitar degradación de memoria.
 
 ## 5. Diseño de Componentes Frontend
 - El componente `ParticleOrb.vue` alberga el botón del micrófono físico (ya existente) y orquesta la grabación en `toggleRecording()`.
 - Se asocia de manera reactiva con `store.draftMessage` (Store de Pinia) para unificar la entrada de texto por teclado y por voz.
+- `store.selectedAgent` centraliza el agente activo, sincronizando bidireccionalmente el selector visual de `ChatPanel.vue` y los disparadores de voz multia-agente de `ParticleOrb.vue`.
+

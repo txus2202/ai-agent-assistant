@@ -69,6 +69,7 @@ class SupervisorAgent:
         agent_config_repo: Any, # We'll use duck typing or import it if needed
         llm_factory: Callable[[str], ILLMProvider],
         hitl_callback: Callable[[SupervisorEvent], Awaitable[HITLResponse]],
+        chat_history: list[dict[str, Any]] | None = None,
     ) -> AsyncGenerator[SupervisorEvent, None]:
         """
         Run the full debate flow and yield SupervisorEvents asynchronously (ADR-016).
@@ -80,6 +81,7 @@ class SupervisorAgent:
             llm_factory:    Callable to get the ILLMProvider given a provider name.
             hitl_callback:  Async callable invoked at each HITL checkpoint.
                             Returns HITLResponse(decision, feedback).
+            chat_history:   Optional list of previous messages in this session.
 
         Yields:
             SupervisorEvent — one per agent start/complete, HITL checkpoint, and DONE.
@@ -90,6 +92,7 @@ class SupervisorAgent:
             agent_config_repo=agent_config_repo,
             llm_factory=llm_factory,
             hitl_callback=hitl_callback,
+            chat_history=chat_history,
         )
 
 
@@ -109,6 +112,7 @@ async def _debate_generator(
     agent_config_repo: Any,
     llm_factory: Callable[[str], ILLMProvider],
     hitl_callback: Callable[[SupervisorEvent], Awaitable[HITLResponse]],
+    chat_history: list[dict[str, Any]] | None = None,
 ) -> AsyncGenerator[SupervisorEvent, None]:
     
     # Setup global defaults if config not found
@@ -127,12 +131,15 @@ async def _debate_generator(
         # Instantiate the correct provider for this agent
         llm_provider = llm_factory(provider_name)
         
+        hist = chat_history if r == AgentRole.NL_INTERPRETER else None
+        runner_kwargs = {"chat_history": hist} if hist is not None else {}
         resp = await SubAgentRunner.run(
             role=r,
             user_request=req,
             llm_provider=llm_provider,
             document_store=document_store,
             model_name=model_name,
+            **runner_kwargs,
         )
         state.agent_metadata[r.value] = {
             "model": resp.model_name or model_name,

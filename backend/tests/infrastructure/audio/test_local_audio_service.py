@@ -47,6 +47,11 @@ async def test_transcribe_audio(mock_whisper):
     assert call_args is not None
     assert call_args[0][0] == audio_file
     assert call_args[1].get("beam_size") == 5
+    assert call_args[1].get("language") == "es"
+    prompt = call_args[1].get("initial_prompt", "")
+    assert "castellano" in prompt.lower() or "español" in prompt.lower()
+    assert "backend" in prompt.lower()
+    assert "docker" in prompt.lower()
 
 
 @pytest.mark.asyncio
@@ -67,3 +72,20 @@ async def test_synthesize_speech(mock_kokoro):
     assert result == b"fake_wav_data"
     mock_kokoro_inst.create.assert_called_once_with("Test text", voice="ef_dora", speed=1.0, lang="es")
     mock_sf_write.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_synthesize_speech_applies_phonetic_normalization(mock_kokoro):
+    _, mock_kokoro_inst = mock_kokoro
+
+    with patch("pathlib.Path.exists", return_value=True), patch("soundfile.write") as mock_sf_write:
+        mock_sf_write.side_effect = lambda buf, samples, sample_rate, format: buf.write(b"wav")
+        service = LocalAudioService("base", Path("dummy.onnx"), Path("dummy.bin"), "ef_dora")
+        await service.synthesize_speech("## 1. Desplegamos en **Docker** con Hefesto")
+
+    mock_kokoro_inst.create.assert_called_once()
+    spoken_text = mock_kokoro_inst.create.call_args[0][0]
+    assert "dóquer" in spoken_text
+    assert "efésto" in spoken_text.lower()
+    assert "##" not in spoken_text
+    assert "**" not in spoken_text

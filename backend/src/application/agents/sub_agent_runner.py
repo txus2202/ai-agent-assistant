@@ -38,6 +38,35 @@ class SubAgentResponse:
     model_name: str = ""
 
 
+def format_chat_history(chat_history: list[dict[str, Any]] | None, max_messages: int = 10) -> str:
+    """Format recent session chat messages into an bounded context block."""
+    if not chat_history:
+        return ""
+    
+    recent = chat_history[-max_messages:]
+    lines = []
+    for msg in recent:
+        role = msg.get("role", "")
+        agent = msg.get("agent", "")
+        content = str(msg.get("content", "")).strip()
+        if not content:
+            continue
+        # Truncate very long messages to avoid blowing context window on N100
+        if len(content) > 500:
+            content = content[:500] + "... [truncado]"
+            
+        if role == "user":
+            lines.append(f"Usuario: {content}")
+        else:
+            sender = agent if agent else "Asistente"
+            lines.append(f"{sender}: {content}")
+
+    if not lines:
+        return ""
+        
+    return "## Contexto de la Sesión Previa (Historial del Chat)\n" + "\n\n".join(lines)
+
+
 class SubAgentRunner:
     """Stateless async runner for a single sub-agent invocation."""
 
@@ -48,6 +77,7 @@ class SubAgentRunner:
         llm_provider: ILLMProvider,
         document_store: IDocumentStore,
         model_name: str,
+        chat_history: list[dict[str, Any]] | None = None,
     ) -> SubAgentResponse:
         """
         Run a sub-agent for the given role (async, ADR-016).
@@ -61,6 +91,7 @@ class SubAgentRunner:
             llm_provider:   ILLMProvider to call for completion.
             document_store: Store used for RAG retrieval.
             model_name:     Model to use for the LLM call.
+            chat_history:   Optional list of previous messages in this session.
 
         Returns:
             SubAgentResponse with the agent's content and RAG chunks used.
@@ -83,6 +114,9 @@ class SubAgentRunner:
         parts: list[str] = [profile.system_prompt]
         if context_block:
             parts.append(context_block)
+        chat_history_block = format_chat_history(chat_history)
+        if chat_history_block:
+            parts.append(chat_history_block)
         parts.append(f"## User Request\n{user_request}")
 
         prompt = "\n\n".join(parts)

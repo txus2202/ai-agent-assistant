@@ -132,16 +132,19 @@ describe('useDebateStore', () => {
     store.startDebate('test task', 'learning', '/tmp/file.pdf')
     
     expect(store.isDebating).toBe(true)
+    expect(store.currentSessionId).toBeTruthy()
     expect(store.messages).toHaveLength(1)
     expect(store.messages[0]!.content).toBe('test task')
     expect(store.messages[0]!.role).toBe('user')
-    // We can verify send was called on the mocked ws
-    expect(mockSend).toHaveBeenCalledWith(JSON.stringify({ 
+    // We can verify send was called on the mocked ws with session_id
+    expect(JSON.parse(mockSend.mock.calls[0]![0])).toEqual({ 
       type: 'start', 
+      session_id: store.currentSessionId,
       user_request: 'test task',
       target_agent: 'learning',
-      attachments: ['/tmp/file.pdf']
-    }))
+      attachments: ['/tmp/file.pdf'],
+      history: []
+    })
   })
 
   it('handles startDebate with defaults', () => {
@@ -149,12 +152,91 @@ describe('useDebateStore', () => {
     store.connect()
     store.isConnected = true
     store.startDebate('test task')
-    expect(mockSend).toHaveBeenCalledWith(JSON.stringify({ 
+    expect(JSON.parse(mockSend.mock.calls[0]![0])).toEqual({ 
       type: 'start', 
+      session_id: store.currentSessionId,
       user_request: 'test task',
       target_agent: 'supervisor',
-      attachments: []
-    }))
+      attachments: [],
+      history: []
+    })
+  })
+
+  it('handles startDebate and sends previous chat history in payload', () => {
+    const store = useDebateStore()
+    store.connect()
+    store.isConnected = true
+    store.messages.push(
+      { id: '1', role: 'user', content: '¿Qué opinas de Docker?' },
+      { id: '2', role: 'assistant', agentName: 'Hefesto', agentRole: 'devops_secops', content: 'Es excelente para aislar servicios.' }
+    )
+
+    store.startDebate('Sphinx, audita esta idea', 'the_judge')
+
+    expect(JSON.parse(mockSend.mock.calls[0]![0])).toEqual({
+      type: 'start',
+      session_id: store.currentSessionId,
+      user_request: 'Sphinx, audita esta idea',
+      target_agent: 'the_judge',
+      attachments: [],
+      history: [
+        { role: 'user', content: '¿Qué opinas de Docker?', agent: undefined },
+        { role: 'assistant', content: 'Es excelente para aislar servicios.', agent: 'Hefesto' }
+      ]
+    })
+  })
+
+  it('handles multi-turn conversation preserving currentSessionId across multiple startDebate calls and accumulating tokens', () => {
+    const store = useDebateStore()
+    store.connect()
+    store.isConnected = true
+
+    // Turn 1
+    store.startDebate('Hola Sphinx', 'the_judge')
+    const firstSessionId = store.currentSessionId
+    expect(firstSessionId).toBeTruthy()
+
+    // Simulate Agent completion
+    store.agents = [{ role: 'the_judge', name: 'Sphinx', state: 'ACTIVE' }]
+    store.handleSupervisorEvent({
+      type: 'agent_completed',
+      role: 'the_judge',
+      content: 'Respuesta 1',
+      metadata: { tokens: '50' }
+    })
+    expect(store.sessionTotalTokens).toBe(50)
+
+    // Turn 2
+    store.startDebate('Hefesto, prepara el pipeline', 'devops_secops')
+    expect(store.currentSessionId).toBe(firstSessionId)
+    // Tokens must NOT reset to 0 in a continuous session
+    expect(store.sessionTotalTokens).toBe(50)
+
+    store.agents = [{ role: 'devops_secops', name: 'Hefesto', state: 'ACTIVE' }]
+    store.handleSupervisorEvent({
+      type: 'agent_completed',
+      role: 'devops_secops',
+      content: 'Respuesta 2',
+      metadata: { tokens: '60' }
+    })
+    expect(store.sessionTotalTokens).toBe(110)
+  })
+
+  it('handles clearSession resetting messages, tokens, and currentSessionId', () => {
+    const store = useDebateStore()
+    store.currentSessionId = 'some-session'
+    store.sessionTotalTokens = 150
+    store.sessionCachedTokens = 75
+    store.messages.push({ role: 'user', content: 'hello' })
+    store.rawEvents.push({ type: 'done', content: 'ok' })
+
+    store.clearSession()
+
+    expect(store.currentSessionId).toBeNull()
+    expect(store.sessionTotalTokens).toBe(0)
+    expect(store.sessionCachedTokens).toBe(0)
+    expect(store.messages).toHaveLength(0)
+    expect(store.rawEvents).toHaveLength(0)
   })
 
   it('handles uploadFile', async () => {
@@ -245,14 +327,20 @@ describe('useDebateStore', () => {
     expect(mockSend).not.toHaveBeenCalled()
     store.isRecording = false
 
-    // Simulate wake word detected event from server
+    // Simulate wake word detected event from server with specific agent
     store.isTtsPlaying = true
+    expect(store.selectedAgent).toBe('supervisor')
     wakeWordWs.onmessage?.({
-      data: JSON.stringify({ type: 'WAKE_WORD_DETECTED' })
+      data: JSON.stringify({
+        type: 'WAKE_WORD_DETECTED',
+        agent_role: 'the_judge',
+        display_name: 'Sphinx'
+      })
     })
 
     expect(store.isTtsPlaying).toBe(false)
     expect(store.isWakeWordTriggered).toBe(true)
+    expect(store.selectedAgent).toBe('the_judge')
 
     // Fast forward 1000ms timer to reset wake word trigger
     vi.advanceTimersByTime(1100)
@@ -415,11 +503,39 @@ describe('useDebateStore', () => {
 
     store.loadDebate(historicalDebate)
 
+    expect(store.currentSessionId).toBe('session-42')
     expect(store.agents[0]!.state).toBe('COMPLETED')
     expect(store.isDebating).toBe(false)
     expect(store.messages).toHaveLength(2) // 1 user request + 1 done message
     expect(store.messages[0]!.content).toBe('Create a payment gateway architecture')
     expect(store.rawEvents).toHaveLength(3)
+  })
+
+  it('handles loadDebate with multi-turn user_message events restoring full dialogue in chronological order', () => {
+    const store = useDebateStore()
+    const historicalMultiTurn = {
+      id: 'session-multi-turn-99',
+      status: 'completed' as const,
+      created_at: '2026-10-11T10:00:00Z',
+      user_request: 'Turno inicial',
+      events: [
+        { type: 'user_message', role: 'user', content: 'Hola Sphinx' },
+        { type: 'done', role: 'the_judge', content: 'Respuesta Sphinx' },
+        { type: 'user_message', role: 'user', content: 'Hefesto despliega' },
+        { type: 'done', role: 'devops_secops', content: 'Respuesta Hefesto' }
+      ]
+    }
+
+    store.loadDebate(historicalMultiTurn)
+
+    expect(store.currentSessionId).toBe('session-multi-turn-99')
+    expect(store.messages).toHaveLength(4)
+    expect(store.messages[0]!.role).toBe('user')
+    expect(store.messages[0]!.content).toBe('Hola Sphinx')
+    expect(store.messages[1]!.content).toBe('[the_judge] Respuesta Sphinx')
+    expect(store.messages[2]!.role).toBe('user')
+    expect(store.messages[2]!.content).toBe('Hefesto despliega')
+    expect(store.messages[3]!.content).toBe('[devops_secops] Respuesta Hefesto')
   })
 
   it('handles loadAgents error when backend API fails by clearing agents and resetting isAgentsLoaded', async () => {

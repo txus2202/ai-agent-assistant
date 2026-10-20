@@ -19,6 +19,7 @@ def patched_av_open(*args, **kwargs):
 av.open = patched_av_open
 
 from src.domain.ports.audio_service import IAudioService
+from src.infrastructure.audio.phonetic_normalizer import SpanishTechPhoneticNormalizer
 
 
 class LocalAudioService(IAudioService):
@@ -27,11 +28,33 @@ class LocalAudioService(IAudioService):
     and synthesis (kokoro-onnx).
     """
 
-    def __init__(self, whisper_model_size: str, kokoro_model_path: Path, kokoro_voices_path: Path, kokoro_voice_name: str):
+    def __init__(
+        self,
+        whisper_model_size: str,
+        kokoro_model_path: Path,
+        kokoro_voices_path: Path,
+        kokoro_voice_name: str,
+        whisper_language: str = "es",
+        whisper_initial_prompt: str | None = None,
+    ):
         self.whisper_model_size = whisper_model_size
         self.kokoro_model_path = kokoro_model_path
         self.kokoro_voices_path = kokoro_voices_path
         self.kokoro_voice_name = kokoro_voice_name
+        self.whisper_language = whisper_language
+        self.whisper_initial_prompt = whisper_initial_prompt or (
+            "Conversación técnica en castellano sobre desarrollo de software, arquitectura de sistemas e infraestructura. "
+            "Uso frecuente de términos técnicos, herramientas, patrones y nombres en inglés: "
+            "backend, frontend, fullstack, microservicios, API REST, GraphQL, WebSocket, gRPC, "
+            "Docker, Kubernetes, CI/CD, DevOps, DevSecOps, cloud-native, serverless, AWS, Azure, GCP, "
+            "SQLite, PostgreSQL, Redis, Kafka, ChromaDB, FastAPI, Python, TypeScript, JavaScript, Vue, React, "
+            "Node.js, Next.js, Vite, CQRS, Event-Driven, DDD, clean architecture, arquitectura hexagonal, "
+            "Zero-Trust, STRIDE, SPOF, Langfuse, OpenTelemetry, Prometheus, Grafana, HITL, Pull Request, "
+            "merge, commit, branch, deploy, clúster, endpoints, logs, métricas, tracing. "
+            "Nombres de los agentes del equipo: Atenea, Hermes, Ícaro, Hestia, Sphinx, Hefesto, Aracne, Metis."
+        )
+
+        self.phonetic_normalizer = SpanishTechPhoneticNormalizer()
 
         # We load Whisper model lazily to avoid blocking startup.
         self.whisper_model = None
@@ -64,10 +87,11 @@ class LocalAudioService(IAudioService):
             model = self._get_whisper_model()
             segments, _ = model.transcribe(
                 audio_file, 
+                language=self.whisper_language,
                 beam_size=5,
                 vad_filter=True,
                 vad_parameters={"min_silence_duration_ms": 500},
-                initial_prompt="This is a conversation in Spanish and English. Hola, ¿cómo estás? Hello, how are you?"
+                initial_prompt=self.whisper_initial_prompt,
             )
             text = " ".join([segment.text for segment in segments])
             return text.strip()
@@ -78,13 +102,17 @@ class LocalAudioService(IAudioService):
     async def synthesize_speech(self, text: str) -> bytes:
         """
         Synthesize text to speech using Kokoro ONNX.
+        Applies Spanish technical phonetic normalization and strips Markdown before synthesis.
         """
         def _synthesize():
             kokoro_tts = self._get_kokoro()
             
+            # Normalize technical terms and strip markdown for natural Spanish pronunciation
+            spoken_text = self.phonetic_normalizer.normalize(text) or text.strip()
+
             # Generate audio samples
             samples, sample_rate = kokoro_tts.create(
-                text,
+                spoken_text,
                 voice=self.kokoro_voice_name,
                 speed=1.0,
                 lang="es"

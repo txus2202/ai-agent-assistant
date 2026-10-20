@@ -11,6 +11,7 @@ Strategy:
 """
 from __future__ import annotations
 
+import uuid
 import pytest
 from fastapi.testclient import TestClient
 
@@ -216,4 +217,130 @@ class TestDebateWebSocket:
         assert mock_obs.start_trace.called
         assert mock_obs.start_agent_span.called
         assert mock_obs.end_trace.called
+
+    def test_sub_agent_invocation_with_chat_history(self, ws_client, monkeypatch):
+        """Verifies sub_agent invocation propagates chat_history to SubAgentRunner."""
+        from unittest.mock import AsyncMock
+        from src.application.agents.sub_agent_runner import SubAgentResponse
+        from src.presentation.api.ws import debate
+
+        mock_runner = AsyncMock()
+        mock_runner.return_value = SubAgentResponse(
+            role=AgentRole.THE_JUDGE,
+            content="Sphinx review",
+            context_chunks=[],
+            tokens={"input": 10, "output": 20, "total": 30},
+            latency=0.1,
+            model_name="test-model"
+        )
+        monkeypatch.setattr(debate.SubAgentRunner, "run", mock_runner)
+
+        history_payload = [
+            {"role": "user", "content": "Hola equipo"},
+            {"role": "assistant", "agent": "Atenea", "content": "Bienvenido"},
+        ]
+
+        with ws_client.websocket_connect("/ws/debate") as websocket:
+            websocket.send_json({
+                "type": "start",
+                "target_agent": "the_judge",
+                "user_request": "Sphinx qué opinas",
+                "history": history_payload
+            })
+
+            ev_started = websocket.receive_json()
+            assert ev_started["type"] == EventType.AGENT_STARTED.value
+            assert ev_started["role"] == AgentRole.THE_JUDGE.value
+
+            ev_completed = websocket.receive_json()
+            assert ev_completed["type"] == EventType.AGENT_COMPLETED.value
+            assert ev_completed["content"] == "Sphinx review"
+
+            ev_done = websocket.receive_json()
+            assert ev_done["type"] == EventType.DONE.value
+
+        mock_runner.assert_awaited_once()
+        _, kwargs = mock_runner.call_args
+        assert kwargs["chat_history"] == history_payload
+        assert kwargs["role"] == AgentRole.THE_JUDGE
+        assert kwargs["user_request"] == "Sphinx qué opinas"
+
+    def test_continuous_chat_session_reuses_session_id_and_appends_events(self, ws_client, monkeypatch):
+        """Verifies multiple 'start' messages sharing session_id reuse DebateRecord and append events."""
+        from unittest.mock import AsyncMock
+        from src.application.agents.sub_agent_runner import SubAgentResponse
+        from src.presentation.api.ws import debate
+        from src.presentation.api.config import get_settings
+        from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
+
+        mock_runner = AsyncMock()
+        mock_runner.side_effect = [
+            SubAgentResponse(
+                role=AgentRole.THE_JUDGE,
+                content="Sphinx review 1",
+                context_chunks=[],
+                tokens={"input": 10, "output": 20, "total": 30},
+                latency=0.1,
+                model_name="test-model"
+            ),
+            SubAgentResponse(
+                role=AgentRole.DEVOPS_SECOPS,
+                content="Hefesto deploy 2",
+                context_chunks=[],
+                tokens={"input": 15, "output": 25, "total": 40},
+                latency=0.2,
+                model_name="test-model"
+            )
+        ]
+        monkeypatch.setattr(debate.SubAgentRunner, "run", mock_runner)
+
+        session_id = f"test-session-{uuid.uuid4()}"
+
+        with ws_client.websocket_connect("/ws/debate") as websocket:
+            # Turn 1: Sphinx
+            websocket.send_json({
+                "type": "start",
+                "session_id": session_id,
+                "target_agent": "the_judge",
+                "user_request": "Sphinx qué opinas",
+            })
+
+            ev_started1 = websocket.receive_json()
+            assert ev_started1["type"] == EventType.AGENT_STARTED.value
+            ev_completed1 = websocket.receive_json()
+            assert ev_completed1["type"] == EventType.AGENT_COMPLETED.value
+            ev_done1 = websocket.receive_json()
+            assert ev_done1["type"] == EventType.DONE.value
+
+            # Turn 2: Hefesto (same session_id)
+            websocket.send_json({
+                "type": "start",
+                "session_id": session_id,
+                "target_agent": "devops_secops",
+                "user_request": "Hefesto prepara el pipeline",
+            })
+
+            ev_started2 = websocket.receive_json()
+            assert ev_started2["type"] == EventType.AGENT_STARTED.value
+            ev_completed2 = websocket.receive_json()
+            assert ev_completed2["type"] == EventType.AGENT_COMPLETED.value
+            ev_done2 = websocket.receive_json()
+            assert ev_done2["type"] == EventType.DONE.value
+
+        # Verify database record: only 1 DebateRecord for this session_id
+        settings = get_settings()
+        repo = SqliteDebateRepository(str(settings.sqlite_db_path))
+        record = repo.find_by_id(session_id)
+        assert record is not None
+        assert record.id == session_id
+        
+        # Verify events contain both user messages and agent responses in chronological order
+        event_types = [e.get("type") for e in record.events]
+        assert "user_message" in event_types
+        user_events = [e for e in record.events if e.get("type") == "user_message"]
+        assert len(user_events) == 2
+        assert user_events[0]["content"] == "Sphinx qué opinas"
+        assert user_events[1]["content"] == "Hefesto prepara el pipeline"
+
+
 

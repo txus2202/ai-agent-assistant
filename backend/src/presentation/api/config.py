@@ -44,6 +44,18 @@ class Settings(BaseSettings):
 
     # Audio Integration (Phase 5)
     whisper_model: str = "base"
+    whisper_language: str = "es"
+    whisper_initial_prompt: str = (
+        "Conversación técnica en castellano sobre desarrollo de software, arquitectura de sistemas e infraestructura. "
+        "Uso frecuente de términos técnicos, herramientas, patrones y nombres en inglés: "
+        "backend, frontend, fullstack, microservicios, API REST, GraphQL, WebSocket, gRPC, "
+        "Docker, Kubernetes, CI/CD, DevOps, DevSecOps, cloud-native, serverless, AWS, Azure, GCP, "
+        "SQLite, PostgreSQL, Redis, Kafka, ChromaDB, FastAPI, Python, TypeScript, JavaScript, Vue, React, "
+        "Node.js, Next.js, Vite, CQRS, Event-Driven, DDD, clean architecture, arquitectura hexagonal, "
+        "Zero-Trust, STRIDE, SPOF, Langfuse, OpenTelemetry, Prometheus, Grafana, HITL, Pull Request, "
+        "merge, commit, branch, deploy, clúster, endpoints, logs, métricas, tracing. "
+        "Nombres de los agentes del equipo: Atenea, Hermes, Ícaro, Hestia, Sphinx, Hefesto, Aracne, Metis."
+    )
     kokoro_model_path: Path = Path("voices/kokoro-v1.0.onnx")
     kokoro_voices_path: Path = Path("voices/voices-v1.0.bin")
     kokoro_voice_name: str = "ef_dora"

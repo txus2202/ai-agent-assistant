@@ -179,6 +179,32 @@ class TestSubAgentRunner:
         assert "unique_rag_content_xyz" in sent_prompt
 
     @pytest.mark.anyio
+    async def test_prompt_includes_chat_history_context(self):
+        from src.domain.agents.sub_agent_profiles import AgentRole
+        from src.application.agents.sub_agent_runner import SubAgentRunner
+
+        llm = FakeLLM()
+        history = [
+            {"role": "user", "content": "¿Cómo desplegamos esto?"},
+            {"role": "assistant", "agent": "Ícaro", "content": "Propongo usar Cloud Run con gRPC."},
+        ]
+
+        await SubAgentRunner.run(
+            role=AgentRole.THE_JUDGE,
+            user_request="¿Qué opinas de esa propuesta?",
+            llm_provider=llm,
+            document_store=InMemoryDocumentStore(),
+            model_name="gemini-3.6-flash",
+            chat_history=history,
+        )
+
+        sent_prompt = llm.received_prompts[0]
+        assert "Contexto de la Sesión Previa" in sent_prompt
+        assert "Usuario: ¿Cómo desplegamos esto?" in sent_prompt
+        assert "Ícaro: Propongo usar Cloud Run con gRPC." in sent_prompt
+        assert "## User Request\n¿Qué opinas de esa propuesta?" in sent_prompt
+
+    @pytest.mark.anyio
     async def test_response_role_matches_requested_role(self):
         from src.domain.agents.sub_agent_profiles import AgentRole
         from src.application.agents.sub_agent_runner import SubAgentRunner

@@ -61,3 +61,31 @@ def test_wake_word_websocket_detected_hestia(mock_process_chunk):
         assert response["agent_role"] == "senior_architect"
         assert response["display_name"] == "Hestia"
 
+
+@patch("src.presentation.api.ws.wake_word.wake_word_service.process_chunk")
+def test_wake_word_websocket_hitl_voice_command(mock_process_chunk):
+    mock_process_chunk.return_value = WakeWordDetection(
+        detected=True,
+        command="approve"
+    )
+
+    with client.websocket_connect("/ws/audio/wake-word") as websocket:
+        websocket.send_bytes(b'\x00' * 1024)
+        response = websocket.receive_json()
+        assert response["type"] == "HITL_VOICE_COMMAND"
+        assert response["command"] == "approve"
+
+
+@patch("src.presentation.api.ws.wake_word.wake_word_service.reset")
+def test_wake_word_websocket_reset_control_message(mock_reset):
+    with client.websocket_connect("/ws/audio/wake-word") as websocket:
+        # Client connect already calls reset once
+        assert mock_reset.call_count == 1
+        
+        # Send text RESET control message
+        websocket.send_text('{"type": "RESET"}')
+        time.sleep(0.1)
+        
+        # Expect reset to be called again
+        assert mock_reset.call_count == 2
+

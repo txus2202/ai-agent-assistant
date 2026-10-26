@@ -1,0 +1,91 @@
+version: 1
+
+# Generic council used ONLY by tests. Names are intentionally neutral so that the
+# application tests do not depend on the agents shipped in the root agents.yaml.
+agents:
+  - id: coordinator
+    display_name: Coordinator
+    description: Generic supervisor used by application tests of the orchestrator.
+    color_hex: "#f59e0b"
+    is_supervisor: true
+    phonetic_aliases: [coordinator]
+    system_prompt: |
+      You are Coordinator, the generic supervisor agent of the test council.
+      Always answer in Spanish and orchestrate the other agents.
+
+  - id: interpreter
+    display_name: Interpreter
+    description: Generic agent that formalizes the user request into requirements.
+    color_hex: "#00e5ff"
+    uses_rag: false
+    phonetic_aliases: [interpreter]
+    system_prompt: |
+      You are Interpreter, a generic agent that turns colloquial requests into
+      strictly structured requirements. Always answer in Spanish.
+
+  - id: proposer_one
+    display_name: PropOne
+    description: Generic proposer agent that retrieves specification documents.
+    color_hex: "#a855f7"
+    uses_rag: true
+    rag_filter:
+      type: spec
+    phonetic_aliases: [prop one]
+    system_prompt: |
+      You are PropOne, a generic proposer agent. Produce a proposal for the
+      formalized request. Always answer in Spanish.
+
+  - id: proposer_two
+    display_name: PropTwo
+    description: Generic proposer agent that retrieves implemented documents.
+    color_hex: "#22c55e"
+    uses_rag: true
+    rag_filter:
+      status: implemented
+    phonetic_aliases: [prop two]
+    system_prompt: |
+      You are PropTwo, a generic proposer agent. Produce a proposal for the
+      formalized request. Always answer in Spanish.
+
+  - id: auditor
+    display_name: Auditor
+    description: Generic agent that reviews proposals and issues a verdict.
+    color_hex: "#ef4444"
+    uses_rag: true
+    rag_filter:
+      type: adr
+    phonetic_aliases: [auditor]
+    system_prompt: |
+      You are Auditor, a generic agent that critically reviews proposals and
+      issues a verdict. Always answer in Spanish.
+
+  - id: implementer_one
+    display_name: ImplOne
+    description: Generic implementation agent that produces diagrams.
+    color_hex: "#0ea5e9"
+    uses_rag: false
+    phonetic_aliases: [impl one]
+    system_prompt: |
+      You are ImplOne, a generic implementation agent that produces diagrams
+      in Mermaid syntax. Always answer in Spanish.
+
+  - id: implementer_two
+    display_name: ImplTwo
+    description: Generic implementation agent that produces deployment assets.
+    color_hex: "#f97316"
+    uses_rag: false
+    phonetic_aliases: [impl two]
+    system_prompt: |
+      You are ImplTwo, a generic implementation agent that produces deployment
+      assets. Always answer in Spanish.
+
+  - id: learner
+    display_name: Learner
+    description: Generic agent that ingests documents into the knowledge base.
+    color_hex: "#1d4ed8"
+    uses_rag: false
+    can_ingest_documents: true
+    phonetic_aliases: [learner]
+    system_prompt: |
+      You are Learner, a generic agent that ingests and explains documents.
+      Always answer in Spanish.

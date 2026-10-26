@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { useDebateStore, normalizeAgentRole } from '../debate'
+import { useDebateStore, normalizeAgentRole, cleanAgentMessageContent } from '../debate'
 
 interface MockWebSocketInstance {
   readyState: number
@@ -411,7 +411,7 @@ describe('useDebateStore', () => {
       content: 'Design review looks solid.'
     })
     expect(store.messages).toHaveLength(1)
-    expect(store.messages[0]!.content).toBe('[senior_architect] Design review looks solid.')
+    expect(store.messages[0]!.content).toBe('Design review looks solid.')
 
     // error event
     store.handleSupervisorEvent({
@@ -431,7 +431,7 @@ describe('useDebateStore', () => {
     })
     expect(store.isDebating).toBe(false)
     expect(store.messages).toHaveLength(3)
-    expect(store.messages[2]!.content).toBe('[the_judge] Consensus finalized.')
+    expect(store.messages[2]!.content).toBe('Consensus finalized.')
   })
 
   it('populates agentRole, agentName, and colorHex on hitl_required and done events', () => {
@@ -452,7 +452,8 @@ describe('useDebateStore', () => {
     expect(store.messages[0]!.agentRole).toBe('nl_interpreter')
     expect(store.messages[0]!.agentName).toBe('Natural Language Interpreter')
     expect(store.messages[0]!.colorHex).toBe('#00e5ff')
-    expect(store.messages[0]!.content).toContain('[nl_interpreter]')
+    expect(store.messages[0]!.content).not.toContain('[nl_interpreter]')
+    expect(store.messages[0]!.content).toBe('Please confirm user request interpretation')
 
     store.handleSupervisorEvent({
       type: 'done',
@@ -465,7 +466,7 @@ describe('useDebateStore', () => {
     expect(store.messages[1]!.colorHex).toBe('#f59e0b')
   })
 
-  it('handles submitHitlDecision by sending websocket payload and resetting checkpoint', () => {
+  it('handles submitHitlDecision by sending websocket payload, resetting checkpoint, and adding user message for refinement', () => {
     const store = useDebateStore()
     store.connect()
     store.isConnected = true
@@ -481,6 +482,22 @@ describe('useDebateStore', () => {
       decision: 'refine',
       feedback: 'Add authentication layers'
     }))
+    expect(store.messages).toHaveLength(1)
+    expect(store.messages[0]).toMatchObject({
+      role: 'user',
+      content: 'Add authentication layers'
+    })
+  })
+
+  it('does not add user message when approving without feedback', () => {
+    const store = useDebateStore()
+    store.connect()
+    store.isConnected = true
+    store.isHitlRequired = true
+    store.hitlCheckpoint = 'CP-A'
+
+    store.submitHitlDecision('approve')
+    expect(store.messages).toHaveLength(0)
   })
 
   it('handles loadDebate by restoring sessions, agents to standby, and replaying events', () => {
@@ -532,10 +549,10 @@ describe('useDebateStore', () => {
     expect(store.messages).toHaveLength(4)
     expect(store.messages[0]!.role).toBe('user')
     expect(store.messages[0]!.content).toBe('Hola Sphinx')
-    expect(store.messages[1]!.content).toBe('[the_judge] Respuesta Sphinx')
+    expect(store.messages[1]!.content).toBe('Respuesta Sphinx')
     expect(store.messages[2]!.role).toBe('user')
     expect(store.messages[2]!.content).toBe('Hefesto despliega')
-    expect(store.messages[3]!.content).toBe('[devops_secops] Respuesta Hefesto')
+    expect(store.messages[3]!.content).toBe('Respuesta Hefesto')
   })
 
   it('handles loadAgents error when backend API fails by clearing agents and resetting isAgentsLoaded', async () => {
@@ -607,7 +624,7 @@ describe('useDebateStore', () => {
     })
     expect(store.rawEvents).toHaveLength(1)
     expect(store.messages).toHaveLength(1)
-    expect(store.messages[0]!.content).toBe('[supervisor] Debate stream initialized.')
+    expect(store.messages[0]!.content).toBe('Debate stream initialized.')
 
     // 3. onmessage with invalid JSON does not throw
     wsInstance.onmessage?.({ data: 'invalid json payload' })
@@ -668,5 +685,127 @@ describe('useDebateStore', () => {
     expect(normalizeAgentRole('supervisor')).toBe('supervisor')
 
     expect(store.normalizeAgentRole('innovator')).toBe('innovator_architect')
+  })
+
+  it('sends HITL response with target_agents via submitHitlDecision', () => {
+    const store = useDebateStore()
+    store.connect()
+
+    const ws = activeSockets[0]
+    expect(ws).toBeDefined()
+
+    store.isHitlRequired = true
+    store.hitlCheckpoint = 'after_nl_interpreter'
+
+    store.submitHitlDecision('approve', 'Proceed with Redis', ['diagrammer', 'devops_secops'])
+
+    expect(store.isHitlRequired).toBe(false)
+    expect(store.hitlCheckpoint).toBeNull()
+
+    expect(mockSend).toHaveBeenCalledWith(JSON.stringify({
+      type: 'hitl_response',
+      decision: 'approve',
+      feedback: 'Proceed with Redis',
+      target_agents: ['diagrammer', 'devops_secops']
+    }))
+  })
+
+  it('reacts to HITL_VOICE_COMMAND messages from wake-word websocket', async () => {
+    // Mock navigator.mediaDevices.getUserMedia
+    const mockGetUserMedia = vi.fn().mockResolvedValue({
+      getTracks: () => [{ stop: vi.fn() }]
+    })
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: { getUserMedia: mockGetUserMedia },
+      writable: true,
+      configurable: true
+    })
+
+    const store = useDebateStore()
+    store.connect()
+    store.startAutoListen()
+
+    // Wake word socket is the latest socket created
+    const wwSocket = activeSockets[activeSockets.length - 1]
+    expect(wwSocket).toBeDefined()
+
+    // 1. Voice command "approve" when HITL is required
+    store.isHitlRequired = true
+    wwSocket!.onmessage?.({
+      data: JSON.stringify({
+        type: 'HITL_VOICE_COMMAND',
+        command: 'approve'
+      })
+    })
+
+    expect(store.isHitlRequired).toBe(false)
+    expect(mockSend).toHaveBeenCalledWith(JSON.stringify({
+      type: 'hitl_response',
+      decision: 'approve',
+      feedback: ''
+    }))
+
+    // 2. Voice command "refine" when HITL is required -> triggers wake word recording mode
+    vi.useFakeTimers()
+    store.isHitlRequired = true
+    wwSocket!.onmessage?.({
+      data: JSON.stringify({
+        type: 'HITL_VOICE_COMMAND',
+        command: 'refine'
+      })
+    })
+
+    expect(store.isWakeWordTriggered).toBe(true)
+
+    // Verify it automatically resets to false after delay to unblock future wake words
+    vi.advanceTimersByTime(1000)
+    expect(store.isWakeWordTriggered).toBe(false)
+    vi.useRealTimers()
+
+    // 3. submitHitlDecision sends RESET message to wakeWordWs and resets flags
+    store.isWakeWordTriggered = true
+    store.isRecording = true
+    store.submitHitlDecision('approve')
+    expect(store.isWakeWordTriggered).toBe(false)
+    expect(store.isRecording).toBe(false)
+    expect(mockSend).toHaveBeenCalledWith(JSON.stringify({ type: 'RESET' }))
+
+    store.stopAutoListen()
+  })
+})
+
+describe('cleanAgentMessageContent', () => {
+  it('strips bracketed role tags', () => {
+    expect(cleanAgentMessageContent('[nl_interpreter] Requisitos definidos.')).toBe('Requisitos definidos.')
+    expect(cleanAgentMessageContent('[innovator_architect] Propuesta de vanguardia')).toBe('Propuesta de vanguardia')
+    expect(cleanAgentMessageContent('[the_judge] Juicio emitido')).toBe('Juicio emitido')
+  })
+
+  it('strips initial markdown headers for agents and roles', () => {
+    expect(cleanAgentMessageContent('## Interpretation\n\nRequisitos')).toBe('Requisitos')
+    expect(cleanAgentMessageContent('## Ícaro\n\nSolución innovadora')).toBe('Solución innovadora')
+    expect(cleanAgentMessageContent('## Sphinx\n\nEvaluación final')).toBe('Evaluación final')
+  })
+
+  it('strips composite bracket and header prefixes', () => {
+    expect(cleanAgentMessageContent('[nl_interpreter] ## Interpretation\n\nRequisitos técnicos'))
+      .toBe('Requisitos técnicos')
+    expect(cleanAgentMessageContent('[innovator_architect] ## Ícaro\nOpción 1 y Opción 2'))
+      .toBe('Opción 1 y Opción 2')
+    expect(cleanAgentMessageContent('[the_judge] ## Sphinx\nDictamen'))
+      .toBe('Dictamen')
+  })
+
+  it('preserves numbered markdown headings within content', () => {
+    const text = '## 1. Enunciado / Intención Principal\nTexto de requisitos.'
+    expect(cleanAgentMessageContent(text)).toBe(text)
+
+    const text2 = '## 1. El Desafío (Visión de Ícaro)\nTexto descriptivo.'
+    expect(cleanAgentMessageContent(text2)).toBe(text2)
+  })
+
+  it('handles empty or blank content gracefully', () => {
+    expect(cleanAgentMessageContent('')).toBe('')
+    expect(cleanAgentMessageContent('   ')).toBe('')
   })
 })

@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
-import { SendHorizontal, Paperclip, Activity, MessageSquare, Check, User, Bot, ChevronDown } from '@lucide/vue'
+import { SendHorizontal, Paperclip, Activity, MessageSquare, Check, User, Bot, ChevronDown, Copy, Eye } from '@lucide/vue'
 import { useDebateStore, type ChatMessage } from '../stores/debate'
 import ObservabilityPanel from './ObservabilityPanel.vue'
+import DiagramModal from './DiagramModal.vue'
+import { cleanTextForTts } from '../utils/ttsFilter'
+import { parseMessageContent } from '../utils/messageParser'
 
 const props = defineProps<{
   messages: ChatMessage[]
@@ -12,8 +15,34 @@ const props = defineProps<{
 const store = useDebateStore()
 const chatScroll = ref<HTMLElement | null>(null)
 const activeTab = ref<'chat' | 'observability'>('chat')
+const isDiagramModalOpen = ref(false)
+const activeDiagramCode = ref('')
+const activeDiagramTitle = ref('Diagrama de Arquitectura')
+const copiedDiagramIndex = ref<number | null>(null)
 
-// Voice Integration (Phase 5)
+const openDiagramModal = (code: string, title?: string) => {
+  activeDiagramCode.value = code
+  activeDiagramTitle.value = title || 'Diagrama de Arquitectura'
+  isDiagramModalOpen.value = true
+}
+
+const closeDiagramModal = () => {
+  isDiagramModalOpen.value = false
+}
+
+const copyChatDiagramCode = async (code: string, blockIndex: number) => {
+  try {
+    await navigator.clipboard.writeText(code)
+    copiedDiagramIndex.value = blockIndex
+    setTimeout(() => {
+      if (copiedDiagramIndex.value === blockIndex) {
+        copiedDiagramIndex.value = null
+      }
+    }, 2000)
+  } catch (err) {
+    console.error('Failed to copy diagram code:', err)
+  }
+}
 
 
 
@@ -92,20 +121,22 @@ watch(() => store.isTtsPlaying, (isPlaying) => {
 
 const playVoiceResponse = async (text: string, role?: string) => {
   if (!store.isVoiceOutputEnabled || !text) return
-  
+
+  // Clean text from diagrams and markdown for natural voice synthesis
+  const cleanText = cleanTextForTts(text)
+  if (!cleanText) return
+
   // Set store state
   store.isTtsPlaying = true
   if (role) {
     store.activeTtsRole = role
   }
-  
-  // Clean text from markdown and split into sentences
-  const cleanText = text.replace(/[*#`_]/g, '').replace(/\[[^[\]]*\]/g, '')
+
   // Split by punctuation (., ?, !, \n) but keep the punctuation
   const sentences = cleanText.match(/[^.!?\n]+[.!?\n]*/g) || [cleanText]
-  
+
   ttsTextQueue.push(...sentences.map(s => s.trim()).filter(s => s.length > 0))
-  
+
   if (!isPrefetching) {
     prefetchTtsQueue()
   }
@@ -187,12 +218,10 @@ const playNextAudio = async () => {
 watch(() => props.messages.length, (newLen, oldLen) => {
   if (newLen > oldLen) {
     const lastMsg = props.messages[newLen - 1]
-    // Play any newly added assistant message (e.g. intermediate agent responses or final done)
-    // As long as it was a single message push (not bulk loadDebate)
     if (newLen === oldLen + 1 && lastMsg && lastMsg.role === 'assistant') {
-      // Extract role from the brackets if it exists (e.g. "[nl_interpreter] ...")
+      // Determine the agent role for TTS voice synthesis (from agentRole or agentName)
       const match = lastMsg.content.match(/^\[(.*?)\]\s/)
-      const role = lastMsg.agentRole || (match ? match[1] : undefined)
+      const role = lastMsg.agentRole || lastMsg.agentName || (match ? match[1] : undefined)
       playVoiceResponse(lastMsg.content, role)
     }
   }
@@ -205,7 +234,57 @@ const handleFileChange = (e: Event) => {
   }
 }
 
+const selectedTargetAgents = ref<string[]>([])
+const chatInputRef = ref<HTMLTextAreaElement | null>(null)
+
+const selectableAgents = computed(() => {
+  return (store.agents || []).map(a => ({
+    value: a.role,
+    label: a.name,
+    colorHex: a.color_hex || '#00e5ff'
+  }))
+})
+
+const toggleTargetAgent = (role: string) => {
+  if (selectedTargetAgents.value.includes(role)) {
+    selectedTargetAgents.value = selectedTargetAgents.value.filter(r => r !== role)
+  } else {
+    selectedTargetAgents.value.push(role)
+  }
+}
+
+const isTargetSelected = (role: string) => {
+  return selectedTargetAgents.value.includes(role)
+}
+
+const handleHitlApprove = () => {
+  store.submitHitlDecision('approve', '', selectedTargetAgents.value)
+  selectedTargetAgents.value = []
+}
+
+const handleHitlReject = () => {
+  store.submitHitlDecision('reject', '', selectedTargetAgents.value)
+  selectedTargetAgents.value = []
+}
+
+const focusRefineInput = () => {
+  nextTick(() => {
+    chatInputRef.value?.focus()
+  })
+}
+
 const onSubmit = async () => {
+  if (store.isHitlRequired) {
+    if (!store.draftMessage.trim()) {
+      focusRefineInput()
+      return
+    }
+    store.submitHitlDecision('refine', store.draftMessage.trim(), selectedTargetAgents.value)
+    store.draftMessage = ''
+    selectedTargetAgents.value = []
+    return
+  }
+
   if (!store.draftMessage.trim() || props.isDebating) return
   
   if (store.isVoiceOutputEnabled) {
@@ -377,11 +456,54 @@ defineExpose({
               </button>
             </div>
             <div 
-              class="w-full bg-[#030509] border rounded-xl rounded-tl-none px-5 py-4 text-[13px] text-slate-300 leading-relaxed whitespace-pre-wrap transition-colors"
+              class="w-full bg-[#030509] border rounded-xl rounded-tl-none px-5 py-4 text-[13px] text-slate-300 leading-relaxed transition-colors flex flex-col gap-3"
               :style="msg.colorHex ? { borderColor: `${msg.colorHex}4d`, boxShadow: `0 0 15px -3px ${msg.colorHex}1a` } : {}"
               :class="!msg.colorHex ? 'border-neon-green/40 shadow-[0_0_15px_-3px_rgba(0,255,157,0.1)]' : ''"
             >
-              {{ msg.content }}
+              <template v-for="(block, blockIdx) in parseMessageContent(msg.content)" :key="blockIdx">
+                <!-- Text block -->
+                <div v-if="block.type === 'text'" class="whitespace-pre-wrap leading-relaxed">
+                  {{ block.content }}
+                </div>
+
+                <!-- Mermaid Diagram Card -->
+                <div 
+                  v-else-if="block.type === 'mermaid'"
+                  data-test="chat-diagram-card"
+                  class="my-2 bg-[#050a14] border border-cyan-500/40 rounded-xl overflow-hidden shadow-[0_0_20px_rgba(0,229,255,0.1)]"
+                >
+                  <!-- Card Header with Actions -->
+                  <div class="flex items-center justify-end px-3.5 py-2 bg-[#081120] border-b border-cyan-500/30 gap-2">
+                    <!-- Copy Button -->
+                      <button
+                        type="button"
+                        @click="copyChatDiagramCode(block.content, i * 100 + blockIdx)"
+                        data-test="chat-diagram-copy-btn"
+                        class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#030509] border border-cyan-500/40 hover:border-neon-cyan text-[11px] font-mono text-cyan-200 hover:text-white transition-colors cursor-pointer"
+                        title="Copiar al portapapeles"
+                      >
+                        <Check v-if="copiedDiagramIndex === (i * 100 + blockIdx)" class="w-3 h-3 text-emerald-400" />
+                        <Copy v-else class="w-3 h-3" />
+                        <span>{{ copiedDiagramIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar' }}</span>
+                      </button>
+
+                      <!-- Open Modal Button -->
+                      <button
+                        type="button"
+                        @click="openDiagramModal(block.content, `Diagrama de ${msg.agentName || 'Arquitectura'}`)"
+                        data-test="chat-diagram-view-btn"
+                        class="flex items-center gap-1.5 px-3 py-1 rounded bg-neon-cyan/15 hover:bg-neon-cyan/25 border border-neon-cyan text-[11px] font-mono font-bold text-neon-cyan shadow-[0_0_10px_rgba(0,229,255,0.2)] transition-all cursor-pointer"
+                        title="Ver diagrama"
+                      >
+                        <Eye class="w-3 h-3" />
+                        <span>Ver</span>
+                      </button>
+                    </div>
+
+                  <!-- Code snippet preview -->
+                  <pre class="p-3.5 bg-[#020408] font-mono text-xs text-cyan-200/90 overflow-x-auto custom-scrollbar max-h-48 border-t border-space-900/50"><code>{{ block.content }}</code></pre>
+                </div>
+              </template>
             </div>
           </div>
         </template>
@@ -407,6 +529,74 @@ defineExpose({
 
     <!-- Input -->
     <div class="p-4 border-t border-space-800 bg-[#060a11]">
+      <!-- Integrated HITL Control Card in Chat -->
+      <div 
+        v-if="store.isHitlRequired" 
+        data-test="hitl-chat-card"
+        class="mb-3 p-3.5 bg-[#080d1a] border border-neon-amber/60 rounded-xl shadow-[0_0_20px_rgba(245,158,11,0.15)] flex flex-col gap-2.5 animate-fade-in"
+      >
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-neon-amber animate-pulse"></span>
+            <span class="text-xs font-mono font-bold text-neon-amber tracking-wider uppercase">
+              Punto de Control (HITL)
+            </span>
+          </div>
+          <span class="text-[10px] font-mono text-slate-400">
+            Valida o redirige el debate
+          </span>
+        </div>
+
+        <!-- Target Agents Chips Selector -->
+        <div v-if="selectableAgents.length > 0" class="flex flex-col gap-1.5 pt-1">
+          <span class="text-[10px] font-mono text-slate-400">Redirigir a agentes específicos (opcional):</span>
+          <div class="flex flex-wrap gap-1.5">
+            <button
+              v-for="agent in selectableAgents"
+              :key="agent.value"
+              type="button"
+              @click="toggleTargetAgent(agent.value)"
+              data-test="hitl-target-chip"
+              class="px-2 py-0.5 rounded text-[10px] font-mono border transition-all flex items-center gap-1.5 cursor-pointer"
+              :style="isTargetSelected(agent.value)
+                ? { borderColor: agent.colorHex, backgroundColor: `${agent.colorHex}25`, color: '#ffffff' }
+                : { borderColor: `${agent.colorHex}40`, backgroundColor: 'transparent', color: '#94a3b8' }"
+            >
+              <span class="w-1.5 h-1.5 rounded-full shrink-0" :style="{ backgroundColor: agent.colorHex }"></span>
+              <span>{{ agent.label }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Quick Action Buttons -->
+        <div class="flex items-center gap-2 pt-1">
+          <button
+            type="button"
+            @click="handleHitlApprove"
+            data-test="hitl-approve-btn"
+            class="flex-1 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/60 text-emerald-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+          >
+            <span>✓ Aceptar</span>
+          </button>
+          <button
+            type="button"
+            @click="handleHitlReject"
+            data-test="hitl-reject-btn"
+            class="flex-1 py-1.5 bg-red-500/15 hover:bg-red-500/30 border border-red-500/60 text-red-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+          >
+            <span>✗ Rechazar</span>
+          </button>
+          <button
+            type="button"
+            @click="focusRefineInput"
+            data-test="hitl-refine-btn"
+            class="flex-1 py-1.5 bg-neon-amber/15 hover:bg-neon-amber/30 border border-neon-amber/60 text-neon-amber font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+          >
+            <span>✏ Refinar</span>
+          </button>
+        </div>
+      </div>
+
       <form @submit.prevent="onSubmit" class="flex flex-col gap-3 relative">
         <div class="flex items-center gap-2">
           <!-- Custom Agent Dropdown -->
@@ -414,7 +604,7 @@ defineExpose({
             <button 
               type="button"
               @click="toggleAgentDropdown"
-              :disabled="isDebating"
+              :disabled="isDebating && !store.isHitlRequired"
               data-test="agent-dropdown-btn"
               class="flex items-center justify-between w-40 bg-[#030509] border border-cyan-900/50 hover:border-neon-cyan/80 rounded px-3 py-1.5 text-[11px] font-mono text-cyan-50 shadow-[0_0_10px_-2px_rgba(0,229,255,0.1)] transition-all disabled:opacity-50"
             >
@@ -468,18 +658,21 @@ defineExpose({
           <label for="chat-message-input" class="sr-only">Mensaje</label>
           <textarea 
             id="chat-message-input"
+            ref="chatInputRef"
             v-model="store.draftMessage"
-            placeholder="Escribe tu consulta o pulsa el micrófono del orbe..."
+            :placeholder="store.isHitlRequired ? 'Introduce tus instrucciones de refinamiento...' : 'Escribe tu consulta o pulsa el micrófono del orbe...'"
             rows="1"
-            class="w-full bg-[#030509] border border-space-700 rounded-lg pl-4 pr-12 py-[3px] text-sm text-slate-200 focus:outline-none focus:border-neon-cyan transition-all placeholder:text-[11px] placeholder-space-600 font-mono shadow-inner resize-none custom-scrollbar min-h-[44px]"
-            :disabled="isDebating"
+            class="w-full bg-[#030509] border rounded-lg pl-4 pr-12 py-[3px] text-sm text-slate-200 focus:outline-none transition-all placeholder:text-[11px] placeholder-space-600 font-mono shadow-inner resize-none custom-scrollbar min-h-[44px]"
+            :class="store.isHitlRequired ? 'border-neon-amber/60 focus:border-neon-amber focus:ring-1 focus:ring-neon-amber/50' : 'border-space-700 focus:border-neon-cyan'"
+            :disabled="isDebating && !store.isHitlRequired"
             @keydown.enter.prevent="onSubmit"
           ></textarea>
           
           <button 
             type="submit"
-            :disabled="!store.draftMessage.trim() || isDebating"
-            class="absolute right-2 p-1.5 bg-[#00e5ff] text-[#060a11] hover:bg-cyan-400 disabled:opacity-50 disabled:hover:bg-[#00e5ff] transition-colors rounded shadow-[0_0_10px_rgba(0,229,255,0.3)]"
+            :disabled="!store.draftMessage.trim() || (isDebating && !store.isHitlRequired)"
+            class="absolute right-2 p-1.5 bg-[#00e5ff] text-[#060a11] hover:bg-cyan-400 disabled:opacity-50 disabled:hover:bg-[#00e5ff] transition-colors rounded shadow-[0_0_10px_rgba(0,229,255,0.3)] cursor-pointer"
+            :title="store.isHitlRequired ? 'Enviar refinamiento' : 'Enviar mensaje'"
           >
             <SendHorizontal class="w-5 h-5" />
           </button>
@@ -487,5 +680,13 @@ defineExpose({
       </form>
     </div>
     </div>
+
+    <!-- Diagram Modal Visualizer -->
+    <DiagramModal
+      :is-open="isDiagramModalOpen"
+      :code="activeDiagramCode"
+      :title="activeDiagramTitle"
+      @close="closeDiagramModal"
+    />
   </div>
 </template>

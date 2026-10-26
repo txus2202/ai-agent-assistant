@@ -3,7 +3,7 @@ from typing import Annotated, List, Dict
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from src.domain.agents.sub_agent_profiles import AgentRole, get_all_profiles, get_profile
+from src.domain.agents.sub_agent_profiles import get_all_profiles, get_profile
 from src.domain.value_objects.agent_config import AgentConfig
 from src.infrastructure.persistence.sqlite_agent_config_repository import SqliteAgentConfigRepository
 from src.presentation.api.config import get_settings, Settings
@@ -26,8 +26,10 @@ async def get_agents_config(repo: Annotated[SqliteAgentConfigRepository, Depends
     
     result = []
     for profile in get_all_profiles():
-        role_value = profile.role.value
+        role_value = profile.id
         config = repo.find_by_role(role_value)
+        if not config:
+            config = repo.find_by_role(profile.display_name)
         result.append({
             "id": role_value,
             "name": profile.display_name,
@@ -52,17 +54,17 @@ async def get_agent_config(
     Obtiene la configuración (nombre, descripción, proveedor y modelo) de un agente específico.
     """
     try:
-        # Validate that the role exists in the enum
-        role_enum = AgentRole(role)
-    except ValueError:
+        profile = get_profile(role)
+    except KeyError:
         raise HTTPException(status_code=404, detail="Agent role not found")
 
     settings = get_settings()
-    config = repo.find_by_role(role)
-    profile = get_profile(role_enum)
+    config = repo.find_by_role(profile.id)
+    if not config:
+        config = repo.find_by_role(profile.display_name)
     
     return {
-        "id": role,
+        "id": profile.id,
         "name": profile.display_name,
         "description": profile.description,
         "color_hex": profile.color_hex,
@@ -85,13 +87,12 @@ async def update_agent_config(
     Actualiza la configuración (proveedor y modelo) de un agente específico.
     """
     try:
-        # Validate that the role exists in the enum
-        _ = AgentRole(role)
-    except ValueError:
+        profile = get_profile(role)
+    except KeyError:
         raise HTTPException(status_code=404, detail="Agent role not found")
 
     config = AgentConfig(
-        role=role,
+        role=profile.id,
         provider=update.provider,
         model_name=update.model_name
     )

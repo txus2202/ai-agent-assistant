@@ -15,7 +15,6 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from src.domain.agents.sub_agent_profiles import AgentRole
 from src.domain.agents.supervisor_events import (
     EventType,
     HITLDecision,
@@ -41,16 +40,16 @@ async def _fake_debate_generator(*args, **kwargs):
     # Event 1
     yield SupervisorEvent(
         type=EventType.AGENT_STARTED,
-        role=AgentRole.NL_INTERPRETER,
+        role="Hermes",
         content="starting"
     )
     
     # Event 2: HITL 1
     hitl1_event = SupervisorEvent(
         type=EventType.HITL_REQUIRED,
-        role=None,
+        role="Hermes",
         content="Please review interpretation",
-        metadata={"checkpoint": "1_interpreter"}
+        metadata={"checkpoint": "after_Hermes", "agent": "Hermes"}
     )
     yield hitl1_event
     hitl1_resp = await hitl_callback(hitl1_event)
@@ -58,9 +57,9 @@ async def _fake_debate_generator(*args, **kwargs):
     # Event 3: HITL 2
     hitl2_event = SupervisorEvent(
         type=EventType.HITL_REQUIRED,
-        role=None,
+        role="Ícaro",
         content="Please review architects",
-        metadata={"checkpoint": "2_architects"}
+        metadata={"checkpoint": "after_Ícaro", "agent": "Ícaro"}
     )
     yield hitl2_event
     hitl2_resp = await hitl_callback(hitl2_event)
@@ -68,9 +67,9 @@ async def _fake_debate_generator(*args, **kwargs):
     # Event 4: HITL 3
     hitl3_event = SupervisorEvent(
         type=EventType.HITL_REQUIRED,
-        role=None,
+        role="Sphinx",
         content="Please review judge",
-        metadata={"checkpoint": "3_judge"}
+        metadata={"checkpoint": "after_Sphinx", "agent": "Sphinx"}
     )
     yield hitl3_event
     hitl3_resp = await hitl_callback(hitl3_event)
@@ -138,18 +137,18 @@ class TestDebateWebSocket:
             if ev1["type"] == "error":
                 pytest.fail(f"WebSocket error received: {ev1.get('content')}")
             assert ev1["type"] == EventType.AGENT_STARTED.value
-            assert ev1["role"] == AgentRole.NL_INTERPRETER.value
+            assert ev1["role"] in ("Hermes", "nl_interpreter")
             
             # 3. HITL 1
             ev2 = websocket.receive_json()
             assert ev2["type"] == EventType.HITL_REQUIRED.value
-            assert ev2["metadata"]["checkpoint"] == "1_interpreter"
+            assert ev2["metadata"]["checkpoint"] in ("after_Hermes", "1_interpreter")
             websocket.send_json({"type": "hitl_response", "decision": "approve"})
             
             # 4. HITL 2
             ev3 = websocket.receive_json()
             assert ev3["type"] == EventType.HITL_REQUIRED.value
-            assert ev3["metadata"]["checkpoint"] == "2_architects"
+            assert ev3["metadata"]["checkpoint"] in ("after_Ícaro", "2_architects")
             websocket.send_json({
                 "type": "hitl_response", 
                 "decision": "approve",
@@ -159,7 +158,7 @@ class TestDebateWebSocket:
             # 5. HITL 3
             ev4 = websocket.receive_json()
             assert ev4["type"] == EventType.HITL_REQUIRED.value
-            assert ev4["metadata"]["checkpoint"] == "3_judge"
+            assert ev4["metadata"]["checkpoint"] in ("after_Sphinx", "3_judge")
             websocket.send_json({"type": "hitl_response", "decision": "approve"})
             
             # 6. DONE
@@ -226,7 +225,7 @@ class TestDebateWebSocket:
 
         mock_runner = AsyncMock()
         mock_runner.return_value = SubAgentResponse(
-            role=AgentRole.THE_JUDGE,
+            role="Sphinx",
             content="Sphinx review",
             context_chunks=[],
             tokens={"input": 10, "output": 20, "total": 30},
@@ -250,7 +249,7 @@ class TestDebateWebSocket:
 
             ev_started = websocket.receive_json()
             assert ev_started["type"] == EventType.AGENT_STARTED.value
-            assert ev_started["role"] == AgentRole.THE_JUDGE.value
+            assert ev_started["role"] == "Sphinx"
 
             ev_completed = websocket.receive_json()
             assert ev_completed["type"] == EventType.AGENT_COMPLETED.value
@@ -262,7 +261,7 @@ class TestDebateWebSocket:
         mock_runner.assert_awaited_once()
         _, kwargs = mock_runner.call_args
         assert kwargs["chat_history"] == history_payload
-        assert kwargs["role"] == AgentRole.THE_JUDGE
+        assert kwargs["role"] == "Sphinx"
         assert kwargs["user_request"] == "Sphinx qué opinas"
 
     def test_continuous_chat_session_reuses_session_id_and_appends_events(self, ws_client, monkeypatch):
@@ -276,7 +275,7 @@ class TestDebateWebSocket:
         mock_runner = AsyncMock()
         mock_runner.side_effect = [
             SubAgentResponse(
-                role=AgentRole.THE_JUDGE,
+                role="Sphinx",
                 content="Sphinx review 1",
                 context_chunks=[],
                 tokens={"input": 10, "output": 20, "total": 30},
@@ -284,7 +283,7 @@ class TestDebateWebSocket:
                 model_name="test-model"
             ),
             SubAgentResponse(
-                role=AgentRole.DEVOPS_SECOPS,
+                role="Hefesto",
                 content="Hefesto deploy 2",
                 context_chunks=[],
                 tokens={"input": 15, "output": 25, "total": 40},

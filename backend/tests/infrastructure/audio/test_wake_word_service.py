@@ -117,3 +117,38 @@ def test_wake_word_service_no_detection(mock_kaldi, mock_model_class):
     assert detected.agent_role is None
     assert detected.display_name is None
 
+
+@patch("src.infrastructure.audio.wake_word_service.Model")
+@patch("src.infrastructure.audio.wake_word_service.KaldiRecognizer")
+def test_wake_word_service_detects_hitl_commands(mock_kaldi, mock_model_class):
+    mock_recognizer_instance = MagicMock()
+    mock_recognizer_instance.AcceptWaveform.return_value = False
+    mock_kaldi.return_value = mock_recognizer_instance
+
+    service = WakeWordService()
+    audio_chunk = b'\x00' * 4096
+
+    # Test "aceptar" -> approve
+    mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": "aceptar"})
+    det_approve = service.process_chunk(audio_chunk)
+    assert bool(det_approve) is True
+    assert det_approve.command == "approve"
+
+    # Test "aprobar" -> approve
+    mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": "aprobar"})
+    det_aprob = service.process_chunk(audio_chunk)
+    assert bool(det_aprob) is True
+    assert det_aprob.command == "approve"
+
+    # Test "rechazar" -> reject
+    mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": "rechazar"})
+    det_reject = service.process_chunk(audio_chunk)
+    assert bool(det_reject) is True
+    assert det_reject.command == "reject"
+
+    # Test "refinar" -> refine
+    mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": "refinar"})
+    det_refine = service.process_chunk(audio_chunk)
+    assert bool(det_refine) is True
+    assert det_refine.command == "refine"
+

@@ -17,8 +17,8 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from src.application.agents.sub_agent_runner import SubAgentRunner
 from src.application.agents.supervisor_agent import SupervisorAgent
 from src.application.services.learn_from_source import LearnFromSource, SourceType
-from src.domain.agents.sub_agent_profiles import AgentRole
-from src.domain.agents.supervisor_events import HITLResponse, SupervisorEvent, EventType
+from src.domain.agents.sub_agent_profiles import get_profile
+from src.domain.agents.supervisor_events import HITLResponse, SupervisorEvent, EventType, HITLDecision
 from src.domain.ports.observability_port import TraceContext, SpanContext
 from src.domain.value_objects.debate_record import DebateRecord
 from src.infrastructure.llm.registry import get_llm_provider
@@ -130,24 +130,48 @@ class DebateWebSocketHandler:
         (The HITL_REQUIRED event itself was already yielded by the generator and sent).
         """
         raw_resp = await self.websocket.receive_json()
-        return dict_to_hitl_response(raw_resp)
+        hitl_resp = dict_to_hitl_response(raw_resp)
+        if hitl_resp.decision == HITLDecision.REFINE and hitl_resp.feedback and self.debate_record:
+            refine_event_dict = {
+                "type": "user_message",
+                "role": "user",
+                "content": hitl_resp.feedback,
+                "metadata": {"decision": "refine", "target_agents": hitl_resp.target_agents}
+            }
+            self.debate_repo.append_event(self.debate_record.id, json.dumps(refine_event_dict))
+        try:
+            from src.presentation.api.ws.wake_word import wake_word_service
+            wake_word_service.reset()
+        except Exception:
+            pass
+        return hitl_resp
 
     async def _handle_supervisor(self, user_request: str, chat_history: list[dict[str, Any]] | None = None) -> None:
-        async for event in SupervisorAgent.run(
-            user_request=user_request,
-            document_store=self.document_store,
-            agent_config_repo=self.agent_config_repo,
-            llm_factory=get_llm_provider,
-            hitl_callback=self.hitl_callback,
-            chat_history=chat_history,
-        ):
-            await self.send_event(event)
+        try:
+            async for event in SupervisorAgent.run(
+                user_request=user_request,
+                document_store=self.document_store,
+                agent_config_repo=self.agent_config_repo,
+                llm_factory=get_llm_provider,
+                hitl_callback=self.hitl_callback,
+                chat_history=chat_history,
+            ):
+                await self.send_event(event)
+        finally:
+            try:
+                from src.presentation.api.ws.wake_word import wake_word_service
+                wake_word_service.reset()
+            except Exception:
+                pass
 
-    async def _handle_learning(self, attachments: list[str]) -> None:
-        yield_event = SupervisorEvent(type=EventType.AGENT_STARTED, role=AgentRole.LEARNING, content="")
+    async def _handle_learning(self, learn_profile: Any, attachments: list[str]) -> None:
+        learn_role = learn_profile.display_name
+        yield_event = SupervisorEvent(type=EventType.AGENT_STARTED, role=learn_role, content="")
         await self.send_event(yield_event)
         
-        config = self.agent_config_repo.find_by_role(AgentRole.LEARNING.value)
+        config = self.agent_config_repo.find_by_role(learn_profile.id)
+        if not config:
+            config = self.agent_config_repo.find_by_role(learn_role)
         prov_name = config.provider if config else self.settings.default_provider
         mod_name = config.model_name if config else self.settings.default_model
         llm_prov = get_llm_provider(prov_name)
@@ -171,27 +195,30 @@ class DebateWebSocketHandler:
         content = "\n".join(results) or "No attachments provided to learn from."
         learn_meta = {"model": mod_name}
         await self.send_event(SupervisorEvent(
-            type=EventType.AGENT_COMPLETED, role=AgentRole.LEARNING, content=content, metadata=learn_meta
+            type=EventType.AGENT_COMPLETED, role=learn_role, content=content, metadata=learn_meta
         ))
         await self.send_event(SupervisorEvent(
-            type=EventType.DONE, role=AgentRole.LEARNING, content=content, metadata=learn_meta
+            type=EventType.DONE, role=learn_role, content=content, metadata=learn_meta
         ))
 
     async def _handle_sub_agent(self, target_agent: str, user_request: str, chat_history: list[dict[str, Any]] | None = None) -> None:
         try:
-            role_enum = AgentRole(target_agent)
+            profile = get_profile(target_agent)
+            agent_role = profile.display_name
             await self.send_event(SupervisorEvent(
-                type=EventType.AGENT_STARTED, role=role_enum, content=""
+                type=EventType.AGENT_STARTED, role=agent_role, content=""
             ))
             
-            config = self.agent_config_repo.find_by_role(role_enum.value)
+            config = self.agent_config_repo.find_by_role(profile.id)
+            if not config:
+                config = self.agent_config_repo.find_by_role(agent_role)
             prov_name = config.provider if config else self.settings.default_provider
             mod_name = config.model_name if config else self.settings.default_model
             llm_prov = get_llm_provider(prov_name)
             
             runner_kwargs = {"chat_history": chat_history} if chat_history else {}
             resp = await SubAgentRunner.run(
-                role=role_enum,
+                role=agent_role,
                 user_request=user_request,
                 llm_provider=llm_prov,
                 document_store=self.document_store,
@@ -208,13 +235,13 @@ class DebateWebSocketHandler:
                 "tokens": str(resp.tokens.get("total", 0)),
             }
             await self.send_event(SupervisorEvent(
-                type=EventType.AGENT_COMPLETED, role=role_enum, content=resp.content, metadata=sub_meta
+                type=EventType.AGENT_COMPLETED, role=agent_role, content=resp.content, metadata=sub_meta
             ))
             await self.send_event(SupervisorEvent(
-                type=EventType.DONE, role=role_enum, content=resp.content, metadata=sub_meta
+                type=EventType.DONE, role=agent_role, content=resp.content, metadata=sub_meta
             ))
             
-        except ValueError:
+        except KeyError:
             if self.debate_record:
                 self.debate_repo.update_status(self.debate_record.id, "aborted")
             await self.websocket.send_json({"type": "error", "content": f"Unknown agent role: {target_agent}"})
@@ -279,10 +306,18 @@ class DebateWebSocketHandler:
                 }
             )
 
-            if target_agent == "supervisor":
+            try:
+                target_profile = get_profile(target_agent)
+            except KeyError:
+                self.debate_repo.update_status(self.debate_record.id, "aborted")
+                await self.websocket.send_json({"type": "error", "content": f"Unknown agent role: {target_agent}"})
+                await self.websocket.close(code=1003)
+                continue
+
+            if target_profile.is_supervisor:
                 await self._handle_supervisor(user_request, chat_history=chat_history)
-            elif target_agent == AgentRole.LEARNING.value:
-                await self._handle_learning(attachments)
+            elif target_profile.can_ingest_documents:
+                await self._handle_learning(target_profile, attachments)
             else:
                 await self._handle_sub_agent(target_agent, user_request, chat_history=chat_history)
 

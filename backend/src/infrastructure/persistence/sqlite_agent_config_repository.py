@@ -43,6 +43,19 @@ class SqliteAgentConfigRepository(IAgentConfigRepository):
                 row = conn.execute(
                     "SELECT * FROM agent_configs WHERE role = ?", (role,)
                 ).fetchone()
+                if not row:
+                    try:
+                        from src.domain.agents.sub_agent_profiles import get_profile
+                        p = get_profile(role)
+                        for alt in (p.display_name, p.id):
+                            if alt != role:
+                                row = conn.execute(
+                                    "SELECT * FROM agent_configs WHERE role = ?", (alt,)
+                                ).fetchone()
+                                if row:
+                                    break
+                    except Exception:
+                        pass
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to query agent config {role}: {exc}") from exc
 

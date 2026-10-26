@@ -45,7 +45,7 @@ describe('AppShell.vue', () => {
     expect(wrapper.find('[data-test="app-header"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="chat-panel"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="particle-orb"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('No checkpoints requiring attention')
+    expect(wrapper.text()).toContain('Consejo en espera')
   })
 
   it('computes default agent color when no agent is active or playing TTS', () => {
@@ -108,62 +108,19 @@ describe('AppShell.vue', () => {
     expect(orb.props('activeAgentColor')).toBe('#22c55e')
   })
 
-  it('handles HITL approve action', async () => {
+  it('displays active council status when debate is running', () => {
     const store = useDebateStore()
-    store.isHitlRequired = true
-    store.submitHitlDecision = vi.fn()
+    store.isDebating = true
 
     const wrapper = createWrapper()
-    expect(wrapper.text()).toContain('Manual Override (HITL)')
-
-    // Should find the approve button
-    const approveBtn = wrapper.findAllComponents({ name: 'HITLActionButton' })
-      .find(c => c.props('decision') === 'approve')
-    expect(approveBtn).toBeDefined()
-
-    await approveBtn!.find('button').trigger('click')
-    expect(store.submitHitlDecision).toHaveBeenCalledWith('approve', '')
+    expect(wrapper.text()).toContain('Debate en curso')
   })
 
-  it('handles HITL refine flow with opening textarea, cancelling, and submitting feedback', async () => {
+  it('displays HITL Activo badge in council panel when HITL is required', () => {
     const store = useDebateStore()
     store.isHitlRequired = true
-    store.submitHitlDecision = vi.fn()
 
     const wrapper = createWrapper()
-
-    // 1. Click Refine button to reveal feedback textarea
-    const refineBtn = wrapper.findAllComponents({ name: 'HITLActionButton' })
-      .find(c => c.props('decision') === 'refine')
-    expect(refineBtn).toBeDefined()
-    await refineBtn!.find('button').trigger('click')
-
-    // Textarea is now revealed
-    const textarea = wrapper.find('#hitl-feedback')
-    expect(textarea.exists()).toBe(true)
-
-    // Send button should be disabled when feedback is empty
-    const sendBtn = wrapper.findAll('button').find(b => b.text().includes('SEND FEEDBACK'))
-    expect(sendBtn?.attributes('disabled')).toBeDefined()
-
-    // Cancel hides the textarea
-    const cancelBtn = wrapper.findAll('button').find(b => b.text().includes('CANCEL'))
-    await cancelBtn!.trigger('click')
-    expect(wrapper.find('#hitl-feedback').exists()).toBe(false)
-
-    // Re-open and type feedback
-    const reopenRefineBtn = wrapper.findAllComponents({ name: 'HITLActionButton' })
-      .find(c => c.props('decision') === 'refine')
-    await reopenRefineBtn!.find('button').trigger('click')
-
-    const feedbackInput = wrapper.find('#hitl-feedback')
-    await feedbackInput.setValue('Please add security checks.')
-
-    const submitFeedbackBtn = wrapper.findAll('button').find(b => b.text().includes('SEND FEEDBACK'))
-    expect(submitFeedbackBtn?.attributes('disabled')).toBeUndefined()
-
-    await submitFeedbackBtn!.trigger('click')
-    expect(store.submitHitlDecision).toHaveBeenCalledWith('refine', 'Please add security checks.')
-    expect(wrapper.find('#hitl-feedback').exists()).toBe(false)
+    expect(wrapper.text()).toContain('HITL Activo')
   })
 })

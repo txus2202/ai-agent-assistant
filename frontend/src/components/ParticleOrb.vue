@@ -295,6 +295,9 @@ const toggleRecording = async () => {
     }
 
     recorder.onstop = async () => {
+      isRecording.value = false
+      store.isRecording = false
+      stopSilenceDetection()
       const audioBlob = new Blob(audioChunks.value, { type: 'audio/webm' })
       stream.getTracks().forEach(t => t.stop())
       if (!isComponentUnmounted) {
@@ -508,6 +511,16 @@ watch(() => props.isDebating, () => {
 watch(() => store.isWakeWordTriggered, (triggered) => {
   if (triggered && !isRecording.value) {
     toggleRecording()
+  }
+})
+
+watch(() => store.isRecording, (recording) => {
+  if (!recording && isRecording.value) {
+    if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
+      mediaRecorder.value.stop()
+    }
+    isRecording.value = false
+    stopSilenceDetection()
   }
 })
 

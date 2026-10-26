@@ -17,12 +17,31 @@ class WakeWordDetection:
     detected: bool
     agent_role: str | None = None
     display_name: str | None = None
+    command: str | None = None
 
     def __bool__(self) -> bool:
         return self.detected
 
 
 class WakeWordService:
+    _HITL_TRIGGERS: dict[str, str] = {
+        "aceptar": "approve",
+        "aprobar": "approve",
+        "adelante": "approve",
+        "conforme": "approve",
+        "rechazar": "reject",
+        "denegar": "reject",
+        "cancela": "reject",
+        "cancelar": "reject",
+        "descarta": "reject",
+        "descartar": "reject",
+        "refinar": "refine",
+        "corregir": "refine",
+        "cambiar": "refine",
+        "modificar": "refine",
+        "ajustar": "refine",
+    }
+
     def __init__(self):
         """
         Initialize the WakeWord service using Vosk and dynamic agent profiles.
@@ -48,9 +67,9 @@ class WakeWordService:
 
         for profile in profiles:
             display_name = profile.display_name
-            role_val = profile.role.value
+            role_val = profile.id
 
-            # Primary normalized name (e.g. "atenea", "hermes", "icaro", "hefesto")
+            # Primary normalized name from profile display name
             norm_name = self._normalize_text(display_name)
             triggers[norm_name] = (role_val, display_name)
 
@@ -121,7 +140,17 @@ class WakeWordService:
                     agent_role=role,
                     display_name=display_name
                 )
-            
+
+        # Check for HITL decision commands
+        for trigger, cmd in self._HITL_TRIGGERS.items():
+            pattern = rf"\b{re.escape(trigger)}\b"
+            if re.search(pattern, norm_text) or re.search(pattern, text.lower()):
+                print(f"[WW] HITL voice command '{trigger}' -> '{cmd}' detected in text: '{text}'")
+                return WakeWordDetection(
+                    detected=True,
+                    command=cmd
+                )
+
         return WakeWordDetection(detected=False)
         
     def reset(self):

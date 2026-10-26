@@ -25,23 +25,43 @@ async def wake_word_endpoint(websocket: WebSocket):
     
     try:
         while True:
-            # Receive raw bytes from the frontend
-            data = await websocket.receive_bytes()
-            
-            # Process chunk
-            detected = wake_word_service.process_chunk(data)
-            
-            if detected:
-                role = getattr(detected, "agent_role", None) or "supervisor"
-                name = getattr(detected, "display_name", None) or "Atenea"
-                logger.info(f"Wake word detected for {name} ({role})! Notifying client.")
-                await websocket.send_text(json.dumps({
-                    "type": "WAKE_WORD_DETECTED",
-                    "agent_role": role,
-                    "display_name": name,
-                }))
-                # Reset to avoid multiple rapid triggers
-                wake_word_service.reset()
+            message = await websocket.receive()
+            if message.get("type") == "websocket.disconnect":
+                raise WebSocketDisconnect(message.get("code", 1000))
+
+            if "bytes" in message and message["bytes"]:
+                data = message["bytes"]
+                # Process chunk
+                detected = wake_word_service.process_chunk(data)
+                
+                if detected:
+                    if getattr(detected, "command", None):
+                        cmd = detected.command
+                        logger.info(f"HITL voice command detected: {cmd}! Notifying client.")
+                        await websocket.send_text(json.dumps({
+                            "type": "HITL_VOICE_COMMAND",
+                            "command": cmd,
+                        }))
+                    else:
+                        role = getattr(detected, "agent_role", None) or "supervisor"
+                        name = getattr(detected, "display_name", None) or role
+                        logger.info(f"Wake word detected for {name} ({role})! Notifying client.")
+                        await websocket.send_text(json.dumps({
+                            "type": "WAKE_WORD_DETECTED",
+                            "agent_role": role,
+                            "display_name": name,
+                        }))
+                    # Reset to avoid multiple rapid triggers
+                    wake_word_service.reset()
+
+            elif "text" in message and message["text"]:
+                try:
+                    payload = json.loads(message["text"])
+                    if payload.get("type") in ("RESET", "reset"):
+                        wake_word_service.reset()
+                        logger.info("Wake-Word service reset via client control command")
+                except Exception:
+                    pass
                 
     except WebSocketDisconnect:
         logger.info("Wake-Word WebSocket disconnected by client")

@@ -13,8 +13,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
-from src.domain.agents.sub_agent_profiles import AgentRole
-
 
 class EventType(Enum):
     AGENT_STARTED  = "agent_started"
@@ -30,13 +28,13 @@ class SupervisorEvent:
 
     Attributes:
         type:     The type of event (see EventType).
-        role:     The AgentRole that produced this event. None for DONE and HITL events.
+        role:     The agent role or name that produced this event. None for DONE and HITL events.
         content:  Agent output text, HITL summary, or final consolidated response.
         metadata: Arbitrary key-value context (e.g. checkpoint number, iteration).
     """
     type: EventType
     content: str
-    role: AgentRole | None = None
+    role: str | None = None
     metadata: dict[str, str] = field(default_factory=dict)
 
 
@@ -55,8 +53,10 @@ class HITLResponse:
         decision: APPROVE / REJECT / REFINE.
         feedback: Required when decision == REFINE. Appended to subsequent agent prompts.
         selected_options: Identifiers of the solutions selected by the user for the next phase.
+        target_agents: Optional list of specific agent roles to steer the response to.
     """
     decision: HITLDecision
     feedback: str = ""
     selected_options: list[str] = field(default_factory=list)
+    target_agents: list[str] = field(default_factory=list)
 

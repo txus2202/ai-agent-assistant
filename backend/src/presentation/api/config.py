@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # RAG (Can be overridden by RAG_TOP_K)
     rag_top_k: int = 5
 
+    # Multi-Agent Debate Internal Review (Can be overridden by REVIEW_ROUNDS)
+    review_rounds: int = 1
+
     # Storage paths (relative to backend/ directory)
     vault_root: Path = Path("../obsidian_vault")
     chroma_persist_dir: Path = Path(".chroma")
@@ -53,8 +56,7 @@ class Settings(BaseSettings):
         "SQLite, PostgreSQL, Redis, Kafka, ChromaDB, FastAPI, Python, TypeScript, JavaScript, Vue, React, "
         "Node.js, Next.js, Vite, CQRS, Event-Driven, DDD, clean architecture, arquitectura hexagonal, "
         "Zero-Trust, STRIDE, SPOF, Langfuse, OpenTelemetry, Prometheus, Grafana, HITL, Pull Request, "
-        "merge, commit, branch, deploy, clúster, endpoints, logs, métricas, tracing. "
-        "Nombres de los agentes del equipo: Atenea, Hermes, Ícaro, Hestia, Sphinx, Hefesto, Aracne, Metis."
+        "merge, commit, branch, deploy, clúster, endpoints, logs, métricas, tracing."
     )
     kokoro_model_path: Path = Path("voices/kokoro-v1.0.onnx")
     kokoro_voices_path: Path = Path("voices/voices-v1.0.bin")

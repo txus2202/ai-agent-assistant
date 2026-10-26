@@ -1,0 +1,37 @@
+# =============================================================================
+# ATENEA Multi-Agent Debate Topology
+# =============================================================================
+# This configuration file defines the assignment of specialized AI agents to
+# the abstract functional slots in the ATENEA architectural debate workflow.
+#
+# Constraints:
+# - The agent assigned to 'supervisor' MUST have is_supervisor=True in its profile.
+# - All agent names must match a registered SubAgentProfile display_name.
+# - 'proposers' must have at least one agent.
+# =============================================================================
+
+version: "1.0"
+
+# Main strategic orchestrator (must be an agent with is_supervisor=True)
+supervisor: "Atenea"
+
+# Phase 1: Natural Language Requirement Formalization
+interpreter: "Hermes"
+
+# Phase 2: Architecture Solution Proposers & Peer Review
+proposers:
+  - "Ícaro"
+  - "Hestia"
+
+reviewer: "Sphinx"
+
+# Number of internal review rounds between Reviewer and Proposers before HITL
+review_rounds: 1
+
+# Phase 3: Architectural Audit & Verdict
+evaluator: "Sphinx"
+
+# Phase 4: Technical Implementation, Diagramming & DevSecOps
+implementers:
+  - "Aracne"
+  - "Hefesto"

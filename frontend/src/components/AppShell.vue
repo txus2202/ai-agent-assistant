@@ -4,7 +4,6 @@ import { useDebateStore } from '../stores/debate'
 import ChatPanel from './ChatPanel.vue'
 import ParticleOrb from './ParticleOrb.vue'
 import AgentTopology from './AgentTopology.vue'
-import HITLActionButton from './HITLActionButton.vue'
 import AppHeader from './AppHeader.vue'
 
 const store = useDebateStore()
@@ -28,20 +27,6 @@ const activeAgentColor = computed(() => {
 
 
 
-const isRefining = ref(false)
-const feedbackText = ref('')
-
-const handleHitlAction = (decision: 'approve' | 'refine' | 'reject') => {
-  if (decision === 'refine' && !isRefining.value) {
-    // Reveal the textarea instead of submitting immediately
-    isRefining.value = true
-    return
-  }
-  
-  store.submitHitlDecision(decision, feedbackText.value)
-  isRefining.value = false
-  feedbackText.value = ''
-}
 </script>
 
 <template>
@@ -76,52 +61,18 @@ const handleHitlAction = (decision: 'approve' | 'refine' | 'reject') => {
     <div class="w-full md:w-1/3 lg:w-[400px] h-1/2 md:h-full z-10 bg-space-900/50 backdrop-blur-md flex flex-col">
       <AgentTopology class="flex-1" :agents="store.agents">
         <template #orchestration>
-          <div class="flex flex-col space-y-3">
+          <div class="flex flex-col space-y-2">
             <h3 class="text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-1">
-              Manual Override (HITL)
+              Consejo Técnico
             </h3>
-            
-            <div v-if="store.isHitlRequired" class="flex flex-col space-y-2">
-              <div v-if="!isRefining" class="grid grid-cols-2 gap-2">
-                <HITLActionButton 
-                  decision="approve"
-                  @action="handleHitlAction"
-                />
-                <HITLActionButton 
-                  decision="refine"
-                  @action="handleHitlAction"
-                />
-              </div>
-              
-              <!-- Inline Refine Textarea -->
-              <div v-else class="flex flex-col space-y-2 animate-fade-in">
-                <label for="hitl-feedback" class="sr-only">Feedback for the agent</label>
-                <textarea 
-                  id="hitl-feedback"
-                  v-model="feedbackText"
-                  class="w-full h-24 bg-space-950 border border-neon-amber/50 rounded p-2 text-sm font-mono text-slate-300 focus:outline-none focus:border-neon-amber focus:ring-1 focus:ring-neon-amber/50 resize-none custom-scrollbar"
-                  placeholder="Provide your feedback to the agent..."
-                ></textarea>
-                <div class="flex justify-end space-x-2">
-                  <button 
-                    @click="isRefining = false"
-                    class="px-3 py-1 text-xs font-mono text-slate-400 hover:text-slate-200 transition-colors"
-                  >
-                    CANCEL
-                  </button>
-                  <button 
-                    @click="handleHitlAction('refine')"
-                    :disabled="!feedbackText.trim()"
-                    class="px-4 py-1 text-xs font-mono border border-neon-amber text-neon-amber rounded hover:bg-neon-amber/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    SEND FEEDBACK
-                  </button>
-                </div>
-              </div>
-            </div>
-            
-            <div v-else class="text-center p-4 border border-space-800 border-dashed rounded text-space-700 font-mono text-xs uppercase">
-              No checkpoints requiring attention
+            <div class="p-3 bg-space-950/60 border border-space-800 rounded text-slate-400 font-mono text-xs flex items-center justify-between">
+              <span class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full" :class="store.isDebating ? 'bg-neon-green animate-pulse' : 'bg-slate-500'"></span>
+                <span>{{ store.isDebating ? 'Debate en curso' : 'Consejo en espera' }}</span>
+              </span>
+              <span v-if="store.isHitlRequired" class="text-neon-amber text-[10px] uppercase font-bold animate-pulse">
+                HITL Activo
+              </span>
             </div>
           </div>
         </template>

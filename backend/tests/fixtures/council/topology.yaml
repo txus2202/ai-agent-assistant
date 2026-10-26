@@ -1,0 +1,14 @@
+version: "1.0"
+
+# Generic topology used ONLY by tests (see agents.yaml in this directory).
+supervisor: "Coordinator"
+interpreter: "Interpreter"
+proposers:
+  - "PropOne"
+  - "PropTwo"
+reviewer: "Auditor"
+review_rounds: 1
+evaluator: "Auditor"
+implementers:
+  - "ImplOne"
+  - "ImplTwo"

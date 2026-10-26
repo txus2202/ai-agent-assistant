@@ -86,10 +86,29 @@ export function normalizeAgentRole(r?: string | null): string {
   return lower
 }
 
-const CHECKPOINT_ROLES: Record<string, string> = {
-  '1_interpreter': 'nl_interpreter',
-  '2_architects': 'innovator_architect',
-  '3_judge': 'the_judge'
+/**
+ * Strips initial agent/role prefixes like "[nl_interpreter] ", "[the_judge] ",
+ * and markdown headers like "## Interpretation\n", "## Ícaro\n", "## Sphinx\n".
+ */
+export function cleanAgentMessageContent(rawContent: string): string {
+  if (!rawContent) return ''
+  let clean = rawContent.trim()
+  const bracketPrefix = /^\[[\w\s.-]+\]\s*/i
+  const headerPrefix = /^##\s+(?:Interpretation|Ícaro|Icaro|Hermes|Hestia|Sphinx|the_judge|nl_interpreter|innovator_architect|senior_architect|atenea|supervisor)\s*\n+/i
+
+  let changed = true
+  while (changed) {
+    changed = false
+    if (bracketPrefix.test(clean)) {
+      clean = clean.replace(bracketPrefix, '').trim()
+      changed = true
+    }
+    if (headerPrefix.test(clean)) {
+      clean = clean.replace(headerPrefix, '').trim()
+      changed = true
+    }
+  }
+  return clean
 }
 
 export const useDebateStore = defineStore('debate', () => {
@@ -126,6 +145,25 @@ export const useDebateStore = defineStore('debate', () => {
   const isAutoListenEnabled = ref(false)
   const isWakeWordTriggered = ref(false)
   const selectedAgent = ref<string>('supervisor')
+
+  let wakeWordWs: WebSocket | null = null
+  let wwAudioContext: AudioContext | null = null
+  let wwMicrophone: MediaStreamAudioSourceNode | null = null
+  let wwProcessor: AudioWorkletNode | null = null
+  let wwStream: MediaStream | null = null
+
+  function resetWakeWordSession() {
+    isWakeWordTriggered.value = false
+    isRecording.value = false
+    if (wakeWordWs?.readyState === WebSocket.OPEN) {
+      try {
+        wakeWordWs.send(JSON.stringify({ type: 'RESET' }))
+      } catch {}
+    }
+    if (wwAudioContext?.state === 'suspended') {
+      wwAudioContext.resume().catch(() => {})
+    }
+  }
   
   // Need to add crossOrigin to allow Web Audio API to process it
   globalAudioPlayer.crossOrigin = 'anonymous'
@@ -247,11 +285,16 @@ export const useDebateStore = defineStore('debate', () => {
       globalAudioPlayer.pause()
       globalAudioPlayer.removeAttribute('src')
     } catch {}
+
+    resetWakeWordSession()
   }
 
   if (typeof window !== 'undefined') {
     const unlockOnGesture = () => {
       unlockAudioContext()
+      if (wwAudioContext?.state === 'suspended') {
+        wwAudioContext.resume().catch(() => {})
+      }
     }
     window.addEventListener('pointerdown', unlockOnGesture, { passive: true })
     window.addEventListener('keydown', unlockOnGesture, { passive: true })
@@ -431,24 +474,30 @@ export const useDebateStore = defineStore('debate', () => {
 
   function findAgent(role?: string | null): Agent | undefined {
     if (!role) return undefined
+    const clean = role.toLowerCase().trim()
     const norm = normalizeAgentRole(role)
-    return agents.value.find(a => normalizeAgentRole(a.role) === norm)
+    return agents.value.find(a => 
+      a.name?.toLowerCase() === clean || 
+      normalizeAgentRole(a.role) === norm ||
+      a.role?.toLowerCase() === clean
+    )
   }
 
   function resolveAgentDisplay(role?: string | null) {
     const agent = findAgent(role)
-    const agentRole = agent?.role || normalizeAgentRole(role) || 'supervisor'
-    const isSupervisor = agentRole === 'supervisor'
-    const agentName = agent?.name || (isSupervisor ? 'Atenea' : agentRole)
+    const isSupervisor = role === 'Atenea' || agent?.role === 'supervisor' || agent?.name === 'Atenea' || normalizeAgentRole(role) === 'supervisor'
+    const agentRole = agent?.role || normalizeAgentRole(role) || (isSupervisor ? 'supervisor' : role || 'supervisor')
+    const agentName = agent?.name || (isSupervisor ? 'Atenea' : role || agentRole)
     const colorHex = agent?.color_hex || (isSupervisor ? '#f59e0b' : '#00e5ff')
     return { agentRole, agentName, colorHex }
   }
 
   function pushAgentMessage(content: string, role?: string | null) {
     const { agentRole, agentName, colorHex } = resolveAgentDisplay(role)
+    const cleanContent = cleanAgentMessageContent(content)
     messages.value.push({
       role: 'assistant',
-      content: `[${agentRole}] ${content}`,
+      content: cleanContent,
       agentRole,
       agentName,
       colorHex
@@ -459,8 +508,9 @@ export const useDebateStore = defineStore('debate', () => {
     isHitlRequired.value = true
     const checkpoint = event.metadata?.checkpoint
     hitlCheckpoint.value = checkpoint || null
-    const checkpointRole = checkpoint ? CHECKPOINT_ROLES[checkpoint] : undefined
-    const role = event.role || checkpointRole || 'supervisor'
+    const checkpointAgent = checkpoint?.startsWith('after_') ? checkpoint.replace('after_', '') : undefined
+    const rawRole = event.metadata?.agent || event.role || checkpointAgent || 'Atenea'
+    const role = typeof rawRole === 'string' ? rawRole : String(rawRole)
     pushAgentMessage(event.content || 'HITL Required', role)
   }
 
@@ -520,6 +570,7 @@ export const useDebateStore = defineStore('debate', () => {
 
   function handleDone(event: SupervisorEvent) {
     isDebating.value = false
+    resetWakeWordSession()
     pushAgentMessage(event.content || 'Debate finished.', event.role)
   }
 
@@ -563,16 +614,35 @@ export const useDebateStore = defineStore('debate', () => {
     }
   }
 
-  function submitHitlDecision(decision: 'approve' | 'refine' | 'reject', feedback?: string) {
+  function submitHitlDecision(decision: 'approve' | 'refine' | 'reject', feedback?: string, targetAgents?: string[]) {
     isHitlRequired.value = false
     hitlCheckpoint.value = null
+    resetWakeWordSession()
     
+    if (decision === 'refine' && feedback?.trim()) {
+      messages.value.push({
+        id: crypto.randomUUID(),
+        role: 'user',
+        content: feedback.trim(),
+        timestamp: new Date().toISOString()
+      })
+    }
+
     if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
+      const payload: {
+        type: string
+        decision: 'approve' | 'refine' | 'reject'
+        feedback: string
+        target_agents?: string[]
+      } = {
         type: 'hitl_response',
         decision,
         feedback: feedback || ''
-      }))
+      }
+      if (targetAgents && targetAgents.length > 0) {
+        payload.target_agents = targetAgents
+      }
+      ws.send(JSON.stringify(payload))
     }
   }
 
@@ -580,12 +650,6 @@ export const useDebateStore = defineStore('debate', () => {
   if (import.meta.env.MODE !== 'test') {
     connect()
   }
-
-  let wakeWordWs: WebSocket | null = null
-  let wwAudioContext: AudioContext | null = null
-  let wwMicrophone: MediaStreamAudioSourceNode | null = null
-  let wwProcessor: AudioWorkletNode | null = null
-  let wwStream: MediaStream | null = null
 
   function startAutoListen() {
     if (isAutoListenEnabled.value) return
@@ -648,11 +712,24 @@ export const useDebateStore = defineStore('debate', () => {
         wwProcessor = new AudioWorkletNode(wwAudioContext!, 'pcm-capture-processor')
         wwMicrophone.connect(wwProcessor)
 
+        // Connect through a zero-gain node to destination to keep the AudioWorklet clock running continuously
+        try {
+          const silentGain = wwAudioContext!.createGain()
+          silentGain.gain.value = 0
+          wwProcessor.connect(silentGain)
+          silentGain.connect(wwAudioContext!.destination)
+        } catch {}
+
         wwProcessor.port.onmessage = (e: MessageEvent<Float32Array>) => {
           if (wakeWordWs?.readyState !== WebSocket.OPEN) return
           
           // Do not listen for wake word if we are currently recording
           if (isRecording.value) return
+
+          // Auto-resume AudioContext if suspended
+          if (wwAudioContext?.state === 'suspended') {
+            wwAudioContext.resume().catch(() => {})
+          }
 
           const inputData = e.data
           // Convert Float32 to Int16
@@ -672,7 +749,22 @@ export const useDebateStore = defineStore('debate', () => {
     wakeWordWs.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
-        if (data.type === 'WAKE_WORD_DETECTED') {
+        if (data.type === 'HITL_VOICE_COMMAND') {
+          console.log('[WW] HITL Voice command received:', data.command)
+          if (isHitlRequired.value) {
+            if (data.command === 'approve') {
+              submitHitlDecision('approve')
+            } else if (data.command === 'reject') {
+              submitHitlDecision('reject')
+            } else if (data.command === 'refine') {
+              // Trigger voice recording so user can dictate refinement
+              isWakeWordTriggered.value = true
+              setTimeout(() => {
+                isWakeWordTriggered.value = false
+              }, 1000)
+            }
+          }
+        } else if (data.type === 'WAKE_WORD_DETECTED') {
           console.log('[WW] Wake word detected for agent:', data.agent_role || 'supervisor')
           stopTts() // Interrupt any ongoing TTS
           if (data.agent_role) {
@@ -756,8 +848,10 @@ export const useDebateStore = defineStore('debate', () => {
     submitHitlDecision,
     startAutoListen,
     stopAutoListen,
+    resetWakeWordSession,
     findAgent,
     normalizeAgentRole,
+    cleanAgentMessageContent,
     get ws() { return ws } // Getter for testing purposes
   }
 })

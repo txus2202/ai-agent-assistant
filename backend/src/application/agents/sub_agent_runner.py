@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass, field
 
 from src.application.services.query_vault import QueryVault
-from src.domain.agents.sub_agent_profiles import AgentRole, get_profile
+from src.domain.agents.sub_agent_profiles import get_profile
 from src.domain.ports.document_store import IDocumentStore
 from src.domain.ports.llm_provider import ILLMProvider
 from src.domain.value_objects.document_chunk import DocumentChunk
@@ -30,7 +30,7 @@ from src.domain.value_objects.document_chunk import DocumentChunk
 class SubAgentResponse:
     """Result returned by SubAgentRunner.run()."""
 
-    role: AgentRole
+    role: str
     content: str
     context_chunks: list[DocumentChunk] = field(default_factory=list)
     tokens: dict[str, int] = field(default_factory=dict)
@@ -52,8 +52,8 @@ def format_chat_history(chat_history: list[dict[str, Any]] | None, max_messages:
         if not content:
             continue
         # Truncate very long messages to avoid blowing context window on N100
-        if len(content) > 500:
-            content = content[:500] + "... [truncado]"
+        if len(content) > 1200:
+            content = content[:1200] + "... [truncado]"
             
         if role == "user":
             lines.append(f"Usuario: {content}")
@@ -72,7 +72,7 @@ class SubAgentRunner:
 
     @staticmethod
     async def run(
-        role: AgentRole,
+        role: str,
         user_request: str,
         llm_provider: ILLMProvider,
         document_store: IDocumentStore,
@@ -86,7 +86,7 @@ class SubAgentRunner:
         thread pool via asyncio.to_thread() to avoid blocking the event loop.
 
         Args:
-            role:           The AgentRole determining which profile and prompts to use.
+            role:           The role identifier or name determining which profile and prompts to use.
             user_request:   The (already formalized) user request to process.
             llm_provider:   ILLMProvider to call for completion.
             document_store: Store used for RAG retrieval.

@@ -50,8 +50,7 @@ class LocalAudioService(IAudioService):
             "SQLite, PostgreSQL, Redis, Kafka, ChromaDB, FastAPI, Python, TypeScript, JavaScript, Vue, React, "
             "Node.js, Next.js, Vite, CQRS, Event-Driven, DDD, clean architecture, arquitectura hexagonal, "
             "Zero-Trust, STRIDE, SPOF, Langfuse, OpenTelemetry, Prometheus, Grafana, HITL, Pull Request, "
-            "merge, commit, branch, deploy, clúster, endpoints, logs, métricas, tracing. "
-            "Nombres de los agentes del equipo: Atenea, Hermes, Ícaro, Hestia, Sphinx, Hefesto, Aracne, Metis."
+            "merge, commit, branch, deploy, clúster, endpoints, logs, métricas, tracing."
         )
 
         self.phonetic_normalizer = SpanishTechPhoneticNormalizer()
@@ -79,10 +78,23 @@ class LocalAudioService(IAudioService):
             self.kokoro = Kokoro(str(self.kokoro_model_path), str(self.kokoro_voices_path))
         return self.kokoro
 
+    def _build_initial_prompt(self) -> str:
+        prompt = self.whisper_initial_prompt
+        try:
+            from src.domain.agents.sub_agent_profiles import get_all_profiles
+            names = [p.display_name for p in get_all_profiles() if p.display_name]
+            if names:
+                prompt = f"{prompt.rstrip('.')} Nombres de agentes: {', '.join(names)}."
+        except Exception:
+            pass
+        return prompt
+
     async def transcribe_audio(self, audio_file: BinaryIO) -> str:
         """
         Transcribe audio to text.
         """
+        prompt = self._build_initial_prompt()
+
         def _transcribe():
             model = self._get_whisper_model()
             segments, _ = model.transcribe(
@@ -91,7 +103,7 @@ class LocalAudioService(IAudioService):
                 beam_size=5,
                 vad_filter=True,
                 vad_parameters={"min_silence_duration_ms": 500},
-                initial_prompt=self.whisper_initial_prompt,
+                initial_prompt=prompt,
             )
             text = " ".join([segment.text for segment in segments])
             return text.strip()

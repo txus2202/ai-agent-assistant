@@ -8,13 +8,17 @@ import { useDebateStore, type ChatMessage, type SupervisorEvent } from '../../st
 // Mock the debate store
 const mockStartDebate = vi.fn()
 const mockUploadFile = vi.fn().mockResolvedValue('/uploads/test.pdf')
+const mockSubmitHitlDecision = vi.fn()
 const mockStore = {
   isDebating: false,
+  isHitlRequired: false,
+  submitHitlDecision: mockSubmitHitlDecision,
   messages: [] as ChatMessage[],
   rawEvents: [] as SupervisorEvent[],
   agents: [
     { role: 'nl_interpreter', name: 'NL Interpreter', state: 'STANDBY', color_hex: '#00e5ff' },
-    { role: 'learning', name: 'Learning Agent', state: 'STANDBY', color_hex: '#1d4ed8' }
+    { role: 'learning', name: 'Learning Agent', state: 'STANDBY', color_hex: '#1d4ed8' },
+    { role: 'diagrammer', name: 'Aracne', state: 'STANDBY', color_hex: '#ec4899' }
   ],
   startDebate: mockStartDebate,
   uploadFile: mockUploadFile,
@@ -340,6 +344,171 @@ describe('ChatPanel.vue', () => {
 
     expect(wrapper.text()).toContain('SYSTEM OBSERVABILITY')
     expect(wrapper.find('[data-test="tab-observability"]').classes()).toContain('text-neon-cyan')
+  })
+
+  it('renders integrated HITL card when isHitlRequired is true', () => {
+    mockStore.isHitlRequired = true
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: true }
+    })
+
+    expect(wrapper.find('[data-test="hitl-chat-card"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Punto de Control (HITL)')
+    expect(wrapper.find('[data-test="hitl-approve-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="hitl-reject-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="hitl-refine-btn"]').exists()).toBe(true)
+    expect(wrapper.find('textarea').attributes('placeholder')).toContain('instrucciones de refinamiento')
+  })
+
+  it('handles HITL approve action with target agents', async () => {
+    mockStore.isHitlRequired = true
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: true }
+    })
+
+    // Click a target chip (e.g. Aracne / diagrammer)
+    const chips = wrapper.findAll('[data-test="hitl-target-chip"]')
+    const aracneChip = chips.find(c => c.text().includes('Aracne'))
+    if (aracneChip) {
+      await aracneChip.trigger('click')
+    }
+
+    const approveBtn = wrapper.find('[data-test="hitl-approve-btn"]')
+    await approveBtn.trigger('click')
+
+    expect(mockSubmitHitlDecision).toHaveBeenCalledWith('approve', '', ['diagrammer'])
+  })
+
+  it('handles HITL reject action with target agents', async () => {
+    mockStore.isHitlRequired = true
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: true }
+    })
+
+    const rejectBtn = wrapper.find('[data-test="hitl-reject-btn"]')
+    await rejectBtn.trigger('click')
+
+    expect(mockSubmitHitlDecision).toHaveBeenCalledWith('reject', '', [])
+  })
+
+  it('handles HITL refine flow via textarea and submit button', async () => {
+    mockStore.isHitlRequired = true
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: true }
+    })
+
+    const textarea = wrapper.find('textarea')
+    await textarea.setValue('Añade soporte para caché distribuida con Redis')
+
+    await wrapper.find('form').trigger('submit.prevent')
+
+    expect(mockSubmitHitlDecision).toHaveBeenCalledWith('refine', 'Añade soporte para caché distribuida con Redis', [])
+  })
+
+  it('renders interactive diagram card with view and copy buttons when message contains mermaid block', () => {
+    const messages = [
+      {
+        role: 'assistant' as const,
+        content: 'Aquí está la arquitectura:\n```mermaid\nflowchart TD\n  Client --> Gateway\n```\n¿Te parece adecuada?',
+        agentName: 'Aracne'
+      }
+    ]
+
+    const wrapper = mount(ChatPanel, {
+      props: { messages, isDebating: false }
+    })
+
+    expect(wrapper.find('[data-test="chat-diagram-card"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="chat-diagram-copy-btn"]').text()).toBe('Copiar')
+    expect(wrapper.find('[data-test="chat-diagram-view-btn"]').text()).toBe('Ver')
+    expect(wrapper.text()).not.toContain('Diagrama Mermaid.js')
+    expect(wrapper.text()).toContain('Aquí está la arquitectura:')
+    expect(wrapper.text()).toContain('¿Te parece adecuada?')
+  })
+
+  it('copies diagram code to clipboard when clicking Copiar in chat card', async () => {
+    const writeTextSpy = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText: writeTextSpy } })
+
+    const messages = [
+      {
+        role: 'assistant' as const,
+        content: '```mermaid\nflowchart TD\n  A --> B\n```',
+        agentName: 'Aracne'
+      }
+    ]
+
+    const wrapper = mount(ChatPanel, {
+      props: { messages, isDebating: false }
+    })
+
+    const copyBtn = wrapper.find('[data-test="chat-diagram-copy-btn"]')
+    expect(copyBtn.exists()).toBe(true)
+    await copyBtn.trigger('click')
+
+    expect(writeTextSpy).toHaveBeenCalledWith('flowchart TD\n  A --> B')
+  })
+
+  it('opens DiagramModal when clicking Ver diagrama button', async () => {
+    const messages = [
+      {
+        role: 'assistant' as const,
+        content: '```mermaid\nflowchart TD\n  A --> B\n```',
+        agentName: 'Aracne'
+      }
+    ]
+
+    const wrapper = mount(ChatPanel, {
+      props: { messages, isDebating: false }
+    })
+
+    // Before click, modal backdrop does not exist
+    expect(wrapper.find('[data-test="diagram-modal-backdrop"]').exists()).toBe(false)
+
+    const viewBtn = wrapper.find('[data-test="chat-diagram-view-btn"]')
+    expect(viewBtn.exists()).toBe(true)
+    await viewBtn.trigger('click')
+
+    // After click, modal is open
+    expect(wrapper.find('[data-test="diagram-modal-backdrop"]').exists()).toBe(true)
+  })
+
+  it('filters out mermaid diagram syntax from TTS audio synthesis', async () => {
+    mockStore.isVoiceOutputEnabled = true
+    mockStore.playTtsAudioChunk = vi.fn().mockResolvedValue(undefined)
+    mockStore.stopTts = vi.fn()
+
+    const fetchCalls: any[] = []
+    global.fetch = vi.fn().mockImplementation((url, opts) => {
+      fetchCalls.push({ url, opts })
+      return Promise.resolve({
+        ok: true,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8))
+      })
+    })
+
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: false }
+    })
+
+    await wrapper.setProps({
+      messages: [
+        {
+          role: 'assistant',
+          content: 'He diseñado la topología:\n```mermaid\nflowchart TD\n  Frontend --> Backend\n```\nPor favor revísala.',
+          agentName: 'Aracne'
+        }
+      ]
+    })
+
+    expect(global.fetch).toHaveBeenCalled()
+    for (const call of fetchCalls) {
+      if (call.url === '/api/audio/synthesize') {
+        const body = JSON.parse(call.opts.body)
+        expect(body.text).not.toContain('flowchart')
+        expect(body.text).not.toContain('Frontend --> Backend')
+      }
+    }
   })
 })
 

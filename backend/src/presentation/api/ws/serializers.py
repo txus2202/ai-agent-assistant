@@ -16,9 +16,10 @@ from src.domain.agents.supervisor_events import (
 
 def event_to_dict(event: SupervisorEvent) -> dict:
     """Serialize a SupervisorEvent to a JSON-safe dict for WebSocket transmission."""
+    role_val = event.role.value if hasattr(event.role, "value") else (event.role if event.role is not None else None)
     return {
         "type": event.type.value,
-        "role": event.role.value if event.role is not None else None,
+        "role": role_val,
         "content": event.content,
         "metadata": event.metadata or {},
     }
@@ -44,4 +45,13 @@ def dict_to_hitl_response(raw: dict) -> HITLResponse:
     if not isinstance(selected_options, list):
         selected_options = []
         
-    return HITLResponse(decision=decision, feedback=feedback, selected_options=selected_options)
+    target_agents = raw.get("target_agents", [])
+    if not isinstance(target_agents, list):
+        target_agents = []
+        
+    return HITLResponse(
+        decision=decision,
+        feedback=feedback,
+        selected_options=selected_options,
+        target_agents=target_agents,
+    )

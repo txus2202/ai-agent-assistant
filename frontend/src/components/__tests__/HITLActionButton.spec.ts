@@ -67,6 +67,32 @@ describe('HITLActionButton.vue', () => {
     expect(wrapper.emitted('action')).toBeFalsy()
   })
 
+  it('displays DIVERT text and emits divert event when decision is divert', async () => {
+    const wrapper = mount(HITLActionButton, {
+      props: {
+        decision: 'divert',
+        disabled: false
+      }
+    })
+
+    expect(wrapper.text()).toContain('DIVERT / FORK')
+    await wrapper.trigger('click')
+    expect(wrapper.emitted('action')![0]).toEqual(['divert'])
+  })
+
+  it('displays FINISH text and emits finish event when decision is finish', async () => {
+    const wrapper = mount(HITLActionButton, {
+      props: {
+        decision: 'finish',
+        disabled: false
+      }
+    })
+
+    expect(wrapper.text()).toContain('FINISH / CONCLUDE')
+    await wrapper.trigger('click')
+    expect(wrapper.emitted('action')![0]).toEqual(['finish'])
+  })
+
   it('handles fallback decision value gracefully', () => {
     const wrapper = mount(HITLActionButton, {
       props: {

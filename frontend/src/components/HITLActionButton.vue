@@ -2,18 +2,20 @@
 import { computed } from 'vue'
 
 const props = defineProps<{
-  decision: 'approve' | 'refine' | 'reject'
+  decision: 'approve' | 'refine' | 'divert' | 'finish' | 'reject'
   disabled?: boolean
 }>()
 
 const emit = defineEmits<{
-  (e: 'action', decision: 'approve' | 'refine' | 'reject'): void
+  (e: 'action', decision: 'approve' | 'refine' | 'divert' | 'finish' | 'reject'): void
 }>()
 
 const buttonText = computed(() => {
   switch (props.decision) {
     case 'approve': return 'APPROVE / MERGE'
     case 'refine': return 'REFINE / ITERATE'
+    case 'divert': return 'DIVERT / FORK'
+    case 'finish': return 'FINISH / CONCLUDE'
     case 'reject': return 'REJECT / ABORT'
     default: return 'ACTION'
   }
@@ -23,6 +25,8 @@ const buttonClass = computed(() => {
   switch (props.decision) {
     case 'approve': return 'border-neon-lightgreen text-neon-lightgreen hover:bg-neon-lightgreen/10'
     case 'refine': return 'border-neon-amber text-neon-amber hover:bg-neon-amber/10'
+    case 'divert': return 'border-cyan-500 text-cyan-400 hover:bg-cyan-500/10'
+    case 'finish': return 'border-purple-500 text-purple-400 hover:bg-purple-500/10'
     case 'reject': return 'border-neon-red text-neon-red hover:bg-neon-red/10'
     default: return 'border-space-700 text-slate-300'
   }

@@ -636,7 +636,7 @@ class TestAdaptiveSupervisorRouting:
         prompt = captured[0]
         assert top.supervisor in prompt
         assert ", ".join(top.proposers) in prompt
-        assert top.evaluator in prompt
+        assert ", ".join(top.evaluators) in prompt
         assert ", ".join(top.implementers) in prompt
         assert "arquitect" not in prompt.lower()
         assert event.role == top.supervisor
@@ -695,10 +695,10 @@ class TestAdaptiveSupervisorRouting:
         from src.application.agents import supervisor_agent as mod
 
         for fn_name, param in (
-            ("_run_phase_1", "interpreter_role"),
+            ("_run_phase_1", "interpreter_roles"),
             ("_run_phase_2", "proposer_roles"),
-            ("_run_phase_2", "reviewer_role"),
-            ("_run_phase_3", "evaluator_role"),
+            ("_run_phase_2", "reviewer_roles"),
+            ("_run_phase_3", "evaluator_roles"),
             ("_run_phase_4", "implementer_roles"),
             ("_run_consolidation", "supervisor_name"),
         ):
@@ -792,12 +792,11 @@ class TestAdaptiveSupervisorRouting:
 
         custom_topology = DebateTopology(
             supervisor="Coordinator",
-            interpreter="Interpreter",
+            interpreters=("Interpreter",),
             proposers=("PropTwo",),  # Only PropTwo!
-            reviewer="Auditor",
-            evaluator="Auditor",
+            reviewers=("Auditor",),
+            evaluators=("Auditor",),
             implementers=("ImplTwo",),  # Only ImplTwo!
-            review_rounds=1,
         )
 
         events = await _collect(SupervisorAgent.run(
@@ -819,6 +818,105 @@ class TestAdaptiveSupervisorRouting:
         assert "ImplTwo" in called_agents
 
         # Done event emitted with supervisor role
+        done_events = [e for e in events if e.type == EventType.DONE]
+        assert len(done_events) == 1
+        assert done_events[0].role == "Coordinator"
+
+    @pytest.mark.anyio
+    async def test_topology_skips_empty_phases(self, monkeypatch):
+        """When optional roles are empty tuples, those phases and their checkpoints are skipped."""
+        import src.application.agents.supervisor_agent as _mod
+        from src.application.agents.supervisor_agent import SupervisorAgent
+        from src.application.agents.sub_agent_runner import SubAgentResponse
+        from src.domain.agents.debate_topology import DebateTopology
+
+        called_agents: list[str] = []
+
+        async def _capturing_runner(role, user_request, llm_provider, document_store, model_name, **kwargs):
+            key = role.value if hasattr(role, "value") else str(role)
+            called_agents.append(key)
+            return SubAgentResponse(role=role, content=f"{key}: output", context_chunks=[])
+
+        monkeypatch.setattr(_mod.SubAgentRunner, "run", _capturing_runner)
+
+        # Empty interpreters, empty reviewers, empty evaluators, empty implementers!
+        sparse_topology = DebateTopology(
+            supervisor="Coordinator",
+            interpreters=(),
+            proposers=("PropOne",),
+            reviewers=(),
+            evaluators=(),
+            implementers=(),
+        )
+
+        events = await _collect(SupervisorAgent.run(
+            user_request="Diseñar microservicios",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_approve_always,
+            topology=sparse_topology,
+        ))
+
+        # Interpreter never called (Phase 1 skipped)
+        assert "Interpreter" not in called_agents
+        # Proposer was called
+        assert "PropOne" in called_agents
+        # Reviewer and Evaluator never called
+        assert "Auditor" not in called_agents
+        # Implementers never called
+        assert "ImplOne" not in called_agents
+        assert "ImplTwo" not in called_agents
+
+        # Done event emitted successfully
+        assert any(e.type == EventType.DONE for e in events)
+
+    @pytest.mark.anyio
+    async def test_hitl_finish_decision_terminates_debate_early(self, monkeypatch):
+        """User choosing FINISH at HITL checkpoint immediately exits remaining phases and consolidates."""
+        import src.application.agents.supervisor_agent as _mod
+        from src.application.agents.supervisor_agent import SupervisorAgent
+        from src.application.agents.sub_agent_runner import SubAgentResponse
+        from src.domain.agents.debate_topology import DebateTopology
+
+        called_agents: list[str] = []
+
+        async def _capturing_runner(role, user_request, llm_provider, document_store, model_name, **kwargs):
+            key = role.value if hasattr(role, "value") else str(role)
+            called_agents.append(key)
+            return SubAgentResponse(role=role, content=f"{key}: output", context_chunks=[])
+
+        monkeypatch.setattr(_mod.SubAgentRunner, "run", _capturing_runner)
+
+        async def _finish_at_first_hitl(_event: SupervisorEvent) -> HITLResponse:
+            return HITLResponse(decision=HITLDecision.FINISH)
+
+        custom_topology = DebateTopology(
+            supervisor="Coordinator",
+            interpreters=("Interpreter",),
+            proposers=("PropOne",),
+            reviewers=("Auditor",),
+            evaluators=("Auditor",),
+            implementers=("ImplOne",),
+        )
+
+        events = await _collect(SupervisorAgent.run(
+            user_request="Crear landing",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_finish_at_first_hitl,
+            topology=custom_topology,
+        ))
+
+        # Phase 1 Interpreter ran
+        assert "Interpreter" in called_agents
+        # Subsequent phases did NOT run because user finished early
+        assert "PropOne" not in called_agents
+        assert "Auditor" not in called_agents
+        assert "ImplOne" not in called_agents
+
+        # Done event was still emitted with final consolidation
         done_events = [e for e in events if e.type == EventType.DONE]
         assert len(done_events) == 1
         assert done_events[0].role == "Coordinator"

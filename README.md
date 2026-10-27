@@ -100,45 +100,57 @@ The system implements a structured collegiate deliberation process orchestrated 
 
 ### 1. Functional Roles and Debate Phases
 
-The collegiate debate workflow is structured into abstract functional slots:
+The collegiate debate workflow is structured into abstract functional slots with flexible cardinality:
 
 ```mermaid
 flowchart TD
     User([User Request]) --> Triage{Supervisor Triage}
     
-    subgraph Phase1 [Phase 1: Interpretation]
-        Triage -->|Adaptive Debate| Interpreter["interpreter (Hermes)"]
-        Interpreter --> HITL1{HITL #1: Formalized Requirements}
+    subgraph Phase1 [Phase 1: Interpretation (0..N)]
+        Triage -->|Adaptive Debate| Interpreters["interpreters (Hermes)"]
+        Interpreters --> HITL1{HITL #1: Formalized Requirements}
     end
 
-    subgraph Phase2 [Phase 2: Proposers & Peer Review]
-        HITL1 -->|Approved| Proposers["proposers (Ícaro, Hestia)"]
-        Proposers --> ReviewLoop{"Reviewer Critiques & Refines<br/>(review_rounds)"}
-        ReviewLoop <-->|Iterative Polish| Reviewer["reviewer (Sphinx)"]
-        ReviewLoop --> HITL2{HITL #2: Select Architecture}
+    subgraph Phase2 [Phase 2: Proposers & Peer Review (0..N)]
+        HITL1 -->|Approved| Proposers["proposers (Ícaro, Hestia)<br/><i>Parallel execution (asyncio.gather)</i>"]
+        Proposers --> ReviewLoop{"Reviewers Critiques & Refines<br/>(REVIEW_ROUNDS from .env)"}
+        ReviewLoop <-->|Iterative Polish| Reviewers["reviewers (Sphinx)"]
+        ReviewLoop --> HITL2{HITL #2: Architecture Decision}
     end
 
-    subgraph Phase3 [Phase 3: Architectural Audit]
-        HITL2 -->|Selected Options| Evaluator["evaluator (Sphinx)"]
-        Evaluator --> HITL3{HITL #3: Final Verdict}
+    subgraph Phase3 [Phase 3: Architectural Audit (0..N)]
+        HITL2 -->|Selected Options| Evaluators["evaluators (Sphinx)"]
+        Evaluators --> HITL3{HITL #3: Final Verdict}
     end
 
-    subgraph Phase4 [Phase 4: Implementation]
-        HITL3 -->|Approved| Implementers["implementers (Aracne, Hefesto)"]
+    subgraph Phase4 [Phase 4: Implementation (0..N)]
+        HITL3 -->|Approved| Implementers["implementers (Aracne, Hefesto)<br/><i>Parallel execution</i>"]
         Implementers --> Consolidation["Consolidation (Supervisor: Atenea)"]
     end
 
-    Consolidation --> FinalDoc([Architectural Report])
+    Consolidation --> FinalDoc([Authoritative Architectural Report])
 ```
 
-- **`supervisor` (Orchestrator):** The strategic leader and triage coordinator. Holds final authority and synthesizes the collegiate consensus.
-- **`interpreter` (Phase 1):** Translates ambiguous, conversational user requests into strict technical specifications (default: `Hermes`).
-- **`proposers` (Phase 2):** Generates architectural alternatives (default: `Ícaro` for bleeding-edge innovation, `Hestia` for operational stability).
-- **`reviewer` (Phase 2):** Performs internal peer-review during pre-deliberation before the user is interrupted (default: `Sphinx`).
-- **`evaluator` (Phase 3):** Impartial auditor providing critical risk analysis, consistency checks, and architectural verdicts (default: `Sphinx`).
-- **`implementers` (Phase 4):** Parallel specialists generating Mermaid diagrams (`Aracne`) and infrastructure/DevSecOps code (`Hefesto`).
+- **`supervisor` (Mandatory, strictly 1:1):** The sole mandatory role in the topology (`is_supervisor: true`). Strategic orchestrator and triage coordinator (default: `Atenea`). Evaluates user intent, coordinates phases, and drafts the final authoritative consolidation.
+- **`interpreters` (Optional, 0..N):** Translates conversational requests into strict technical requirements (default: `Hermes`). When omitted or when requirements are unambiguous, Phase 1 and its HITL checkpoint are skipped.
+- **`proposers` (Optional, 0..N):** Proposes architectural solutions (default: `Ícaro` for innovation, `Hestia` for operational prudence). When multiple agents are assigned, they execute in parallel. If empty, Phase 2 is skipped.
+- **`reviewers` (Optional, 0..N):** Conducts internal pre-deliberation reviews before human intervention. If empty, review iterations are skipped.
+- **`evaluators` (Optional, 0..N):** Objective auditors and verifiers assessing risks and compliance (default: `Sphinx`). When omitted, Phase 3 and its HITL checkpoint are skipped.
+- **`implementers` (Optional, 0..N):** Specialists executing technical tasks in parallel, such as diagram generation (`Aracne`) or DevSecOps scripts (`Hefesto`). If empty, Phase 4 is skipped.
 
-### 2. External Agent Catalog (`agents.yaml`) & Dynamic Registry
+### 2. Human-In-The-Loop (HITL) Controls
+
+At each debate checkpoint, the user has full governance through explicit control actions:
+
+| Action | Control Payload | Description |
+| :--- | :--- | :--- |
+| **✓ Aceptar** | `decision: "approve"` | Accepts the current phase output and proceeds to the next phase in the topology. |
+| **✏ Refinar** | `decision: "refine"` | Reopens the current phase with specific natural language feedback provided by the user. |
+| **🔀 Desviar** | `decision: "divert"` | Bypasses remaining default phases and delegates directly to one or more user-selected target agents. |
+| **🏁 Finalizar** | `decision: "finish"` | Immediately concludes the debate, skipping remaining phases and directing the supervisor (`Atenea`) to consolidate all gathered contributions into the final binding document. |
+| **✗ Rechazar** | `decision: "reject"` | Discards the current proposal and triggers a re-run of the phase. |
+
+### 3. External Agent Catalog (`agents.yaml`) & Dynamic Registry
 
 Agent definitions are 100% decoupled from Python code. All agent profiles—including the strategic supervisor orchestrator—are defined declaratively in [`agents.yaml`](file:///Users/jesusjimenezvaquero/Documents/WS/ai-agent-assistant/agents.yaml) at the project root (overridable via the `AGENTS_FILE` environment variable). The catalog must define at least one supervisor agent (`is_supervisor: true`).
 
@@ -191,49 +203,50 @@ register_profile(my_custom_agent)
 
 When `DebateTopology.validate()` parses the topology, it strictly enforces that whichever agent is declared under `supervisor` must have `is_supervisor=True`. Attempting to set an operational specialist as the supervisor will raise a `ValueError` immediately at load time.
 
-### 3. Declarative Topology (`topology.yaml`)
+### 4. Declarative Topology (`topology.yaml` v2.0)
 
-You can customize council members, adjust team composition, or change the number of peer-review rounds by editing `./topology.yaml` in the project root:
+You can customize council members, parallel execution, and team composition by editing `./topology.yaml` in the project root:
 
 ```yaml
-version: "1.0"
+version: "2.0"
 
-# Main strategic orchestrator (must have is_supervisor=True in profile)
+# Main strategic orchestrator (strictly 1:1, must have is_supervisor=True)
 supervisor: "Atenea"
 
-# Phase 1: Natural Language Requirement Formalization
-interpreter: "Hermes"
+# Phase 1: Natural Language Requirement Formalization (0..N)
+interpreters:
+  - "Hermes"
 
-# Phase 2: Architecture Solution Proposers & Peer Review
+# Phase 2: Architecture Solution Proposers & Peer Review (0..N)
 proposers:
   - "Ícaro"
   - "Hestia"
 
-reviewer: "Sphinx"
+reviewers:
+  - "Sphinx"
 
-# Number of internal review iterations between Reviewer and Proposers before HITL
-review_rounds: 1
+# Phase 3: Architectural Audit & Verdict (0..N)
+evaluators:
+  - "Sphinx"
 
-# Phase 3: Architectural Audit & Verdict
-evaluator: "Sphinx"
-
-# Phase 4: Technical Implementation, Diagramming & DevSecOps
+# Phase 4: Technical Implementation, Diagramming & DevSecOps (0..N)
 implementers:
   - "Aracne"
   - "Hefesto"
 ```
 
-### 4. Configuration Precedence
+> [!NOTE]
+> **Operational vs. Structural Decoupling:** `topology.yaml` defines the agent role graph and slot assignments. Operational debate parameters such as `REVIEW_ROUNDS` are intentionally excluded from `topology.yaml` to avoid configuration duplication and reside exclusively in `.env`.
 
-The number of internal peer-review rounds (`review_rounds`) follows this strict precedence hierarchy:
+### 5. Review Rounds Configuration (`REVIEW_ROUNDS`)
+
+The number of internal peer-review rounds between proposers and reviewers follows this precedence hierarchy:
 
 1. **Direct Parameter Injection:** `SupervisorAgent.run(..., review_rounds=N)`
-2. **Explicit Topology Object:** Injected `DebateTopology(..., review_rounds=N)`
-3. **Environment Variable:** `REVIEW_ROUNDS=N` in `.env` (overrides file configuration for cloud-native deployment)
-4. **File Configuration:** `review_rounds` specified in `./topology.yaml`
-5. **Fallback Default:** `1` round
+2. **Environment Variable:** `REVIEW_ROUNDS=N` in `.env` (canonical configuration for runtime tuning)
+3. **Fallback Default:** `1` round
 
-### 5. Development Methodology (SDD & TDD) & Decoupling Guard
+### 6. Development Methodology (SDD & TDD) & Decoupling Guard
 
 This feature was designed and delivered following **Specification Driven Development (SDD)** and **Test Driven Development (TDD)**:
 - **SDD Specification:** [docs/features/debate_topology_and_supervisor_discovery_sdd.md](file:///Users/jesusjimenezvaquero/Documents/WS/ai-agent-assistant/docs/features/debate_topology_and_supervisor_discovery_sdd.md)

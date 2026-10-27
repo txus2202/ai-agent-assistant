@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
 export type AgentState = 'STANDBY' | 'ACTIVE' | 'COMPLETED'
+export type HitlDecisionType = 'approve' | 'refine' | 'divert' | 'finish' | 'reject'
 
 export interface Agent {
   role: string
@@ -614,16 +615,27 @@ export const useDebateStore = defineStore('debate', () => {
     }
   }
 
-  function submitHitlDecision(decision: 'approve' | 'refine' | 'reject', feedback?: string, targetAgents?: string[]) {
+  function submitHitlDecision(
+    decision: HitlDecisionType,
+    feedback?: string,
+    targetAgents?: string[]
+  ) {
     isHitlRequired.value = false
     hitlCheckpoint.value = null
     resetWakeWordSession()
     
-    if (decision === 'refine' && feedback?.trim()) {
+    if ((decision === 'refine' || decision === 'divert') && feedback?.trim()) {
       messages.value.push({
         id: crypto.randomUUID(),
         role: 'user',
         content: feedback.trim(),
+        timestamp: new Date().toISOString()
+      })
+    } else if (decision === 'finish') {
+      messages.value.push({
+        id: crypto.randomUUID(),
+        role: 'user',
+        content: 'Finalizar debate anticipadamente y consolidar dictamen.',
         timestamp: new Date().toISOString()
       })
     }
@@ -631,7 +643,7 @@ export const useDebateStore = defineStore('debate', () => {
     if (ws?.readyState === WebSocket.OPEN) {
       const payload: {
         type: string
-        decision: 'approve' | 'refine' | 'reject'
+        decision: HitlDecisionType
         feedback: string
         target_agents?: string[]
       } = {

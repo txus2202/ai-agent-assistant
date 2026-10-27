@@ -27,12 +27,11 @@ class DebateTopology:
     """Immutable debate slot topology describing which agents fill which debate responsibilities."""
 
     supervisor: str
-    interpreter: str
-    proposers: tuple[str, ...]
-    reviewer: str
-    evaluator: str
-    implementers: tuple[str, ...]
-    review_rounds: int = 1
+    interpreters: tuple[str, ...] = ()
+    proposers: tuple[str, ...] = ()
+    reviewers: tuple[str, ...] = ()
+    evaluators: tuple[str, ...] = ()
+    implementers: tuple[str, ...] = ()
 
     def validate(self) -> None:
         """
@@ -44,21 +43,9 @@ class DebateTopology:
         if not getattr(sup_profile, "is_supervisor", False):
             raise ValueError(f"Agent '{self.supervisor}' is not a valid supervisor (is_supervisor=False)")
 
-        get_profile(self.interpreter)
-
-        if not self.proposers or len(self.proposers) == 0:
-            raise ValueError("At least one proposer agent must be defined in 'proposers'")
-        for p in self.proposers:
-            get_profile(p)
-
-        get_profile(self.reviewer)
-        get_profile(self.evaluator)
-
-        for imp in self.implementers:
-            get_profile(imp)
-
-        if self.review_rounds < 0:
-            raise ValueError(f"review_rounds must be >= 0, got {self.review_rounds}")
+        for role_agents in (self.interpreters, self.proposers, self.reviewers, self.evaluators, self.implementers):
+            for agent_name in role_agents:
+                get_profile(agent_name)
 
 
 def _resolve_topology_path(path: str | Path | None = None) -> Path:
@@ -86,34 +73,9 @@ def _resolve_topology_path(path: str | Path | None = None) -> Path:
     )
 
 
-def _extract_phases_metadata(data: dict) -> None:
-    phases = data.get("phases")
-    if not isinstance(phases, dict):
-        return
-
-    p1 = phases.get("phase_1")
-    if isinstance(p1, dict) and "agent" in p1:
-        data.setdefault("interpreter", p1["agent"])
-
-    p2 = phases.get("phase_2")
-    if isinstance(p2, dict):
-        if isinstance(p2.get("agents"), (list, tuple)):
-            data.setdefault("proposers", p2["agents"])
-        if "reviewer" in p2:
-            data.setdefault("reviewer", p2["reviewer"])
-        if "review_rounds" in p2:
-            data.setdefault("review_rounds", p2["review_rounds"])
-
-    p3 = phases.get("phase_3")
-    if isinstance(p3, dict) and "agent" in p3:
-        data.setdefault("evaluator", p3["agent"])
-
-    p4 = phases.get("phase_4")
-    if isinstance(p4, dict) and isinstance(p4.get("agents"), (list, tuple)):
-        data.setdefault("implementers", p4["agents"])
-
-
 def _to_string_tuple(raw_value: Any) -> tuple[str, ...]:
+    if not raw_value:
+        return ()
     if isinstance(raw_value, (list, tuple)):
         return tuple(str(x) for x in raw_value)
     return (str(raw_value),)
@@ -129,21 +91,17 @@ def load_topology(path: str | Path | None = None) -> DebateTopology:
     content = target_path.read_text(encoding="utf-8")
     data = yaml.safe_load(content) or {}
 
-    _extract_phases_metadata(data)
-
-    required_slots = ("supervisor", "interpreter", "proposers", "reviewer", "evaluator", "implementers")
-    for slot in required_slots:
-        if slot not in data or data[slot] is None:
-            raise ValueError(f"Missing required topology slot in topology.yaml: '{slot}'")
+    if "supervisor" not in data or data["supervisor"] is None:
+        raise ValueError("Missing required topology slot in topology.yaml: 'supervisor'")
 
     top = DebateTopology(
         supervisor=str(data["supervisor"]),
-        interpreter=str(data["interpreter"]),
-        proposers=_to_string_tuple(data["proposers"]),
-        reviewer=str(data["reviewer"]),
-        evaluator=str(data["evaluator"]),
-        implementers=_to_string_tuple(data["implementers"]),
-        review_rounds=int(data.get("review_rounds", 1)),
+        interpreters=_to_string_tuple(data.get("interpreters")),
+        proposers=_to_string_tuple(data.get("proposers")),
+        reviewers=_to_string_tuple(data.get("reviewers")),
+        evaluators=_to_string_tuple(data.get("evaluators")),
+        implementers=_to_string_tuple(data.get("implementers")),
     )
     top.validate()
     return top
+

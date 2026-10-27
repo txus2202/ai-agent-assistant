@@ -262,6 +262,21 @@ const handleHitlApprove = () => {
   selectedTargetAgents.value = []
 }
 
+const handleHitlDivert = () => {
+  if (selectedTargetAgents.value.length === 0) {
+    alert('Por favor selecciona al menos un agente en los chips para desviar la tarea.')
+    return
+  }
+  store.submitHitlDecision('divert', store.draftMessage.trim(), selectedTargetAgents.value)
+  store.draftMessage = ''
+  selectedTargetAgents.value = []
+}
+
+const handleHitlFinish = () => {
+  store.submitHitlDecision('finish')
+  selectedTargetAgents.value = []
+}
+
 const handleHitlReject = () => {
   store.submitHitlDecision('reject', '', selectedTargetAgents.value)
   selectedTargetAgents.value = []
@@ -569,30 +584,48 @@ defineExpose({
         </div>
 
         <!-- Quick Action Buttons -->
-        <div class="flex items-center gap-2 pt-1">
+        <div class="flex flex-wrap items-center gap-1.5 pt-1">
           <button
             type="button"
             @click="handleHitlApprove"
             data-test="hitl-approve-btn"
-            class="flex-1 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/60 text-emerald-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+            class="flex-1 min-w-[75px] py-1.5 bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/60 text-emerald-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
           >
             <span>✓ Aceptar</span>
           </button>
           <button
             type="button"
-            @click="handleHitlReject"
-            data-test="hitl-reject-btn"
-            class="flex-1 py-1.5 bg-red-500/15 hover:bg-red-500/30 border border-red-500/60 text-red-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+            @click="focusRefineInput"
+            data-test="hitl-refine-btn"
+            class="flex-1 min-w-[75px] py-1.5 bg-neon-amber/15 hover:bg-neon-amber/30 border border-neon-amber/60 text-neon-amber font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
           >
-            <span>✗ Rechazar</span>
+            <span>✏ Refinar</span>
           </button>
           <button
             type="button"
-            @click="focusRefineInput"
-            data-test="hitl-refine-btn"
-            class="flex-1 py-1.5 bg-neon-amber/15 hover:bg-neon-amber/30 border border-neon-amber/60 text-neon-amber font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+            @click="handleHitlDivert"
+            data-test="hitl-divert-btn"
+            class="flex-1 min-w-[75px] py-1.5 bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/60 text-cyan-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+            title="Desviar deliberación a los agentes seleccionados arriba"
           >
-            <span>✏ Refinar</span>
+            <span>🔀 Desviar</span>
+          </button>
+          <button
+            type="button"
+            @click="handleHitlFinish"
+            data-test="hitl-finish-btn"
+            class="flex-1 min-w-[75px] py-1.5 bg-purple-500/15 hover:bg-purple-500/30 border border-purple-500/60 text-purple-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+            title="Concluir el debate anticipadamente y consolidar dictamen final"
+          >
+            <span>🏁 Finalizar</span>
+          </button>
+          <button
+            type="button"
+            @click="handleHitlReject"
+            data-test="hitl-reject-btn"
+            class="flex-1 min-w-[75px] py-1.5 bg-red-500/15 hover:bg-red-500/30 border border-red-500/60 text-red-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+          >
+            <span>✗ Rechazar</span>
           </button>
         </div>
       </div>

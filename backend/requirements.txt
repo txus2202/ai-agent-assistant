@@ -9,7 +9,7 @@ PyYAML>=6.0                # Obsidian frontmatter parsing
 
 # Phase 2+: LLM adapters (uncomment when implementing)
 google-genai>=0.1.0         # Gemini (Vertex AI or AI Studio)
-openai>=1.40                # OpenAI
+openai>=3.37.0                # OpenAI
 anthropic>=0.30             # Anthropic
 
 # Phase 3+: Learning Agent extractors

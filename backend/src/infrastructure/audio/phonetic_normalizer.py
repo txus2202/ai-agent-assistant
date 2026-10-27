@@ -106,9 +106,9 @@ class SpanishTechPhoneticNormalizer:
         # Inline code
         text = re.sub(r"`([^`]+)`", r"\1", text)
         # Images: ![alt](url) -> alt
-        text = re.sub(r"!\[(.*?)\]\([^)]+\)", r"\1", text)
+        text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
         # Links: [text](url) -> text
-        text = re.sub(r"\[(.*?)\]\([^)]+\)", r"\1", text)
+        text = re.sub(r"\[([^\]]*)\]\([^)]+\)", r"\1", text)
         # Headers: ## Header -> Header
         text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
         # Bold & Italic: **text**, *text*, __text__, _text_

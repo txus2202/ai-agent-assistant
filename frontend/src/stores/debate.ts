@@ -509,8 +509,8 @@ export const useDebateStore = defineStore('debate', () => {
     const checkpoint = event.metadata?.checkpoint
     hitlCheckpoint.value = checkpoint || null
     const checkpointAgent = checkpoint?.startsWith('after_') ? checkpoint.replace('after_', '') : undefined
-    const rawRole = event.metadata?.agent || event.role || checkpointAgent || 'Atenea'
-    const role = typeof rawRole === 'string' ? rawRole : String(rawRole)
+    const metadataAgent = typeof event.metadata?.agent === 'string' ? event.metadata.agent : undefined
+    const role = metadataAgent || event.role || checkpointAgent || 'Atenea'
     pushAgentMessage(event.content || 'HITL Required', role)
   }
 

@@ -11,6 +11,7 @@ import json
 import logging
 import uuid
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -247,79 +248,84 @@ class DebateWebSocketHandler:
             await self.websocket.send_json({"type": "error", "content": f"Unknown agent role: {target_agent}"})
             await self.websocket.close(code=1003)
 
+    def _init_session_and_trace(self, session_id: str | None, user_request: str, target_agent: str) -> None:
+        existing_record = self.debate_repo.find_by_id(session_id) if session_id else None
+
+        if existing_record:
+            self.debate_record = existing_record
+            self.debate_record.target_agent = target_agent
+            self.debate_repo.update_session(self.debate_record.id, status="running", target_agent=target_agent)
+        else:
+            self.debate_record = DebateRecord(
+                id=session_id or str(uuid.uuid4()),
+                user_request=user_request,
+                target_agent=target_agent,
+                status="running"
+            )
+            self.debate_repo.create(self.debate_record)
+
+        # Persist user message in chronological event history
+        user_event_dict = {
+            "type": "user_message",
+            "role": "user",
+            "content": user_request,
+            "metadata": {"target_agent": target_agent}
+        }
+        self.debate_repo.append_event(self.debate_record.id, json.dumps(user_event_dict))
+
+        self.current_trace = self.observability.start_trace(
+            name=f"debate_{target_agent}",
+            session_id=self.debate_record.id,
+            metadata={
+                "user_request": user_request,
+                "target_agent": target_agent,
+            }
+        )
+
+    async def _dispatch_target(self, target_agent: str, user_request: str, chat_history: list, attachments: list) -> bool:
+        try:
+            target_profile = get_profile(target_agent)
+        except KeyError:
+            if self.debate_record:
+                self.debate_repo.update_status(self.debate_record.id, "aborted")
+            await self.websocket.send_json({"type": "error", "content": f"Unknown agent role: {target_agent}"})
+            await self.websocket.close(code=1003)
+            return False
+
+        if target_profile.is_supervisor:
+            await self._handle_supervisor(user_request, chat_history=chat_history)
+        elif target_profile.can_ingest_documents:
+            await self._handle_learning(target_profile, attachments)
+        else:
+            await self._handle_sub_agent(target_agent, user_request, chat_history=chat_history)
+        return True
+
+    async def _handle_start_request(self, raw_start: dict) -> None:
+        user_request = raw_start.get("user_request", "")
+        target_agent = raw_start.get("target_agent", "supervisor")
+        attachments = raw_start.get("attachments", [])
+        chat_history = raw_start.get("history", [])
+
+        if not user_request:
+            await self.websocket.send_json({"type": "error", "content": "user_request is required"})
+            return
+
+        try:
+            _ = get_llm_provider(self.settings.default_provider)
+        except Exception as e:
+            await self.websocket.send_json({"type": "error", "content": f"Default provider error: {str(e)}"})
+            return
+
+        self._init_session_and_trace(raw_start.get("session_id"), user_request, target_agent)
+        await self._dispatch_target(target_agent, user_request, chat_history, attachments)
+
     async def process_messages(self) -> None:
         while True:
             raw_start = await self.websocket.receive_json()
             if raw_start.get("type") != "start":
                 await self.websocket.send_json({"type": "error", "content": "Expected 'start' message"})
-                # We don't close, just wait for next message
                 continue
-
-            user_request = raw_start.get("user_request", "")
-            target_agent = raw_start.get("target_agent", "supervisor")
-            attachments = raw_start.get("attachments", [])
-            chat_history = raw_start.get("history", [])
-            
-            logger.error(f"DEBUG: type(user_request)={type(user_request)} value={user_request}")
-
-            if not user_request:
-                await self.websocket.send_json({"type": "error", "content": "user_request is required"})
-                continue
-
-            try:
-                _ = get_llm_provider(self.settings.default_provider)
-            except Exception as e:
-                await self.websocket.send_json({"type": "error", "content": f"Default provider error: {str(e)}"})
-                continue
-
-            session_id = raw_start.get("session_id")
-            existing_record = self.debate_repo.find_by_id(session_id) if session_id else None
-
-            if existing_record:
-                self.debate_record = existing_record
-                self.debate_record.target_agent = target_agent
-                self.debate_repo.update_session(self.debate_record.id, status="running", target_agent=target_agent)
-            else:
-                self.debate_record = DebateRecord(
-                    id=session_id or str(uuid.uuid4()),
-                    user_request=user_request,
-                    target_agent=target_agent,
-                    status="running"
-                )
-                self.debate_repo.create(self.debate_record)
-
-            # Persist user message in chronological event history
-            user_event_dict = {
-                "type": "user_message",
-                "role": "user",
-                "content": user_request,
-                "metadata": {"target_agent": target_agent}
-            }
-            self.debate_repo.append_event(self.debate_record.id, json.dumps(user_event_dict))
-
-            self.current_trace = self.observability.start_trace(
-                name=f"debate_{target_agent}",
-                session_id=self.debate_record.id,
-                metadata={
-                    "user_request": user_request,
-                    "target_agent": target_agent,
-                }
-            )
-
-            try:
-                target_profile = get_profile(target_agent)
-            except KeyError:
-                self.debate_repo.update_status(self.debate_record.id, "aborted")
-                await self.websocket.send_json({"type": "error", "content": f"Unknown agent role: {target_agent}"})
-                await self.websocket.close(code=1003)
-                continue
-
-            if target_profile.is_supervisor:
-                await self._handle_supervisor(user_request, chat_history=chat_history)
-            elif target_profile.can_ingest_documents:
-                await self._handle_learning(target_profile, attachments)
-            else:
-                await self._handle_sub_agent(target_agent, user_request, chat_history=chat_history)
+            await self._handle_start_request(raw_start)
 
     def abort(self) -> None:
         if self.debate_record:

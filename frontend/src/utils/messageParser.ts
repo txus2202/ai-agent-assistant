@@ -3,7 +3,7 @@ export interface MessageBlock {
   content: string
 }
 
-const MERMAID_REGEX = /```(?:mermaid|diagram)[^\S\r\n]*\r?\n?([^`]+)```/gi
+const MERMAID_REGEX = /```(?:mermaid|diagram)[^\n`]*\n([^`]+)```/gi
 
 /**
  * Parses message markdown content into a sequential list of text blocks and

@@ -356,43 +356,24 @@ async def _maybe_divert_to_targets(
     )
 
 
-async def _debate_generator(
-    user_request: str,
-    document_store: IDocumentStore,
+def _build_role_runner(
     agent_config_repo: Any,
+    document_store: IDocumentStore,
     llm_factory: Callable[[str], ILLMProvider],
-    hitl_callback: Callable[[SupervisorEvent], Awaitable[HITLResponse]],
-    chat_history: list[dict[str, Any]] | None = None,
-    review_rounds: int | None = None,
-    topology: DebateTopology | None = None,
-) -> AsyncGenerator[SupervisorEvent, None]:
-    from src.presentation.api.config import get_settings
-    settings = get_settings()
-
-    active_topology = topology or load_topology()
-    effective_review_rounds = _determine_review_rounds(review_rounds, topology, active_topology, settings)
-    state = DebateState()
-
-    supervisor_profile = get_profile(active_topology.supervisor)
-    sup_agent_name = supervisor_profile.display_name
-    sup_provider_name, sup_model_name = _resolve_supervisor_config(agent_config_repo, supervisor_profile, settings)
-    supervisor_provider = llm_factory(sup_provider_name)
-
+    settings: Any,
+    chat_history: list[dict[str, Any]] | None,
+    state: DebateState,
+) -> Callable[[str, str], Awaitable[tuple[str, str]]]:
     async def run_role(r: str, req: str) -> tuple[str, str]:
         profile = get_profile(r)
         agent_name = profile.display_name
 
-        config = agent_config_repo.find_by_role(agent_name)
-        if not config:
-            config = agent_config_repo.find_by_role(profile.id)
-        
+        config = agent_config_repo.find_by_role(agent_name) or agent_config_repo.find_by_role(profile.id)
         provider_name = config.provider if config else settings.default_provider
         model_name = config.model_name if config else settings.default_model
-        
+
         llm_provider = llm_factory(provider_name)
-        
-        hist = chat_history if chat_history else None
-        runner_kwargs = {"chat_history": hist} if hist is not None else {}
+        runner_kwargs = {"chat_history": chat_history} if chat_history else {}
         resp = await SubAgentRunner.run(
             role=agent_name,
             user_request=req,
@@ -415,6 +396,136 @@ async def _debate_generator(
         state.agent_outputs[agent_name] = resp.content
         state.debate_history.append({"role": "assistant", "name": agent_name, "content": resp.content})
         return agent_name, resp.content
+
+    return run_role
+
+
+async def _run_phase_with_divert(
+    phase_gen: AsyncGenerator[SupervisorEvent, None],
+    state: DebateState,
+    run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
+    supervisor_provider: Any,
+    sup_model_name: str,
+    sup_agent_name: str,
+    active_topology: DebateTopology,
+) -> AsyncGenerator[SupervisorEvent, None]:
+    async for event in phase_gen:
+        yield event
+    if state.target_agents:
+        async for event in _maybe_divert_to_targets(
+            state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology
+        ):
+            yield event
+
+
+async def _execute_phase_1_if_needed(
+    state: DebateState,
+    user_request: str,
+    run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
+    hitl_callback: Callable[[SupervisorEvent], Awaitable[HITLResponse]],
+    triage: Any,
+    interpreter_role: str,
+) -> AsyncGenerator[SupervisorEvent, None]:
+    if not triage.skip_interpreter:
+        async for event in _run_phase_1(
+            state,
+            user_request,
+            run_role,
+            hitl_callback,
+            interpreter_role=interpreter_role,
+        ):
+            yield event
+    else:
+        state.formalized = user_request
+
+
+async def _run_adaptive_debate(
+    state: DebateState,
+    user_request: str,
+    run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
+    hitl_callback: Callable[[SupervisorEvent], Awaitable[HITLResponse]],
+    triage: Any,
+    active_topology: DebateTopology,
+    effective_review_rounds: int,
+    supervisor_provider: Any,
+    sup_model_name: str,
+    sup_agent_name: str,
+) -> AsyncGenerator[SupervisorEvent, None]:
+    phase1 = _execute_phase_1_if_needed(
+        state, user_request, run_role, hitl_callback, triage, active_topology.interpreter
+    )
+    async for event in _run_phase_with_divert(
+        phase1, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology
+    ):
+        yield event
+    if state.target_agents:
+        return
+
+    phase2 = _run_phase_2(
+        state,
+        run_role,
+        hitl_callback,
+        review_rounds=effective_review_rounds,
+        proposer_roles=active_topology.proposers,
+        reviewer_role=active_topology.reviewer,
+    )
+    async for event in _run_phase_with_divert(
+        phase2, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology
+    ):
+        yield event
+    if state.target_agents:
+        return
+
+    phase3 = _run_phase_3(
+        state,
+        run_role,
+        hitl_callback,
+        evaluator_role=active_topology.evaluator,
+    )
+    async for event in _run_phase_with_divert(
+        phase3, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology
+    ):
+        yield event
+    if state.target_agents:
+        return
+
+    async for event in _run_phase_4(
+        state,
+        run_role,
+        implementer_roles=active_topology.implementers,
+    ):
+        yield event
+
+    yield await _run_consolidation(
+        state, supervisor_provider, sup_model_name, supervisor_name=sup_agent_name, topology=active_topology
+    )
+
+
+async def _debate_generator(
+    user_request: str,
+    document_store: IDocumentStore,
+    agent_config_repo: Any,
+    llm_factory: Callable[[str], ILLMProvider],
+    hitl_callback: Callable[[SupervisorEvent], Awaitable[HITLResponse]],
+    chat_history: list[dict[str, Any]] | None = None,
+    review_rounds: int | None = None,
+    topology: DebateTopology | None = None,
+) -> AsyncGenerator[SupervisorEvent, None]:
+    from src.presentation.api.config import get_settings
+    settings = get_settings()
+
+    active_topology = topology or load_topology()
+    effective_review_rounds = _determine_review_rounds(review_rounds, topology, active_topology, settings)
+    state = DebateState()
+
+    supervisor_profile = get_profile(active_topology.supervisor)
+    sup_agent_name = supervisor_profile.display_name
+    sup_provider_name, sup_model_name = _resolve_supervisor_config(agent_config_repo, supervisor_profile, settings)
+    supervisor_provider = llm_factory(sup_provider_name)
+
+    run_role = _build_role_runner(
+        agent_config_repo, document_store, llm_factory, settings, chat_history, state
+    )
 
     # 1. Triage Intent Classification
     interpreter_profile = get_profile(active_topology.interpreter)
@@ -441,56 +552,19 @@ async def _debate_generator(
         return
 
     # 4. Adaptive Debate Mode
-    if not triage.skip_interpreter:
-        async for event in _run_phase_1(
-            state,
-            user_request,
-            run_role,
-            hitl_callback,
-            interpreter_role=active_topology.interpreter,
-        ):
-            yield event
-        if state.target_agents:
-            async for event in _maybe_divert_to_targets(state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology):
-                yield event
-            return
-    else:
-        state.formalized = user_request
-
-    async for event in _run_phase_2(
+    async for event in _run_adaptive_debate(
         state,
+        user_request,
         run_role,
         hitl_callback,
-        review_rounds=effective_review_rounds,
-        proposer_roles=active_topology.proposers,
-        reviewer_role=active_topology.reviewer,
+        triage,
+        active_topology,
+        effective_review_rounds,
+        supervisor_provider,
+        sup_model_name,
+        sup_agent_name,
     ):
         yield event
-    if state.target_agents:
-        async for event in _maybe_divert_to_targets(state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology):
-            yield event
-        return
-
-    async for event in _run_phase_3(
-        state,
-        run_role,
-        hitl_callback,
-        evaluator_role=active_topology.evaluator,
-    ):
-        yield event
-    if state.target_agents:
-        async for event in _maybe_divert_to_targets(state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology):
-            yield event
-        return
-
-    async for event in _run_phase_4(
-        state,
-        run_role,
-        implementer_roles=active_topology.implementers,
-    ):
-        yield event
-
-    yield await _run_consolidation(state, supervisor_provider, sup_model_name, supervisor_name=sup_agent_name, topology=active_topology)
 
 
 

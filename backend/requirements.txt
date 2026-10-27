@@ -14,7 +14,7 @@ anthropic>=0.30             # Anthropic
 
 # Phase 3+: Learning Agent extractors
 PyMuPDF>=1.23               # PDF text extraction
-httpx>=0.27                 # HTTP client for URL extraction (also used in FastAPI tests)
+httpx>=0.28.1                 # HTTP client for URL extraction (also used in FastAPI tests)
 beautifulsoup4>=4.12        # HTML parsing for URL extractor
 
 # Phase 4: API server

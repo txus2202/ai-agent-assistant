@@ -38,7 +38,7 @@ export function cleanTextForTts(text: string): string {
   // 3. Header markers #
   // 4. Inline code backticks
   return cleanTtsText
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
+    .replace(/\[([^\[\]]+)\]\(([^()]+)\)/g, '$1')
     .replace(/[*#`_]/g, '')
     .replace(/\n{2,}/g, '\n')
     .trim()

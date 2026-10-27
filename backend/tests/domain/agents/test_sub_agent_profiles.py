@@ -269,10 +269,10 @@ class TestShippedCatalogIsConsistentWithShippedTopology:
         top = load_topology()
         referenced = {
             top.supervisor,
-            top.interpreter,
-            top.reviewer,
-            top.evaluator,
+            *top.interpreters,
             *top.proposers,
+            *top.reviewers,
+            *top.evaluators,
             *top.implementers,
         }
         for name in referenced:

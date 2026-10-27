@@ -7,31 +7,32 @@
 # Constraints:
 # - The agent assigned to 'supervisor' MUST have is_supervisor=True in its profile.
 # - All agent names must match a registered SubAgentProfile display_name.
-# - 'proposers' must have at least one agent.
+# - All other slots accept 0 to N agents (empty lists skip that phase).
+# - Review rounds are configured via the REVIEW_ROUNDS environment variable in .env.
 # =============================================================================
 
-version: "1.0"
+version: "2.0"
 
-# Main strategic orchestrator (must be an agent with is_supervisor=True)
+# Main strategic orchestrator (strictly 1:1, must be an agent with is_supervisor=True)
 supervisor: "Atenea"
 
-# Phase 1: Natural Language Requirement Formalization
-interpreter: "Hermes"
+# Phase 1: Natural Language Requirement Formalization (0..N)
+interpreters:
+  - "Hermes"
 
-# Phase 2: Architecture Solution Proposers & Peer Review
+# Phase 2: Architecture Solution Proposers & Peer Review (0..N)
 proposers:
   - "Ícaro"
   - "Hestia"
 
-reviewer: "Sphinx"
+reviewers:
+  - "Sphinx"
 
-# Number of internal review rounds between Reviewer and Proposers before HITL
-review_rounds: 1
+# Phase 3: Architectural Audit & Verdict (0..N)
+evaluators:
+  - "Sphinx"
 
-# Phase 3: Architectural Audit & Verdict
-evaluator: "Sphinx"
-
-# Phase 4: Technical Implementation, Diagramming & DevSecOps
+# Phase 4: Technical Implementation, Diagramming & DevSecOps (0..N)
 implementers:
   - "Aracne"
   - "Hefesto"

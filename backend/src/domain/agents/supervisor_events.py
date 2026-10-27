@@ -42,6 +42,8 @@ class HITLDecision(Enum):
     APPROVE = "approve"
     REJECT  = "reject"
     REFINE  = "refine"   # user provides additional context; no re-run of previous agents
+    DIVERT  = "divert"   # divert flow to specific target agents
+    FINISH  = "finish"   # conclude debate immediately and consolidate
 
 
 @dataclass

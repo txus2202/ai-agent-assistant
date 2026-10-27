@@ -290,7 +290,8 @@ class TestShippedCatalogIsConsistentWithShippedTopology:
             assert profile.display_name
             assert len(profile.description.strip()) > 10
             assert len(profile.system_prompt.strip()) > 50
-            assert profile.color_hex.startswith("#") and len(profile.color_hex) == 7
+            assert profile.color_hex.startswith("#")
+            assert len(profile.color_hex) == 7
 
     def test_ids_and_display_names_are_unique(self):
         profiles = get_all_profiles()

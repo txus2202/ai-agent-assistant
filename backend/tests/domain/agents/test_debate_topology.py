@@ -83,23 +83,27 @@ def test_topology_is_frozen_immutable():
 
 
 def test_validation_fails_if_supervisor_is_not_marked_is_supervisor():
+    top = _topology(supervisor="Reader")
     with pytest.raises(ValueError, match="not a valid supervisor"):
-        _topology(supervisor="Reader").validate()
+        top.validate()
 
 
 def test_validation_fails_if_agent_does_not_exist():
+    top = _topology(interpreter="NonExistentAgent999")
     with pytest.raises(KeyError):
-        _topology(interpreter="NonExistentAgent999").validate()
+        top.validate()
 
 
 def test_validation_fails_if_no_proposers():
+    top = _topology(proposers=())
     with pytest.raises(ValueError, match="At least one proposer"):
-        _topology(proposers=()).validate()
+        top.validate()
 
 
 def test_validation_fails_if_negative_review_rounds():
+    top = _topology(review_rounds=-1)
     with pytest.raises(ValueError, match="review_rounds"):
-        _topology(review_rounds=-1).validate()
+        top.validate()
 
 
 def test_validation_accepts_agents_added_at_runtime():

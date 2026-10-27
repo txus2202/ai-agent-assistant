@@ -3,7 +3,7 @@
  * Strips technical Mermaid diagram code blocks to prevent reading code syntax aloud.
  */
 
-const MERMAID_BLOCK_REGEX = /```(?:mermaid|diagram)\s*[\s\S]*?```/gi
+const MERMAID_BLOCK_REGEX = /```(?:mermaid|diagram)[^\S\r\n]*\r?\n?[^`]*```/gi
 
 export function cleanTextForTts(text: string): string {
   if (!text?.trim()) {
@@ -38,7 +38,7 @@ export function cleanTextForTts(text: string): string {
   // 3. Header markers #
   // 4. Inline code backticks
   return cleanTtsText
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\[([^\]\r\n]+)\]\(([^)\s]+)\)/g, '$1')
     .replace(/[*#`_]/g, '')
     .replace(/\n{2,}/g, '\n')
     .trim()

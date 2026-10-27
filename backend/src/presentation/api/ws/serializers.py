@@ -16,7 +16,10 @@ from src.domain.agents.supervisor_events import (
 
 def event_to_dict(event: SupervisorEvent) -> dict:
     """Serialize a SupervisorEvent to a JSON-safe dict for WebSocket transmission."""
-    role_val = event.role.value if hasattr(event.role, "value") else (event.role if event.role is not None else None)
+    if hasattr(event.role, "value"):
+        role_val = event.role.value
+    else:
+        role_val = event.role
     return {
         "type": event.type.value,
         "role": role_val,

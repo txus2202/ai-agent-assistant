@@ -236,7 +236,7 @@ function openLangfuse(e: MouseEvent) {
       <!-- Radial Cluster Gauge -->
       <div class="bg-[#080d16] border border-space-800 rounded p-4 flex flex-col items-center justify-center relative overflow-hidden">
         <div class="relative w-24 h-24 flex items-center justify-center">
-          <svg class="w-full h-full -rotate-90" viewBox="0 0 100 100">
+          <svg class="w-full h-full -rotate-90" viewBox="0 0 100 100" aria-hidden="true">
             <!-- Background circle -->
             <circle
               cx="50"
@@ -287,7 +287,7 @@ function openLangfuse(e: MouseEvent) {
             <span :class="cpuTheme.textClass">{{ cpuPercent.toFixed(1) }}%</span>
           </div>
           <div class="h-6 w-full bg-space-950/80 rounded border border-space-800/60 overflow-hidden relative">
-            <svg class="w-full h-full" preserveAspectRatio="none" viewBox="0 0 100 24">
+            <svg class="w-full h-full" preserveAspectRatio="none" viewBox="0 0 100 24" aria-hidden="true">
               <path
                 :d="cpuSparkline.area"
                 :fill="cpuTheme.fill"
@@ -311,7 +311,7 @@ function openLangfuse(e: MouseEvent) {
             <span :class="memTheme.textClass">{{ memoryPercent.toFixed(1) }}%</span>
           </div>
           <div class="h-6 w-full bg-space-950/80 rounded border border-space-800/60 overflow-hidden relative">
-            <svg class="w-full h-full" preserveAspectRatio="none" viewBox="0 0 100 24">
+            <svg class="w-full h-full" preserveAspectRatio="none" viewBox="0 0 100 24" aria-hidden="true">
               <path
                 :d="memorySparkline.area"
                 :fill="memTheme.fill"

@@ -123,6 +123,7 @@ onUnmounted(() => {
       class="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-4 md:p-8 animate-fade-in border-0 m-0 w-full h-full max-w-none max-h-none text-inherit"
       @click.self="emit('close')"
       @cancel.prevent="emit('close')"
+      @keydown="handleKeyDown"
       aria-labelledby="diagram-modal-title"
       aria-modal="true"
     >

@@ -202,8 +202,9 @@ agents:
     color_hex: "#aabbcc"
     system_prompt: You are Alpha.
 """
+        path = _write_catalog(tmp_path, body)
         with pytest.raises(ValueError, match="supervisor"):
-            load_profiles_from_file(_write_catalog(tmp_path, body))
+            load_profiles_from_file(path)
 
     def test_missing_file_raises_file_not_found(self, tmp_path: Path):
         with pytest.raises(FileNotFoundError):
@@ -217,8 +218,9 @@ agents:
     color_hex: "#aabbcc"
     system_prompt: You are Alpha.
 """
+        path = _write_catalog(tmp_path, body)
         with pytest.raises(ValueError, match="description"):
-            load_profiles_from_file(_write_catalog(tmp_path, body))
+            load_profiles_from_file(path)
 
     def test_duplicate_ids_raise_value_error(self, tmp_path: Path):
         agent = """\
@@ -229,12 +231,14 @@ agents:
     system_prompt: You are {name}.
 """
         body = "agents:\n" + agent.format(name="Alpha") + agent.format(name="Alpha2")
+        path = _write_catalog(tmp_path, body)
         with pytest.raises(ValueError, match="alpha_id"):
-            load_profiles_from_file(_write_catalog(tmp_path, body))
+            load_profiles_from_file(path)
 
     def test_missing_agents_key_raises_value_error(self, tmp_path: Path):
+        path = _write_catalog(tmp_path, "version: 1\n")
         with pytest.raises(ValueError, match="agents"):
-            load_profiles_from_file(_write_catalog(tmp_path, "version: 1\n"))
+            load_profiles_from_file(path)
 
     def test_agents_file_env_var_is_used_when_resetting_registry(
         self, tmp_path: Path, monkeypatch
@@ -277,7 +281,8 @@ class TestShippedCatalogIsConsistentWithShippedTopology:
     def test_topology_validates_against_shipped_catalog(self):
         from src.domain.agents.debate_topology import load_topology
 
-        load_topology().validate()
+        top = load_topology()
+        top.validate()
 
     def test_every_profile_has_meaningful_metadata(self):
         for profile in get_all_profiles():

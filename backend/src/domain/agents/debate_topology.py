@@ -61,91 +61,89 @@ class DebateTopology:
             raise ValueError(f"review_rounds must be >= 0, got {self.review_rounds}")
 
 
+def _resolve_topology_path(path: str | Path | None = None) -> Path:
+    import os
+
+    if path is not None:
+        p = Path(path)
+        if not p.exists():
+            raise FileNotFoundError(f"Topology file not found: {path}")
+        return p
+
+    env_path = os.environ.get("TOPOLOGY_FILE")
+    if env_path:
+        p = Path(env_path)
+        if not p.exists():
+            raise FileNotFoundError(f"Topology file specified in TOPOLOGY_FILE not found: {p}")
+        return p
+
+    candidate = project_root() / "topology.yaml"
+    if candidate.exists():
+        return candidate
+
+    raise FileNotFoundError(
+        f"Canonical topology configuration file not found: {candidate}"
+    )
+
+
+def _extract_phases_metadata(data: dict) -> None:
+    phases = data.get("phases")
+    if not isinstance(phases, dict):
+        return
+
+    p1 = phases.get("phase_1")
+    if isinstance(p1, dict) and "agent" in p1:
+        data.setdefault("interpreter", p1["agent"])
+
+    p2 = phases.get("phase_2")
+    if isinstance(p2, dict):
+        if isinstance(p2.get("agents"), (list, tuple)):
+            data.setdefault("proposers", p2["agents"])
+        if "reviewer" in p2:
+            data.setdefault("reviewer", p2["reviewer"])
+        if "review_rounds" in p2:
+            data.setdefault("review_rounds", p2["review_rounds"])
+
+    p3 = phases.get("phase_3")
+    if isinstance(p3, dict) and "agent" in p3:
+        data.setdefault("evaluator", p3["agent"])
+
+    p4 = phases.get("phase_4")
+    if isinstance(p4, dict) and isinstance(p4.get("agents"), (list, tuple)):
+        data.setdefault("implementers", p4["agents"])
+
+
+def _to_string_tuple(raw_value: Any) -> tuple[str, ...]:
+    if isinstance(raw_value, (list, tuple)):
+        return tuple(str(x) for x in raw_value)
+    return (str(raw_value),)
+
+
 def load_topology(path: str | Path | None = None) -> DebateTopology:
     """
     Load and validate a DebateTopology from YAML.
     The single canonical file is './topology.yaml' located at the project root.
     Can be overridden via the `path` argument or the TOPOLOGY_FILE environment variable.
     """
-    import os
-
-    target_path: Path | None = None
-
-    if path is not None:
-        p = Path(path)
-        if not p.exists():
-            raise FileNotFoundError(f"Topology file not found: {path}")
-        target_path = p
-    elif os.environ.get("TOPOLOGY_FILE"):
-        p = Path(os.environ["TOPOLOGY_FILE"])
-        if not p.exists():
-            raise FileNotFoundError(f"Topology file specified in TOPOLOGY_FILE not found: {p}")
-        target_path = p
-    else:
-        candidate = project_root() / "topology.yaml"
-        if candidate.exists():
-            target_path = candidate
-
-    if target_path is None:
-        raise FileNotFoundError(
-            f"Canonical topology configuration file not found: {project_root() / 'topology.yaml'}"
-        )
-
+    target_path = _resolve_topology_path(path)
     content = target_path.read_text(encoding="utf-8")
     data = yaml.safe_load(content) or {}
 
-    # Support nested phases structure if present
-    if "phases" in data and isinstance(data["phases"], dict):
-        phases = data["phases"]
-        if "phase_1" in phases and "agent" in phases["phase_1"]:
-            data.setdefault("interpreter", phases["phase_1"]["agent"])
-        if "phase_2" in phases:
-            p2 = phases["phase_2"]
-            if "agents" in p2 and isinstance(p2["agents"], (list, tuple)):
-                data.setdefault("proposers", p2["agents"])
-            if "reviewer" in p2:
-                data.setdefault("reviewer", p2["reviewer"])
-            if "review_rounds" in p2:
-                data.setdefault("review_rounds", p2["review_rounds"])
-        if "phase_3" in phases and "agent" in phases["phase_3"]:
-            data.setdefault("evaluator", phases["phase_3"]["agent"])
-        if "phase_4" in phases and "agents" in phases["phase_4"]:
-            if isinstance(phases["phase_4"]["agents"], (list, tuple)):
-                data.setdefault("implementers", phases["phase_4"]["agents"])
+    _extract_phases_metadata(data)
 
     required_slots = ("supervisor", "interpreter", "proposers", "reviewer", "evaluator", "implementers")
     for slot in required_slots:
         if slot not in data or data[slot] is None:
             raise ValueError(f"Missing required topology slot in topology.yaml: '{slot}'")
 
-    supervisor = str(data["supervisor"])
-    interpreter = str(data["interpreter"])
-
-    proposers_raw = data["proposers"]
-    if isinstance(proposers_raw, (list, tuple)):
-        proposers = tuple(str(x) for x in proposers_raw)
-    else:
-        proposers = (str(proposers_raw),)
-
-    reviewer = str(data["reviewer"])
-    evaluator = str(data["evaluator"])
-
-    implementers_raw = data["implementers"]
-    if isinstance(implementers_raw, (list, tuple)):
-        implementers = tuple(str(x) for x in implementers_raw)
-    else:
-        implementers = (str(implementers_raw),)
-
-    review_rounds = int(data.get("review_rounds", 1))
-
     top = DebateTopology(
-        supervisor=supervisor,
-        interpreter=interpreter,
-        proposers=proposers,
-        reviewer=reviewer,
-        evaluator=evaluator,
-        implementers=implementers,
-        review_rounds=review_rounds,
+        supervisor=str(data["supervisor"]),
+        interpreter=str(data["interpreter"]),
+        proposers=_to_string_tuple(data["proposers"]),
+        reviewer=str(data["reviewer"]),
+        evaluator=str(data["evaluator"]),
+        implementers=_to_string_tuple(data["implementers"]),
+        review_rounds=int(data.get("review_rounds", 1)),
     )
     top.validate()
     return top

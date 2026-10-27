@@ -108,7 +108,6 @@ def classify_intent(
     model_name: str,
     supervisor_name: str,
     interpreter_name: str,
-    chat_history: list[dict[str, Any]] | None = None,
 ) -> TriageDecision:
     req_clean = user_request.strip().lower()
 
@@ -223,6 +222,140 @@ class DebateState:
         self.agent_critiques.setdefault(agent_name, []).append(critique)
 
 
+def _determine_review_rounds(
+    review_rounds: int | None,
+    topology: DebateTopology | None,
+    active_topology: DebateTopology,
+    settings: Any,
+) -> int:
+    if review_rounds is not None:
+        return review_rounds
+    if topology is not None and topology.review_rounds is not None:
+        return topology.review_rounds
+    if settings.review_rounds is not None:
+        return settings.review_rounds
+    if active_topology.review_rounds is not None:
+        return active_topology.review_rounds
+    return 1
+
+
+def _resolve_supervisor_config(
+    agent_config_repo: Any,
+    profile: Any,
+    settings: Any,
+) -> tuple[str, str]:
+    config = agent_config_repo.find_by_role(profile.display_name) or agent_config_repo.find_by_role(profile.id)
+    provider_name = config.provider if config else settings.default_provider
+    model_name = config.model_name if config else settings.default_model
+    return provider_name, model_name
+
+
+async def _run_direct_chat_mode(
+    user_request: str,
+    chat_history: list[dict[str, Any]] | None,
+    supervisor_profile: Any,
+    supervisor_provider: Any,
+    sup_agent_name: str,
+    sup_model_name: str,
+) -> AsyncGenerator[SupervisorEvent, None]:
+    yield SupervisorEvent(type=EventType.AGENT_STARTED, role=sup_agent_name, content="")
+
+    hist_lines = []
+    if chat_history:
+        for m in chat_history:
+            hist_lines.append(f"- {m.get('role', 'user')}: {m.get('content', '')}")
+    hist_str = "\n".join(hist_lines)
+
+    direct_prompt = f"""# INSTRUCCIÓN DE SISTEMA
+{supervisor_profile.system_prompt}
+
+# HISTORIAL DE CONVERSACIÓN
+{hist_str or 'Sin historial previo.'}
+
+# MENSAJE DEL USUARIO
+{user_request}
+
+Responde directamente al usuario como {sup_agent_name} en español, manteniendo la personalidad y el tono definidos en tu instrucción de sistema."""
+    start_time = time.perf_counter()
+    resp_text = await asyncio.to_thread(supervisor_provider.complete, direct_prompt, sup_model_name)
+    latency = round(time.perf_counter() - start_time, 2)
+    meta = {
+        "model": sup_model_name,
+        "latency_seconds": str(latency),
+        "tokens": str(max(1, len(resp_text) // 4)),
+    }
+    yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=sup_agent_name, content=resp_text, metadata=meta)
+    yield SupervisorEvent(type=EventType.DONE, role=sup_agent_name, content=resp_text, metadata=meta)
+
+
+async def _run_single_agent_mode(
+    target_agent: str,
+    user_request: str,
+    run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
+    state: DebateState,
+) -> AsyncGenerator[SupervisorEvent, None]:
+    target_name = get_profile(target_agent).display_name
+    yield SupervisorEvent(type=EventType.AGENT_STARTED, role=target_name, content="")
+    _, content = await run_role(target_name, user_request)
+    meta = state.agent_metadata.get(target_name, {})
+    yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=target_name, content=content, metadata=meta)
+    yield SupervisorEvent(type=EventType.DONE, role=target_name, content=content, metadata=meta)
+
+
+def _resolve_target_agents(agent_names: list[str]) -> list[str]:
+    resolved = []
+    for a in agent_names:
+        try:
+            p = get_profile(a)
+            resolved.append(p.display_name)
+        except KeyError:
+            resolved.append(a)
+    return resolved
+
+
+async def _execute_target_agents(
+    agent_names: list[str],
+    base_req: str,
+    refinement: str,
+    run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
+    state: DebateState,
+) -> AsyncGenerator[SupervisorEvent, None]:
+    for a in agent_names:
+        yield SupervisorEvent(type=EventType.AGENT_STARTED, role=a, content="")
+    req = base_req + (f"\n\n## User Refinement\n{refinement}" if refinement else "")
+    results = await asyncio.gather(*(run_role(a, req) for a in agent_names))
+    for a, content in results:
+        state.agent_outputs[a] = content
+        yield SupervisorEvent(
+            type=EventType.AGENT_COMPLETED,
+            role=a,
+            content=content,
+            metadata=state.agent_metadata.get(a, {}),
+        )
+
+
+async def _maybe_divert_to_targets(
+    state: DebateState,
+    run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
+    supervisor_provider: Any,
+    sup_model_name: str,
+    sup_agent_name: str,
+    active_topology: DebateTopology,
+) -> AsyncGenerator[SupervisorEvent, None]:
+    target_agents = _resolve_target_agents(state.target_agents)
+    if not target_agents:
+        return
+    async for event in _execute_target_agents(target_agents, state.formalized, state.refinement, run_role, state):
+        yield event
+    yield await _run_consolidation(
+        state,
+        supervisor_provider,
+        sup_model_name,
+        supervisor_name=sup_agent_name,
+        topology=active_topology,
+    )
+
+
 async def _debate_generator(
     user_request: str,
     document_store: IDocumentStore,
@@ -237,25 +370,12 @@ async def _debate_generator(
     settings = get_settings()
 
     active_topology = topology or load_topology()
-    if review_rounds is not None:
-        effective_review_rounds = review_rounds
-    elif topology is not None and topology.review_rounds is not None:
-        effective_review_rounds = topology.review_rounds
-    elif settings.review_rounds is not None:
-        effective_review_rounds = settings.review_rounds
-    elif active_topology.review_rounds is not None:
-        effective_review_rounds = active_topology.review_rounds
-    else:
-        effective_review_rounds = 1
+    effective_review_rounds = _determine_review_rounds(review_rounds, topology, active_topology, settings)
     state = DebateState()
 
     supervisor_profile = get_profile(active_topology.supervisor)
     sup_agent_name = supervisor_profile.display_name
-    supervisor_config = agent_config_repo.find_by_role(sup_agent_name)
-    if not supervisor_config:
-        supervisor_config = agent_config_repo.find_by_role(supervisor_profile.id)
-    sup_provider_name = supervisor_config.provider if supervisor_config else settings.default_provider
-    sup_model_name = supervisor_config.model_name if supervisor_config else settings.default_model
+    sup_provider_name, sup_model_name = _resolve_supervisor_config(agent_config_repo, supervisor_profile, settings)
     supervisor_provider = llm_factory(sup_provider_name)
 
     async def run_role(r: str, req: str) -> tuple[str, str]:
@@ -302,77 +422,23 @@ async def _debate_generator(
         user_request,
         supervisor_provider,
         sup_model_name,
-        chat_history=chat_history,
         supervisor_name=sup_agent_name,
         interpreter_name=interpreter_profile.display_name,
     )
 
     # 2. Direct Chat Mode (Supervisor responds without council)
     if triage.mode == "direct_chat":
-        yield SupervisorEvent(type=EventType.AGENT_STARTED, role=sup_agent_name, content="")
-
-        hist_lines = []
-        if chat_history:
-            for m in chat_history:
-                hist_lines.append(f"- {m.get('role', 'user')}: {m.get('content', '')}")
-        hist_str = "\n".join(hist_lines)
-
-        direct_prompt = f"""# INSTRUCCIÓN DE SISTEMA
-{supervisor_profile.system_prompt}
-
-# HISTORIAL DE CONVERSACIÓN
-{hist_str or 'Sin historial previo.'}
-
-# MENSAJE DEL USUARIO
-{user_request}
-
-Responde directamente al usuario como {sup_agent_name} en español, manteniendo la personalidad y el tono definidos en tu instrucción de sistema."""
-        start_time = time.perf_counter()
-        resp_text = await asyncio.to_thread(supervisor_provider.complete, direct_prompt, sup_model_name)
-        latency = round(time.perf_counter() - start_time, 2)
-        meta = {
-            "model": sup_model_name,
-            "latency_seconds": str(latency),
-            "tokens": str(max(1, len(resp_text) // 4)),
-        }
-        yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=sup_agent_name, content=resp_text, metadata=meta)
-        yield SupervisorEvent(type=EventType.DONE, role=sup_agent_name, content=resp_text, metadata=meta)
+        async for event in _run_direct_chat_mode(
+            user_request, chat_history, supervisor_profile, supervisor_provider, sup_agent_name, sup_model_name
+        ):
+            yield event
         return
 
     # 3. Single Agent Mode (direct delegation to specialist)
     if triage.mode == "single_agent" and triage.target_agent:
-        target_name = get_profile(triage.target_agent).display_name
-        yield SupervisorEvent(type=EventType.AGENT_STARTED, role=target_name, content="")
-        _, content = await run_role(target_name, user_request)
-        meta = state.agent_metadata.get(target_name, {})
-        yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=target_name, content=content, metadata=meta)
-        yield SupervisorEvent(type=EventType.DONE, role=target_name, content=content, metadata=meta)
+        async for event in _run_single_agent_mode(triage.target_agent, user_request, run_role, state):
+            yield event
         return
-
-    # Helper to execute target agents if redirected via HITL
-    async def _execute_target_agents(agent_names: list[str], base_req: str) -> AsyncGenerator[SupervisorEvent, None]:
-        for a in agent_names:
-            yield SupervisorEvent(type=EventType.AGENT_STARTED, role=a, content="")
-        req = base_req + (f"\n\n## User Refinement\n{state.refinement}" if state.refinement else "")
-        results = await asyncio.gather(*(run_role(a, req) for a in agent_names))
-        for a, content in results:
-            state.agent_outputs[a] = content
-            yield SupervisorEvent(
-                type=EventType.AGENT_COMPLETED,
-                role=a,
-                content=content,
-                metadata=state.agent_metadata.get(a, {}),
-            )
-
-    def _resolve_target_agents(agent_names: list[str]) -> list[str]:
-        resolved = []
-        for a in agent_names:
-            try:
-                p = get_profile(a)
-                resolved.append(p.display_name)
-            except KeyError:
-                resolved.append(a)
-        return resolved
 
     # 4. Adaptive Debate Mode
     if not triage.skip_interpreter:
@@ -385,12 +451,9 @@ Responde directamente al usuario como {sup_agent_name} en español, manteniendo 
         ):
             yield event
         if state.target_agents:
-            target_agents = _resolve_target_agents(state.target_agents)
-            if target_agents:
-                async for event in _execute_target_agents(target_agents, state.formalized):
-                    yield event
-                yield await _run_consolidation(state, supervisor_provider, sup_model_name, supervisor_name=sup_agent_name, topology=active_topology)
-                return
+            async for event in _maybe_divert_to_targets(state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology):
+                yield event
+            return
     else:
         state.formalized = user_request
 
@@ -404,12 +467,9 @@ Responde directamente al usuario como {sup_agent_name} en español, manteniendo 
     ):
         yield event
     if state.target_agents:
-        target_agents = _resolve_target_agents(state.target_agents)
-        if target_agents:
-            async for event in _execute_target_agents(target_agents, state.formalized):
-                yield event
-            yield await _run_consolidation(state, supervisor_provider, sup_model_name, supervisor_name=sup_agent_name, topology=active_topology)
-            return
+        async for event in _maybe_divert_to_targets(state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology):
+            yield event
+        return
 
     async for event in _run_phase_3(
         state,
@@ -419,12 +479,9 @@ Responde directamente al usuario como {sup_agent_name} en español, manteniendo 
     ):
         yield event
     if state.target_agents:
-        target_agents = _resolve_target_agents(state.target_agents)
-        if target_agents:
-            async for event in _execute_target_agents(target_agents, state.formalized):
-                yield event
-            yield await _run_consolidation(state, supervisor_provider, sup_model_name, supervisor_name=sup_agent_name, topology=active_topology)
-            return
+        async for event in _maybe_divert_to_targets(state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology):
+            yield event
+        return
 
     async for event in _run_phase_4(
         state,
@@ -481,6 +538,120 @@ async def _run_phase_1(
                 break
 
 
+async def _run_proposers_round(
+    roles: tuple[str, ...],
+    req: str,
+    run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
+    state: DebateState,
+) -> AsyncGenerator[SupervisorEvent, None]:
+    for role in roles:
+        yield SupervisorEvent(type=EventType.AGENT_STARTED, role=role, content="")
+
+    results = await asyncio.gather(*(run_role(r, req) for r in roles))
+    for role, content in results:
+        state.agent_outputs[role] = content
+        yield SupervisorEvent(
+            type=EventType.AGENT_COMPLETED,
+            role=role,
+            content=content,
+            metadata=state.agent_metadata.get(role, {}),
+        )
+
+
+def _build_reviewer_prompt(
+    reviewer_role: str,
+    roles: tuple[str, ...],
+    round_idx: int,
+    state: DebateState,
+) -> str:
+    prior_critique_block = ""
+    prior_critiques = state.get_agent_critiques(reviewer_role)
+    if prior_critiques:
+        prior_critique_block = (
+            f"## Directivas previas emitidas por ti ({reviewer_role}) en la ronda anterior:\n"
+            f"{prior_critiques[-1]}\n\n"
+            f"⚠️ REGLA DE ORO DE COHERENCIA Y CONSISTENCIA:\n"
+            f"- Evalúa si {', '.join(roles)} han aplicado las mejoras que tú mismo les indicaste en la ronda anterior.\n"
+            f"- Si un agente ha solventado tu objeción (por ejemplo, eliminando un elemento innecesario o simplificando la propuesta), DEBES RECONOCERLO y NO CONTRADECIRTE pidiendo de vuelta lo que indicaste retirar.\n"
+            f"- No muevas los objetivos ('moving the goalposts'). Céntrate únicamente en si las correcciones son válidas y en riesgos residuales reales proporcionados a la escala solicitada.\n\n"
+        )
+
+    proposals_block = "\n\n".join(
+        f"## Propuesta de {r}\n{state.agent_outputs.get(r, '')}" for r in roles
+    )
+
+    return (
+        f"Como {reviewer_role}, revisor imparcial y exigente:\n"
+        f"Analiza de forma crítica y rigurosa las siguientes propuestas {'refinadas' if round_idx > 0 else 'preliminares'} de {', '.join(roles)} para resolver la necesidad planteada:\n\n"
+        f"## Requisitos Formalizados\n{state.formalized}\n\n"
+        f"{prior_critique_block}"
+        f"{proposals_block}\n\n"
+        f"Emite una crítica técnica constructiva pero exigente (máximo 250 palabras en total) indicando:\n"
+        f"1. Si se han cumplido tus directivas previas (si aplica) y qué riesgos residuales persisten.\n"
+        f"2. Puntos ciegos, riesgos, costes o limitaciones futuras proporcionados a la escala real solicitada.\n"
+        f"3. Directivas de mejora concretas y consistentes con tus veredictos previos."
+    )
+
+
+async def _run_review_rounds(
+    state: DebateState,
+    run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
+    roles: tuple[str, ...],
+    reviewer_role: str,
+    review_rounds: int,
+    req: str,
+) -> AsyncGenerator[SupervisorEvent, None]:
+    for round_idx in range(max(0, review_rounds)):
+        yield SupervisorEvent(type=EventType.AGENT_STARTED, role=reviewer_role, content="")
+        prompt = _build_reviewer_prompt(reviewer_role, roles, round_idx, state)
+        _, reviewer_critique = await run_role(reviewer_role, prompt)
+        state.add_agent_critique(reviewer_role, reviewer_critique)
+        yield SupervisorEvent(
+            type=EventType.AGENT_COMPLETED,
+            role=reviewer_role,
+            content=reviewer_critique,
+            metadata=state.agent_metadata.get(reviewer_role, {}),
+        )
+
+        for role in roles:
+            yield SupervisorEvent(type=EventType.AGENT_STARTED, role=role, content="")
+
+        def _build_refine_prompt(role_name: str) -> str:
+            current_proposal = state.agent_outputs.get(role_name, "")
+            return (
+                f"{req}\n\n"
+                f"## Tu propuesta previa\n{current_proposal}\n\n"
+                f"## Crítica y objeciones técnicas de {reviewer_role}\n{reviewer_critique}\n\n"
+                f"Refina y robustece tus propuestas, solventando las observaciones y riesgos identificados por {reviewer_role} y asegurando su viabilidad futura y solidez operativa."
+            )
+
+        results_refine = await asyncio.gather(
+            *(run_role(r, _build_refine_prompt(r)) for r in roles)
+        )
+
+        for role, content in results_refine:
+            state.agent_outputs[role] = content
+            yield SupervisorEvent(
+                type=EventType.AGENT_COMPLETED,
+                role=role,
+                content=content,
+                metadata=state.agent_metadata.get(role, {}),
+            )
+
+
+def _process_phase_2_hitl(state: DebateState, hitl: HITLResponse) -> tuple[bool, str]:
+    if hitl.target_agents:
+        state.target_agents = hitl.target_agents
+
+    if hitl.decision == HITLDecision.APPROVE:
+        state.selected_solutions = hitl.selected_options
+        return True, ""
+    if hitl.decision == HITLDecision.REFINE:
+        state.refinement = hitl.feedback
+        return (True if hitl.target_agents else False), hitl.feedback
+    return False, ""
+
+
 async def _run_phase_2(
     state: DebateState,
     run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
@@ -494,89 +665,13 @@ async def _run_phase_2(
     lead_agent = roles[0] if roles else "proposers"
     while True:
         req = state.formalized + (f"\n\n## User Refinement\n{refinement}" if refinement else "")
-        for role in roles:
-            yield SupervisorEvent(type=EventType.AGENT_STARTED, role=role, content="")
-            
-        results = await asyncio.gather(*(run_role(r, req) for r in roles))
-        
-        for role, content in results:
-            state.agent_outputs[role] = content
-            yield SupervisorEvent(
-                type=EventType.AGENT_COMPLETED,
-                role=role,
-                content=content,
-                metadata=state.agent_metadata.get(role, {}),
-            )
+        async for event in _run_proposers_round(roles, req, run_role, state):
+            yield event
 
-        # Internal pre-deliberation critique loop between reviewer and proposers
-        for round_idx in range(max(0, review_rounds)):
-            yield SupervisorEvent(type=EventType.AGENT_STARTED, role=reviewer_role, content="")
-            
-            prior_critique_block = ""
-            prior_critiques = state.get_agent_critiques(reviewer_role)
-            if prior_critiques:
-                prior_critique_block = (
-                    f"## Directivas previas emitidas por ti ({reviewer_role}) en la ronda anterior:\n"
-                    f"{prior_critiques[-1]}\n\n"
-                    f"⚠️ REGLA DE ORO DE COHERENCIA Y CONSISTENCIA:\n"
-                    f"- Evalúa si {', '.join(roles)} han aplicado las mejoras que tú mismo les indicaste en la ronda anterior.\n"
-                    f"- Si un agente ha solventado tu objeción (por ejemplo, eliminando un elemento innecesario o simplificando la propuesta), DEBES RECONOCERLO y NO CONTRADECIRTE pidiendo de vuelta lo que indicaste retirar.\n"
-                    f"- No muevas los objetivos ('moving the goalposts'). Céntrate únicamente en si las correcciones son válidas y en riesgos residuales reales proporcionados a la escala solicitada.\n\n"
-                )
+        async for event in _run_review_rounds(state, run_role, roles, reviewer_role, review_rounds, req):
+            yield event
 
-            proposals_block = "\n\n".join(
-                f"## Propuesta de {r}\n{state.agent_outputs.get(r, '')}" for r in roles
-            )
-
-            reviewer_review_prompt = (
-                f"Como {reviewer_role}, revisor imparcial y exigente:\n"
-                f"Analiza de forma crítica y rigurosa las siguientes propuestas {'refinadas' if round_idx > 0 else 'preliminares'} de {', '.join(roles)} para resolver la necesidad planteada:\n\n"
-                f"## Requisitos Formalizados\n{state.formalized}\n\n"
-                f"{prior_critique_block}"
-                f"{proposals_block}\n\n"
-                f"Emite una crítica técnica constructiva pero exigente (máximo 250 palabras en total) indicando:\n"
-                f"1. Si se han cumplido tus directivas previas (si aplica) y qué riesgos residuales persisten.\n"
-                f"2. Puntos ciegos, riesgos, costes o limitaciones futuras proporcionados a la escala real solicitada.\n"
-                f"3. Directivas de mejora concretas y consistentes con tus veredictos previos."
-            )
-            _, reviewer_critique = await run_role(reviewer_role, reviewer_review_prompt)
-            state.add_agent_critique(reviewer_role, reviewer_critique)
-            yield SupervisorEvent(
-                type=EventType.AGENT_COMPLETED,
-                role=reviewer_role,
-                content=reviewer_critique,
-                metadata=state.agent_metadata.get(reviewer_role, {}),
-            )
-
-            def _build_refine_prompt(role_name: str) -> str:
-                current_proposal = state.agent_outputs.get(role_name, "")
-                return (
-                    f"{req}\n\n"
-                    f"## Tu propuesta previa\n{current_proposal}\n\n"
-                    f"## Crítica y objeciones técnicas de {reviewer_role}\n{reviewer_critique}\n\n"
-                    f"Refina y robustece tus propuestas, solventando las observaciones y riesgos identificados por {reviewer_role} y asegurando su viabilidad futura y solidez operativa."
-                )
-
-            for role in roles:
-                yield SupervisorEvent(type=EventType.AGENT_STARTED, role=role, content="")
-
-            results_refine = await asyncio.gather(
-                *(run_role(r, _build_refine_prompt(r)) for r in roles)
-            )
-
-            for role, content in results_refine:
-                state.agent_outputs[role] = content
-                yield SupervisorEvent(
-                    type=EventType.AGENT_COMPLETED,
-                    role=role,
-                    content=content,
-                    metadata=state.agent_metadata.get(role, {}),
-                )
-
-        state.hitl2_content = "\n\n---\n\n".join(
-            state.agent_outputs.get(r, "") for r in roles
-        )
-        
+        state.hitl2_content = "\n\n---\n\n".join(state.agent_outputs.get(r, "") for r in roles)
         hitl_event = SupervisorEvent(
             type=EventType.HITL_REQUIRED,
             role=lead_agent,
@@ -586,17 +681,45 @@ async def _run_phase_2(
         yield hitl_event
         hitl = await hitl_callback(hitl_event)
 
-        if hitl.target_agents:
-            state.target_agents = hitl.target_agents
-
-        if hitl.decision == HITLDecision.APPROVE:
-            state.selected_solutions = hitl.selected_options
+        should_break, refinement = _process_phase_2_hitl(state, hitl)
+        if should_break:
             break
-        elif hitl.decision == HITLDecision.REFINE:
-            refinement = hitl.feedback
-            state.refinement = refinement
-            if hitl.target_agents:
-                break
+
+
+def _build_phase_3_prompt(state: DebateState, agent_name: str, refinement: str) -> str:
+    if state.selected_solutions:
+        proposals_text = "The user has selected the following options to review:\n" + ", ".join(state.selected_solutions)
+        proposals_text += "\n\nRefer to the proposals above and ONLY critique the selected ones."
+    else:
+        proposals_text = "Review the following proposals:\n\n" + state.hitl2_content
+
+    critiques_context = ""
+    prior_critiques = state.get_agent_critiques(agent_name)
+    if prior_critiques:
+        critiques_context = (
+            f"\n\n## Directivas y críticas emitidas previamente por ti ({agent_name}) durante este debate:\n"
+            + "\n---\n".join(prior_critiques)
+            + "\n\n⚠️ REGLA DE COHERENCIA EVALUATIVA:\n"
+            "Sé plenamente coherente y consecuente con tus directivas previas. "
+            "Si los agentes proponentes ya corrigieron tus objeciones (por ejemplo, eliminando elementos innecesarios o simplificando la solución), "
+            "valida esa corrección positivamente. ESTÁ TERMINANTEMENTE PROHIBIDO contradecirte exigiendo ahora lo opuesto a lo que ordenaste retirar."
+        )
+
+    user_refinement_context = f"\n\n## User Refinement\n{refinement}" if refinement else ""
+    return state.formalized + "\n\n" + proposals_text + critiques_context + user_refinement_context
+
+
+def _process_phase_3_hitl(state: DebateState, hitl: HITLResponse) -> tuple[bool, str]:
+    if hitl.target_agents:
+        state.target_agents = hitl.target_agents
+
+    if hitl.decision == HITLDecision.APPROVE:
+        state.final_solutions = hitl.selected_options or state.selected_solutions
+        return True, ""
+    if hitl.decision == HITLDecision.REFINE:
+        state.refinement = hitl.feedback
+        return (True if hitl.target_agents else False), hitl.feedback
+    return False, ""
 
 
 async def _run_phase_3(
@@ -607,30 +730,9 @@ async def _run_phase_3(
 ) -> AsyncGenerator[SupervisorEvent, None]:
     refinement = ""
     agent_name = evaluator_role
-    
-    proposals_text = ""
-    if state.selected_solutions:
-        proposals_text = "The user has selected the following options to review:\n" + ", ".join(state.selected_solutions)
-        proposals_text += "\n\nRefer to the proposals above and ONLY critique the selected ones."
-    else:
-        proposals_text = "Review the following proposals:\n\n" + state.hitl2_content
 
     while True:
-        critiques_context = ""
-        prior_critiques = state.get_agent_critiques(agent_name)
-        if prior_critiques:
-            critiques_context = (
-                f"\n\n## Directivas y críticas emitidas previamente por ti ({agent_name}) durante este debate:\n"
-                + "\n---\n".join(prior_critiques)
-                + "\n\n⚠️ REGLA DE COHERENCIA EVALUATIVA:\n"
-                "Sé plenamente coherente y consecuente con tus directivas previas. "
-                "Si los agentes proponentes ya corrigieron tus objeciones (por ejemplo, eliminando elementos innecesarios o simplificando la solución), "
-                "valida esa corrección positivamente. ESTÁ TERMINANTEMENTE PROHIBIDO contradecirte exigiendo ahora lo opuesto a lo que ordenaste retirar."
-            )
-
-        user_refinement_context = f"\n\n## User Refinement\n{refinement}" if refinement else ""
-
-        req = state.formalized + "\n\n" + proposals_text + critiques_context + user_refinement_context
+        req = _build_phase_3_prompt(state, agent_name, refinement)
         yield SupervisorEvent(type=EventType.AGENT_STARTED, role=agent_name, content="")
         _, verdict = await run_role(agent_name, req)
         state.agent_outputs[agent_name] = verdict
@@ -651,17 +753,9 @@ async def _run_phase_3(
         yield hitl_event
         hitl = await hitl_callback(hitl_event)
 
-        if hitl.target_agents:
-            state.target_agents = hitl.target_agents
-
-        if hitl.decision == HITLDecision.APPROVE:
-            state.final_solutions = hitl.selected_options or state.selected_solutions
+        should_break, refinement = _process_phase_3_hitl(state, hitl)
+        if should_break:
             break
-        elif hitl.decision == HITLDecision.REFINE:
-            refinement = hitl.feedback
-            state.refinement = refinement
-            if hitl.target_agents:
-                break
 
 
 async def _run_phase_4(

@@ -18,6 +18,9 @@ __pycache__/
 *.pyc
 *.egg-info/
 *.egg
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
 
 # Environment Variables
 .env

@@ -26,7 +26,7 @@ aiofiles>=23.2              # required for async file IO
 
 # Phase 5: Audio
 faster-whisper>=1.0
-kokoro-onnx>=0.4.7
+kokoro-onnx>=0.6.1
 soundfile>=0.12.1
 vosk>=0.3.45
 

@@ -478,9 +478,9 @@ describe('ChatPanel.vue', () => {
     mockStore.playTtsAudioChunk = vi.fn().mockResolvedValue(undefined)
     mockStore.stopTts = vi.fn()
 
-    const fetchCalls: any[] = []
+    const fetchCalls: Array<{ url: string; opts?: { body?: string } }> = []
     global.fetch = vi.fn().mockImplementation((url, opts) => {
-      fetchCalls.push({ url, opts })
+      fetchCalls.push({ url: String(url), opts })
       return Promise.resolve({
         ok: true,
         arrayBuffer: () => Promise.resolve(new ArrayBuffer(8))
@@ -502,13 +502,11 @@ describe('ChatPanel.vue', () => {
     })
 
     expect(global.fetch).toHaveBeenCalled()
-    for (const call of fetchCalls) {
-      if (call.url === '/api/audio/synthesize') {
-        const body = JSON.parse(call.opts.body)
-        expect(body.text).not.toContain('flowchart')
-        expect(body.text).not.toContain('Frontend --> Backend')
-      }
-    }
+    const synthCall = fetchCalls.find(call => call.url === '/api/audio/synthesize')
+    expect(synthCall).toBeDefined()
+    const body = JSON.parse(synthCall?.opts?.body || '{}')
+    expect(body.text).not.toContain('flowchart')
+    expect(body.text).not.toContain('Frontend --> Backend')
   })
 })
 

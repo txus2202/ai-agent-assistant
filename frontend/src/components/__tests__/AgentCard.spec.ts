@@ -82,9 +82,6 @@ describe('AgentCard.vue', () => {
   })
 
   it('renders provider and model selects and updates config store', async () => {
-    const { useConfigStore } = await import('../../stores/config')
-    const store = useConfigStore()
-
     const wrapper = mount(AgentCard, {
       props: {
         role: 'the_judge',

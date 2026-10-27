@@ -4,12 +4,18 @@ version = "0.1.0"
 description = "AI Software Architecture Assistant — backend engine"
 requires-python = ">=3.11"
 # Runtime dependencies (FastAPI, LLM SDKs, ChromaDB, etc.) will be added in Phase 2+
-dependencies = []
+dependencies = [
+    "certifi>=2026.10.1",
+    # Si se añade compresión o imágenes en el futuro:
+    # "brotli>=1.2.1",
+    # "Pillow>=13.0.0",
+]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=9.0",
     "pytest-asyncio>=0.23",
+    "pytest-cov>=6.0",
 ]
 
 [build-system]

@@ -289,12 +289,16 @@ describe('useDebateStore', () => {
       }
       connect = vi.fn()
       disconnect = vi.fn()
-      constructor() {
-        createdProcessor = this
-      }
     }
     let createdProcessor: MockAudioWorkletNodeWithCapture | null = null
-    vi.stubGlobal('AudioWorkletNode', MockAudioWorkletNodeWithCapture)
+    const MockNodeProxy = new Proxy(MockAudioWorkletNodeWithCapture, {
+      construct(target, args) {
+        const instance = Reflect.construct(target, args) as MockAudioWorkletNodeWithCapture
+        createdProcessor = instance
+        return instance
+      }
+    })
+    vi.stubGlobal('AudioWorkletNode', MockNodeProxy)
 
     store.startAutoListen()
     expect(store.isAutoListenEnabled).toBe(true)

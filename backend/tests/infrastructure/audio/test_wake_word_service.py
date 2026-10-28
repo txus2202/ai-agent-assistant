@@ -152,3 +152,45 @@ def test_wake_word_service_detects_hitl_commands(mock_kaldi, mock_model_class):
     assert bool(det_refine) is True
     assert det_refine.command == "refine"
 
+    # Test "finalizar" / "terminar" -> finish
+    mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": "finalizar"})
+    det_finish = service.process_chunk(audio_chunk)
+    assert bool(det_finish) is True
+    assert det_finish.command == "finish"
+
+    mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": "terminar"})
+    det_finish2 = service.process_chunk(audio_chunk)
+    assert bool(det_finish2) is True
+    assert det_finish2.command == "finish"
+
+    # Test "desviar" / "bifurcar" -> divert
+    mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": "desviar"})
+    det_divert = service.process_chunk(audio_chunk)
+    assert bool(det_divert) is True
+    assert det_divert.command == "divert"
+
+    mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": "bifurcar"})
+    det_divert2 = service.process_chunk(audio_chunk)
+    assert bool(det_divert2) is True
+    assert det_divert2.command == "divert"
+
+
+@patch("src.infrastructure.audio.wake_word_service.Model")
+@patch("src.infrastructure.audio.wake_word_service.KaldiRecognizer")
+def test_wake_word_service_detects_silence_commands(mock_kaldi, mock_model_class):
+    mock_recognizer_instance = MagicMock()
+    mock_recognizer_instance.AcceptWaveform.return_value = False
+    mock_kaldi.return_value = mock_recognizer_instance
+
+    service = WakeWordService()
+    audio_chunk = b'\x00' * 4096
+
+    silence_phrases = ["silencio", "silenciar", "calla", "callate", "cállate", "por favor callate ya"]
+    for phrase in silence_phrases:
+        mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": phrase})
+        det = service.process_chunk(audio_chunk)
+        assert bool(det) is True, f"Failed for phrase: {phrase}"
+        assert det.command == "silence", f"Failed command for phrase: {phrase}"
+
+
+

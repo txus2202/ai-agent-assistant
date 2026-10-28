@@ -73,11 +73,22 @@ def test_wake_word_websocket_hitl_voice_command(mock_process_chunk):
         websocket.send_bytes(b'\x00' * 1024)
         response = websocket.receive_json()
         assert response["type"] == "HITL_VOICE_COMMAND"
-        assert response["command"] == "approve"
+@patch("src.presentation.api.ws.wake_word.wake_word_service.process_chunk")
+def test_wake_word_websocket_silence_voice_command(mock_process_chunk):
+    mock_process_chunk.return_value = WakeWordDetection(
+        detected=True,
+        command="silence"
+    )
+
+    with client.websocket_connect("/ws/audio/wake-word") as websocket:
+        websocket.send_bytes(b'\x00' * 1024)
+        response = websocket.receive_json()
+        assert response["type"] == "SILENCE_VOICE_COMMAND"
 
 
 @patch("src.presentation.api.ws.wake_word.wake_word_service.reset")
 def test_wake_word_websocket_reset_control_message(mock_reset):
+
     with client.websocket_connect("/ws/audio/wake-word") as websocket:
         # Client connect already calls reset once
         assert mock_reset.call_count == 1

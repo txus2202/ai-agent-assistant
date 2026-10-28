@@ -4,7 +4,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from src.infrastructure.audio.wake_word_service import WakeWordService
 
-from typing import Any
+from typing import Any, Mapping
 
 logger = logging.getLogger(__name__)
 
@@ -15,14 +15,22 @@ router = APIRouter(prefix="/ws/audio", tags=["Audio"])
 wake_word_service = WakeWordService()
 
 
+
 async def _send_detection_event(websocket: WebSocket, detected: Any) -> None:
     if getattr(detected, "command", None):
         cmd = detected.command
-        logger.info(f"HITL voice command detected: {cmd}! Notifying client.")
-        await websocket.send_text(json.dumps({
-            "type": "HITL_VOICE_COMMAND",
-            "command": cmd,
-        }))
+        if cmd == "silence":
+            logger.info("Silence voice command detected! Notifying client.")
+            await websocket.send_text(json.dumps({
+                "type": "SILENCE_VOICE_COMMAND",
+            }))
+        else:
+            logger.info(f"HITL voice command detected: {cmd}! Notifying client.")
+            await websocket.send_text(json.dumps({
+                "type": "HITL_VOICE_COMMAND",
+                "command": cmd,
+            }))
+
     else:
         role = getattr(detected, "agent_role", None) or "supervisor"
         name = getattr(detected, "display_name", None) or role
@@ -45,7 +53,7 @@ def _handle_control_text(text: str) -> None:
         pass
 
 
-async def _process_incoming_message(websocket: WebSocket, message: dict) -> None:
+async def _process_incoming_message(websocket: WebSocket, message: Mapping[str, Any]) -> None:
     if message.get("type") == "websocket.disconnect":
         raise WebSocketDisconnect(message.get("code", 1000))
 

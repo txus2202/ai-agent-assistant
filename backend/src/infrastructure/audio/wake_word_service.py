@@ -124,61 +124,62 @@ class WakeWordService:
             self.recognizer = None
             self.is_initialized = True
         
+    def _decode_audio_text(self, audio_chunk_pcm_16khz: bytes) -> str:
+        if not self.recognizer:
+            return ""
+        if self.recognizer.AcceptWaveform(audio_chunk_pcm_16khz):
+            res = json.loads(self.recognizer.Result())
+            return res.get("text", "")
+        res = json.loads(self.recognizer.PartialResult())
+        return res.get("partial", "")
+
+    @staticmethod
+    def _matches_keyword(keyword: str, norm_text: str, raw_lower: str) -> bool:
+        pattern = rf"\b{re.escape(keyword)}\b"
+        return bool(re.search(pattern, norm_text) or re.search(pattern, raw_lower))
+
+    def _match_silence(self, norm_text: str, raw_lower: str, text: str) -> WakeWordDetection | None:
+        for trigger, cmd in self._SILENCE_TRIGGERS.items():
+            if self._matches_keyword(trigger, norm_text, raw_lower):
+                print(f"[WW] Silence voice command '{trigger}' detected in text: '{text}'")
+                return WakeWordDetection(detected=True, command=cmd)
+        return None
+
+    def _match_agent(self, norm_text: str, raw_lower: str, text: str) -> WakeWordDetection | None:
+        for trigger, (role, display_name) in self._agent_triggers.items():
+            if self._matches_keyword(trigger, norm_text, raw_lower):
+                print(f"[WW] Wake word '{trigger}' detected for agent '{display_name}' ({role}) in text: '{text}'")
+                return WakeWordDetection(detected=True, agent_role=role, display_name=display_name)
+        return None
+
+    def _match_hitl(self, norm_text: str, raw_lower: str, text: str) -> WakeWordDetection | None:
+        for trigger, cmd in self._HITL_TRIGGERS.items():
+            if self._matches_keyword(trigger, norm_text, raw_lower):
+                print(f"[WW] HITL voice command '{trigger}' -> '{cmd}' detected in text: '{text}'")
+                return WakeWordDetection(detected=True, command=cmd)
+        return None
+
     def process_chunk(self, audio_chunk_pcm_16khz: bytes) -> WakeWordDetection:
         """
         Process a chunk of 16kHz Int16 PCM audio.
         Returns WakeWordDetection indicating whether a registered agent wake word was detected.
         """
         self._initialize_model()
-        if not self.recognizer:
-            return WakeWordDetection(detected=False)
-
-        # Feed audio to Vosk
-        if self.recognizer.AcceptWaveform(audio_chunk_pcm_16khz):
-            res = json.loads(self.recognizer.Result())
-            text = res.get("text", "")
-        else:
-            res = json.loads(self.recognizer.PartialResult())
-            text = res.get("partial", "")
-
+        text = self._decode_audio_text(audio_chunk_pcm_16khz)
         if not text:
             return WakeWordDetection(detected=False)
 
         norm_text = self._normalize_text(text)
+        raw_lower = text.lower()
         logger.debug(f"[WW] Vosk decoded: '{text}' (normalized: '{norm_text}')")
 
-        # Check for silence triggers (available at all times)
-        for trigger, cmd in self._SILENCE_TRIGGERS.items():
-            pattern = rf"\b{re.escape(trigger)}\b"
-            if re.search(pattern, norm_text) or re.search(pattern, text.lower()):
-                print(f"[WW] Silence voice command '{trigger}' detected in text: '{text}'")
-                return WakeWordDetection(
-                    detected=True,
-                    command=cmd
-                )
+        detection = (
+            self._match_silence(norm_text, raw_lower, text)
+            or self._match_agent(norm_text, raw_lower, text)
+            or self._match_hitl(norm_text, raw_lower, text)
+        )
+        return detection or WakeWordDetection(detected=False)
 
-        # Check for registered agent trigger keywords
-        for trigger, (role, display_name) in self._agent_triggers.items():
-            pattern = rf"\b{re.escape(trigger)}\b"
-            if re.search(pattern, norm_text) or re.search(pattern, text.lower()):
-                print(f"[WW] Wake word '{trigger}' detected for agent '{display_name}' ({role}) in text: '{text}'")
-                return WakeWordDetection(
-                    detected=True,
-                    agent_role=role,
-                    display_name=display_name
-                )
-
-        # Check for HITL decision commands
-        for trigger, cmd in self._HITL_TRIGGERS.items():
-            pattern = rf"\b{re.escape(trigger)}\b"
-            if re.search(pattern, norm_text) or re.search(pattern, text.lower()):
-                print(f"[WW] HITL voice command '{trigger}' -> '{cmd}' detected in text: '{text}'")
-                return WakeWordDetection(
-                    detected=True,
-                    command=cmd
-                )
-
-        return WakeWordDetection(detected=False)
         
     def reset(self):
         """Reset the internal state of the wake word models (useful after detection)."""

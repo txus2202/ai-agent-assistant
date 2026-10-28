@@ -55,6 +55,8 @@ import json
 import re
 from dataclasses import dataclass, field
 
+_SECTION_SEPARATOR = "\n\n---\n\n"
+
 # ---------------------------------------------------------------------------
 # Prompt template for final consolidation (in Spanish, authoritative)
 # ---------------------------------------------------------------------------
@@ -435,6 +437,29 @@ async def _execute_phase_1_if_needed(
         yield event
 
 
+async def _execute_phase_step(
+    phase_gen: AsyncGenerator[SupervisorEvent, None],
+    state: DebateState,
+    run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
+    supervisor_provider: Any,
+    sup_model_name: str,
+    sup_agent_name: str,
+    active_topology: DebateTopology,
+) -> AsyncGenerator[SupervisorEvent, None]:
+    async for event in _run_phase_with_divert(
+        phase_gen, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology
+    ):
+        yield event
+    if state.finish_early and not state.target_agents:
+        yield await _run_consolidation(
+            state, supervisor_provider, sup_model_name, supervisor_name=sup_agent_name, topology=active_topology
+        )
+
+
+def _should_halt_phases(state: DebateState) -> bool:
+    return bool(state.finish_early or state.target_agents)
+
+
 async def _run_adaptive_debate(
     state: DebateState,
     user_request: str,
@@ -450,15 +475,11 @@ async def _run_adaptive_debate(
     phase1 = _execute_phase_1_if_needed(
         state, user_request, run_role, hitl_callback, triage, active_topology.interpreters
     )
-    async for event in _run_phase_with_divert(
+    async for event in _execute_phase_step(
         phase1, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology
     ):
         yield event
-    if state.finish_early or state.target_agents:
-        if not state.target_agents:
-            yield await _run_consolidation(
-                state, supervisor_provider, sup_model_name, supervisor_name=sup_agent_name, topology=active_topology
-            )
+    if _should_halt_phases(state):
         return
 
     phase2 = _run_phase_2(
@@ -469,15 +490,11 @@ async def _run_adaptive_debate(
         reviewer_roles=active_topology.reviewers,
         review_rounds=effective_review_rounds,
     )
-    async for event in _run_phase_with_divert(
+    async for event in _execute_phase_step(
         phase2, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology
     ):
         yield event
-    if state.finish_early or state.target_agents:
-        if not state.target_agents:
-            yield await _run_consolidation(
-                state, supervisor_provider, sup_model_name, supervisor_name=sup_agent_name, topology=active_topology
-            )
+    if _should_halt_phases(state):
         return
 
     phase3 = _run_phase_3(
@@ -486,15 +503,11 @@ async def _run_adaptive_debate(
         hitl_callback,
         evaluator_roles=active_topology.evaluators,
     )
-    async for event in _run_phase_with_divert(
+    async for event in _execute_phase_step(
         phase3, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology
     ):
         yield event
-    if state.finish_early or state.target_agents:
-        if not state.target_agents:
-            yield await _run_consolidation(
-                state, supervisor_provider, sup_model_name, supervisor_name=sup_agent_name, topology=active_topology
-            )
+    if _should_halt_phases(state):
         return
 
     async for event in _run_phase_4(
@@ -507,6 +520,7 @@ async def _run_adaptive_debate(
     yield await _run_consolidation(
         state, supervisor_provider, sup_model_name, supervisor_name=sup_agent_name, topology=active_topology
     )
+
 
 
 async def _debate_generator(
@@ -583,6 +597,53 @@ async def _debate_generator(
 
 
 
+async def _execute_interpreters_round(
+    interpreter_roles: tuple[str, ...],
+    req: str,
+    run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
+    state: DebateState,
+) -> AsyncGenerator[SupervisorEvent, None]:
+    for agent_name in interpreter_roles:
+        yield SupervisorEvent(type=EventType.AGENT_STARTED, role=agent_name, content="")
+
+    results = await asyncio.gather(*(run_role(agent_name, req) for agent_name in interpreter_roles))
+    for agent_name, nl_content in results:
+        state.agent_outputs[agent_name] = nl_content
+        yield SupervisorEvent(
+            type=EventType.AGENT_COMPLETED,
+            role=agent_name,
+            content=nl_content,
+            metadata=state.agent_metadata.get(agent_name, {}),
+        )
+
+
+def _process_phase_1_hitl(
+    state: DebateState,
+    hitl: HITLResponse,
+    combined_content: str,
+) -> tuple[bool, str]:
+    if hitl.decision == HITLDecision.FINISH:
+        state.finish_early = True
+        state.formalized = combined_content
+        return True, ""
+
+    if hitl.target_agents:
+        state.target_agents = hitl.target_agents
+
+    if hitl.decision in (HITLDecision.APPROVE, HITLDecision.DIVERT):
+        state.formalized = combined_content
+        return True, ""
+
+    if hitl.decision == HITLDecision.REFINE:
+        state.refinement = hitl.feedback
+        if hitl.target_agents:
+            state.formalized = combined_content
+            return True, ""
+        return False, hitl.feedback
+
+    return False, ""
+
+
 async def _run_phase_1(
     state: DebateState,
     user_request: str,
@@ -598,20 +659,10 @@ async def _run_phase_1(
     lead_agent = interpreter_roles[0]
     while True:
         req = user_request + (f"\n\n## User Refinement\n{refinement}" if refinement else "")
-        for agent_name in interpreter_roles:
-            yield SupervisorEvent(type=EventType.AGENT_STARTED, role=agent_name, content="")
+        async for event in _execute_interpreters_round(interpreter_roles, req, run_role, state):
+            yield event
 
-        results = await asyncio.gather(*(run_role(agent_name, req) for agent_name in interpreter_roles))
-        for agent_name, nl_content in results:
-            state.agent_outputs[agent_name] = nl_content
-            yield SupervisorEvent(
-                type=EventType.AGENT_COMPLETED,
-                role=agent_name,
-                content=nl_content,
-                metadata=state.agent_metadata.get(agent_name, {}),
-            )
-
-        combined_content = "\n\n---\n\n".join(state.agent_outputs.get(a, "") for a in interpreter_roles)
+        combined_content = _SECTION_SEPARATOR.join(state.agent_outputs.get(a, "") for a in interpreter_roles)
         hitl_event = SupervisorEvent(
             type=EventType.HITL_REQUIRED,
             role=lead_agent,
@@ -621,23 +672,10 @@ async def _run_phase_1(
         yield hitl_event
         hitl = await hitl_callback(hitl_event)
 
-        if hitl.decision == HITLDecision.FINISH:
-            state.finish_early = True
-            state.formalized = combined_content
+        should_break, refinement = _process_phase_1_hitl(state, hitl, combined_content)
+        if should_break:
             break
 
-        if hitl.target_agents:
-            state.target_agents = hitl.target_agents
-
-        if hitl.decision in (HITLDecision.APPROVE, HITLDecision.DIVERT):
-            state.formalized = combined_content
-            break
-        elif hitl.decision == HITLDecision.REFINE:
-            refinement = hitl.feedback
-            state.refinement = refinement
-            if hitl.target_agents:
-                state.formalized = combined_content
-                break
 
 
 async def _run_proposers_round(
@@ -759,6 +797,21 @@ def _process_phase_2_hitl(state: DebateState, hitl: HITLResponse) -> tuple[bool,
     return False, ""
 
 
+async def _execute_reviewers(
+    state: DebateState,
+    run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
+    roles: tuple[str, ...],
+    reviewer_roles: tuple[str, ...],
+    review_rounds: int,
+    req: str,
+) -> AsyncGenerator[SupervisorEvent, None]:
+    if not reviewer_roles or review_rounds <= 0:
+        return
+    for reviewer_role in reviewer_roles:
+        async for event in _run_review_rounds(state, run_role, roles, reviewer_role, review_rounds, req):
+            yield event
+
+
 async def _run_phase_2(
     state: DebateState,
     run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
@@ -778,12 +831,10 @@ async def _run_phase_2(
         async for event in _run_proposers_round(roles, req, run_role, state):
             yield event
 
-        if reviewer_roles and review_rounds > 0:
-            for reviewer_role in reviewer_roles:
-                async for event in _run_review_rounds(state, run_role, roles, reviewer_role, review_rounds, req):
-                    yield event
+        async for event in _execute_reviewers(state, run_role, roles, reviewer_roles, review_rounds, req):
+            yield event
 
-        state.hitl2_content = "\n\n---\n\n".join(state.agent_outputs.get(r, "") for r in roles)
+        state.hitl2_content = _SECTION_SEPARATOR.join(state.agent_outputs.get(r, "") for r in roles)
         hitl_event = SupervisorEvent(
             type=EventType.HITL_REQUIRED,
             role=lead_agent,
@@ -796,6 +847,7 @@ async def _run_phase_2(
         should_break, refinement = _process_phase_2_hitl(state, hitl)
         if should_break:
             break
+
 
 
 def _build_phase_3_prompt(state: DebateState, agent_name: str, refinement: str) -> str:
@@ -868,7 +920,7 @@ async def _run_phase_3(
                 metadata=state.agent_metadata.get(agent_name, {}),
             )
 
-        combined_verdict = "\n\n---\n\n".join(state.agent_outputs.get(a, "") for a in evaluator_roles)
+        combined_verdict = _SECTION_SEPARATOR.join(state.agent_outputs.get(a, "") for a in evaluator_roles)
         hitl_event = SupervisorEvent(
             type=EventType.HITL_REQUIRED,
             role=lead_agent,
@@ -936,7 +988,7 @@ async def _run_consolidation(
     final_response = await asyncio.to_thread(default_provider.complete, consolidation_prompt, default_model)
     latency = round(time.perf_counter() - start_time, 2)
 
-    usage = {}
+    usage: dict[str, Any] = {}
     if hasattr(default_provider, "get_last_usage"):
         usage = default_provider.get_last_usage() or {}
 

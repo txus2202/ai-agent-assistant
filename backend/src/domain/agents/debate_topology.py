@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from src.domain.agents.sub_agent_profiles import get_profile, project_root
 
@@ -73,12 +73,12 @@ def _resolve_topology_path(path: str | Path | None = None) -> Path:
     )
 
 
-def _to_string_tuple(raw_value: Any) -> tuple[str, ...]:
+def _to_string_list(raw_value: Any) -> list[str]:
     if not raw_value:
-        return ()
+        return []
     if isinstance(raw_value, (list, tuple)):
-        return tuple(str(x) for x in raw_value)
-    return (str(raw_value),)
+        return [str(x) for x in raw_value]
+    return [str(raw_value)]
 
 
 def load_topology(path: str | Path | None = None) -> DebateTopology:
@@ -96,11 +96,11 @@ def load_topology(path: str | Path | None = None) -> DebateTopology:
 
     top = DebateTopology(
         supervisor=str(data["supervisor"]),
-        interpreters=_to_string_tuple(data.get("interpreters")),
-        proposers=_to_string_tuple(data.get("proposers")),
-        reviewers=_to_string_tuple(data.get("reviewers")),
-        evaluators=_to_string_tuple(data.get("evaluators")),
-        implementers=_to_string_tuple(data.get("implementers")),
+        interpreters=tuple(_to_string_list(data.get("interpreters"))),
+        proposers=tuple(_to_string_list(data.get("proposers"))),
+        reviewers=tuple(_to_string_list(data.get("reviewers"))),
+        evaluators=tuple(_to_string_list(data.get("evaluators"))),
+        implementers=tuple(_to_string_list(data.get("implementers"))),
     )
     top.validate()
     return top

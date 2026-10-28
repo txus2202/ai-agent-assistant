@@ -776,6 +776,51 @@ export const useDebateStore = defineStore('debate', () => {
       }
     }
 
+    function handleHitlVoiceCommand(command: string) {
+      if (!isHitlRequired.value) return
+
+      if (command === 'refine') {
+        stopTts()
+        isWakeWordTriggered.value = true
+        setTimeout(() => {
+          isWakeWordTriggered.value = false
+        }, 1000)
+        return
+      }
+
+      const decisionMap: Record<string, HitlDecisionType> = {
+        approve: 'approve',
+        reject: 'reject',
+        finish: 'finish',
+        divert: 'divert',
+      }
+      const decision = decisionMap[command]
+      if (decision) {
+        submitHitlDecision(decision)
+      }
+    }
+
+    function handleWakeWordDetected(data: { agent_role?: string; display_name?: string }) {
+      console.log('[WW] Wake word detected for agent:', data.agent_role || 'supervisor')
+      if (isHitlRequired.value) {
+        const targetIdentifier = data.agent_role || data.display_name
+        if (targetIdentifier) {
+          toggleHitlTargetAgent(targetIdentifier)
+        }
+        return
+      }
+
+      stopTts() // Interrupt any ongoing TTS
+      if (data.agent_role) {
+        selectedAgent.value = data.agent_role
+      }
+      isWakeWordTriggered.value = true
+
+      setTimeout(() => {
+        isWakeWordTriggered.value = false
+      }, 1000)
+    }
+
     wakeWordWs.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
@@ -786,45 +831,11 @@ export const useDebateStore = defineStore('debate', () => {
         }
         if (data.type === 'HITL_VOICE_COMMAND') {
           console.log('[WW] HITL Voice command received:', data.command)
-          if (isHitlRequired.value) {
-            if (data.command === 'approve') {
-              submitHitlDecision('approve')
-            } else if (data.command === 'reject') {
-              submitHitlDecision('reject')
-            } else if (data.command === 'finish') {
-              submitHitlDecision('finish')
-            } else if (data.command === 'divert') {
-              submitHitlDecision('divert')
-            } else if (data.command === 'refine') {
-              stopTts()
-              // Trigger voice recording so user can dictate refinement
-              isWakeWordTriggered.value = true
-              setTimeout(() => {
-                isWakeWordTriggered.value = false
-              }, 1000)
-            }
-          }
-        } else if (data.type === 'WAKE_WORD_DETECTED') {
-
-          console.log('[WW] Wake word detected for agent:', data.agent_role || 'supervisor')
-          if (isHitlRequired.value) {
-            const targetIdentifier = data.agent_role || data.display_name
-            if (targetIdentifier) {
-              toggleHitlTargetAgent(targetIdentifier)
-            }
-            return
-          }
-
-          stopTts() // Interrupt any ongoing TTS
-          if (data.agent_role) {
-            selectedAgent.value = data.agent_role
-          }
-          isWakeWordTriggered.value = true // UI should watch this to start recording
-          
-          // Reset after a short delay so it can be triggered again later
-          setTimeout(() => {
-            isWakeWordTriggered.value = false
-          }, 1000)
+          handleHitlVoiceCommand(data.command)
+          return
+        }
+        if (data.type === 'WAKE_WORD_DETECTED') {
+          handleWakeWordDetected(data)
         }
       } catch {}
     }

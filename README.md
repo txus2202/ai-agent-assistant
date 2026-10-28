@@ -8,7 +8,7 @@ The system acts as a team of experts orchestrated under the **Supervisor Pattern
 
 - 🔒 **Total Privacy (Local-First):** LLM integration via secure APIs (Gemini Enterprise) and 100% local execution for both the vector database (ChromaDB) and voice models. No sensitive corporate data ever leaks to public clouds.
 - 🧠 **Multimodal RAG with Obsidian:** Capable of reading, vectorizing, and understanding both Markdown text files (`.md`) and locally stored architectural diagrams. The system continuously learns by saving its finalized solutions back into the _Vault_.
-- 🗣️ **Voice Interaction (STT/TTS):** Hands-free system control via voice commands processed locally using `Whisper.cpp`, with responses naturally synthesized by `Piper`.
+- 🗣️ **Voice Interaction (STT/TTS/Wake Word):** Hands-free system control via voice commands processed locally with `Faster-Whisper` (STT), natural neural synthesis with `Kokoro ONNX` (TTS), and real-time multi-agent wake-word detection powered by `Vosk`.
 - 🏗️ **Clean Architecture & TDD:** Highly testable modular monolithic design. The application's core domain does not depend on any external AI frameworks (like Google ADK) or infrastructure libraries.
 - ⚡ **Real-Time Streaming:** A FastAPI backend communicating via WebSockets with a Vue 3 SPA to stream the agent's reasoning process and output tokens live.
 
@@ -140,15 +140,31 @@ flowchart TD
 
 ### 2. Human-In-The-Loop (HITL) Controls
 
-At each debate checkpoint, the user has full governance through explicit control actions:
+At each debate checkpoint, the user has full governance through explicit control actions available both via the web UI and hands-free voice commands:
 
-| Action | Control Payload | Description |
-| :--- | :--- | :--- |
-| **✓ Aceptar** | `decision: "approve"` | Accepts the current phase output and proceeds to the next phase in the topology. |
-| **✏ Refinar** | `decision: "refine"` | Reopens the current phase with specific natural language feedback provided by the user. |
-| **🔀 Desviar** | `decision: "divert"` | Bypasses remaining default phases and delegates directly to one or more user-selected target agents. |
-| **🏁 Finalizar** | `decision: "finish"` | Immediately concludes the debate, skipping remaining phases and directing the supervisor (`Atenea`) to consolidate all gathered contributions into the final binding document. |
-| **✗ Rechazar** | `decision: "reject"` | Discards the current proposal and triggers a re-run of the phase. |
+| Action | Control Payload | Voice Triggers (Vosk) | Description |
+| :--- | :--- | :--- | :--- |
+| **✓ Aceptar** | `decision: "approve"` | *"aceptar"*, *"aprobar"*, *"adelante"*, *"conforme"*, *"de acuerdo"* | Accepts current phase output and proceeds to the next phase in the topology. |
+| **✏ Refinar** | `decision: "refine"` | *"refinar"*, *"corregir"*, *"cambiar"*, *"modificar"*, *"ajustar"* | Reopens the current phase with specific natural language feedback. Automatically arms the microphone for dictation. |
+| **🔀 Desviar** | `decision: "divert"` | *"desviar"*, *"bifurcar"*, *"derivar"*, *"delegar"* | Bypasses remaining default phases and delegates directly to one or more user-selected target agents. |
+| **🏁 Finalizar** | `decision: "finish"` | *"finalizar"*, *"terminar"*, *"concluir"*, *"fin"* | Immediately concludes the debate, skipping remaining phases and directing the supervisor (`Atenea`) to consolidate all contributions into the final document. |
+| **✗ Rechazar** | `decision: "reject"` | *"rechazar"*, *"denegar"*, *"cancela"*, *"cancelar"*, *"descarta"*, *"descartar"* | Discards the current proposal and triggers a re-run of the phase. |
+
+#### 🎙️ Voice Controls & Context-Aware Audio Workflows
+
+1. **Context-Aware Agent Voice Toggling in HITL:**
+   - **When HITL is active (`isHitlRequired = true`):** Saying an agent's name or phonetic alias (e.g. *"Hestia"*, *"Ícaro"*) dynamically toggles (selects/deselects) that agent in the HITL target chip list without triggering regular query recording or interrupting the supervisor.
+     - *Example:* Saying *"Hestia"* selects Hestia; saying *"Ícaro"* adds Ícaro (both selected); saying *"Hestia"* again deselects Hestia (only Ícaro remains selected). Saying *"desviar"* delegates immediately to the selected set.
+   - **When HITL is inactive (`isHitlRequired = false`):** Pronouncing an agent's name operates as their standard wake word, selecting the agent in the dropdown and opening voice capture for queries.
+
+2. **Automatic Speech Interruption on Action Execution:**
+   - Executing any HITL command or decision—either by voice command or by clicking any action button—instantly stops speech synthesis (`stopTts()`), silencing the supervisor immediately.
+
+3. **Global Silence Wake Word (Mute Anytime):**
+   - Available **at all times** (during active debates, reading messages, or idle states):
+   - **Triggers:** *"silencio"*, *"silenciar"*, *"calla"*, *"callate"*, *"cállate"*.
+   - Instantly interrupts audio playback and resets the audio player, identical to clicking the "Silenciar" button on chat message cards.
+
 
 ### 3. External Agent Catalog (`agents.yaml`) & Dynamic Registry
 

@@ -52,3 +52,17 @@ def test_put_agent_config_invalid_role(client):
     }
     response = client.put("/config/agents/invalid_role", json=payload)
     assert response.status_code == 404
+
+def test_get_topology(client):
+    response = client.get("/config/topology")
+    assert response.status_code == 200
+    data = response.json()
+    assert "supervisor" in data
+    assert data["supervisor"] == "Atenea"
+    assert "interpreters" in data
+    assert "proposers" in data
+    assert "reviewers" in data
+    assert "evaluators" in data
+    assert "implementers" in data
+    assert isinstance(data["interpreters"], list)
+

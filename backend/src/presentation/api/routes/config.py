@@ -1,4 +1,4 @@
-from typing import Annotated, List, Dict
+from typing import Annotated, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -98,3 +98,21 @@ async def update_agent_config(
     )
     repo.save(config)
     return {"ok": True}
+
+
+@router.get("/topology")
+async def get_topology() -> Dict[str, Any]:
+    """
+    Devuelve la topología de roles y asignación de agentes configurada en topology.yaml.
+    """
+    from src.domain.agents.debate_topology import load_topology
+    top = load_topology()
+    return {
+        "supervisor": top.supervisor,
+        "interpreters": list(top.interpreters),
+        "proposers": list(top.proposers),
+        "reviewers": list(top.reviewers),
+        "evaluators": list(top.evaluators),
+        "implementers": list(top.implementers),
+    }
+

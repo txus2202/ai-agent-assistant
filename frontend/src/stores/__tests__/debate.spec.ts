@@ -960,7 +960,82 @@ describe('useDebateStore', () => {
 
     store.stopAutoListen()
   })
+
+  it('tracks dynamic executionTrail live and resets on clearSession', () => {
+    const store = useDebateStore()
+    store.agents = [
+      { role: 'supervisor', name: 'Atenea', state: 'STANDBY' },
+      { role: 'nl_interpreter', name: 'Hermes', state: 'STANDBY' },
+      { role: 'frontend_developer', name: 'Aracne', state: 'STANDBY' }
+    ]
+
+    expect(store.executionTrail).toEqual([])
+
+    store.connect()
+    store.isConnected = true
+    store.startDebate('Requisito')
+    expect(store.executionTrail).toEqual(['Atenea'])
+
+    // Hermes starts
+    store.handleSupervisorEvent({
+      type: 'agent_started',
+      role: 'nl_interpreter'
+    })
+    expect(store.executionTrail).toEqual(['Atenea', 'Hermes'])
+
+    // Repeating agent_started for same agent doesn't duplicate consecutive entry
+    store.handleSupervisorEvent({
+      type: 'agent_started',
+      role: 'nl_interpreter'
+    })
+    expect(store.executionTrail).toEqual(['Atenea', 'Hermes'])
+
+    // Aracne starts
+    store.handleSupervisorEvent({
+      type: 'agent_started',
+      role: 'frontend_developer'
+    })
+    expect(store.executionTrail).toEqual(['Atenea', 'Hermes', 'Aracne'])
+
+    // Done event consolidates back to Atenea
+    store.handleSupervisorEvent({
+      type: 'done',
+      role: 'supervisor',
+      content: 'Debate finalizado.'
+    })
+    expect(store.executionTrail).toEqual(['Atenea', 'Hermes', 'Aracne', 'Atenea'])
+
+    // Clear session empties the trail
+    store.clearSession()
+    expect(store.executionTrail).toEqual([])
+  })
+
+  it('fetches topology from backend endpoint /api/config/topology', async () => {
+    const store = useDebateStore()
+    const mockTopology = {
+      supervisor: 'Atenea',
+      interpreters: ['Hermes'],
+      proposers: ['Ícaro', 'Hestia'],
+      reviewers: ['Sphinx'],
+      evaluators: ['Sphinx'],
+      implementers: ['Aracne', 'Hefesto']
+    }
+
+    const originalFetch = global.fetch
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue(mockTopology)
+    } as unknown as Response)
+
+    try {
+      await store.fetchTopology()
+      expect(store.topology).toEqual(mockTopology)
+    } finally {
+      global.fetch = originalFetch
+    }
+  })
 })
+
 
 describe('cleanAgentMessageContent', () => {
   it('strips bracketed role tags', () => {

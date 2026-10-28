@@ -245,7 +245,16 @@ const selectableAgents = computed(() => {
   }))
 })
 
+watch(() => store.hitlTargetAgents, (newVal) => {
+  if (newVal) {
+    selectedTargetAgents.value = [...newVal]
+  }
+}, { deep: true, immediate: true })
+
 const toggleTargetAgent = (role: string) => {
+  if (typeof store.toggleHitlTargetAgent === 'function') {
+    store.toggleHitlTargetAgent(role)
+  }
   if (selectedTargetAgents.value.includes(role)) {
     selectedTargetAgents.value = selectedTargetAgents.value.filter(r => r !== role)
   } else {
@@ -254,20 +263,25 @@ const toggleTargetAgent = (role: string) => {
 }
 
 const isTargetSelected = (role: string) => {
+  if (store.hitlTargetAgents && store.hitlTargetAgents.length > 0) {
+    return store.hitlTargetAgents.includes(role)
+  }
   return selectedTargetAgents.value.includes(role)
 }
 
 const handleHitlApprove = () => {
-  store.submitHitlDecision('approve', '', selectedTargetAgents.value)
+  const targets = store.hitlTargetAgents?.length ? store.hitlTargetAgents : selectedTargetAgents.value
+  store.submitHitlDecision('approve', '', targets)
   selectedTargetAgents.value = []
 }
 
 const handleHitlDivert = () => {
-  if (selectedTargetAgents.value.length === 0) {
+  const targets = store.hitlTargetAgents?.length ? store.hitlTargetAgents : selectedTargetAgents.value
+  if (targets.length === 0) {
     alert('Por favor selecciona al menos un agente en los chips para desviar la tarea.')
     return
   }
-  store.submitHitlDecision('divert', store.draftMessage.trim(), selectedTargetAgents.value)
+  store.submitHitlDecision('divert', store.draftMessage.trim(), targets)
   store.draftMessage = ''
   selectedTargetAgents.value = []
 }
@@ -278,11 +292,13 @@ const handleHitlFinish = () => {
 }
 
 const handleHitlReject = () => {
-  store.submitHitlDecision('reject', '', selectedTargetAgents.value)
+  const targets = store.hitlTargetAgents?.length ? store.hitlTargetAgents : selectedTargetAgents.value
+  store.submitHitlDecision('reject', '', targets)
   selectedTargetAgents.value = []
 }
 
 const focusRefineInput = () => {
+  store.stopTts()
   nextTick(() => {
     chatInputRef.value?.focus()
   })

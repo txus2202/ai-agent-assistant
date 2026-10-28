@@ -79,6 +79,33 @@ Para que los agentes individuales conozcan lo debatido y conversado previamente 
 - **Inyección en Prompt (`SubAgentRunner` y `SupervisorAgent`):**
   El backend formatea el historial en un bloque acotado (`## Contexto de la Sesión Previa`) intercalado entre el contexto RAG y la petición actual del usuario, truncando intervenciones muy largas para respetar la ventana de contexto y latencia en el procesador N100.
 
+### 3.6 Comandos Vocales Human-in-the-Loop (HITL)
+Durante la espera en un checkpoint HITL (`isHitlRequired = true`), el stream de audio escucha disparadores de acción ejecutiva sin necesidad de interacción táctil:
+- **`approve` (Aceptar):** *"aceptar"*, *"aprobar"*, *"adelante"*, *"conforme"*, *"de acuerdo"*.
+- **`reject` (Rechazar):** *"rechazar"*, *"denegar"*, *"cancela"*, *"cancelar"*, *"descarta"*, *"descartar"*.
+- **`refine` (Refinar):** *"refinar"*, *"corregir"*, *"cambiar"*, *"modificar"*, *"ajustar"*. Activa automáticamente el micrófono para que el usuario dicte la enmienda o feedback.
+- **`divert` (Bifurcar/Desviar):** *"desviar"*, *"bifurcar"*, *"derivar"*, *"delegar"*. Desvía el flujo del debate a los agentes seleccionados.
+- **`finish` (Finalizar):** *"finalizar"*, *"terminar"*, *"concluir"*, *"fin"*. Concluye anticipadamente el debate y delega la consolidación en el supervisor.
+
+Al detectarse uno de estos disparadores mediante `WakeWordService`, el WebSocket emite `{ "type": "HITL_VOICE_COMMAND", "command": "<accion>" }`. El store frontend ejecuta de inmediato la transición correspondiente.
+- **Interrupción de TTS en comandos HITL:** Al ejecutarse cualquier comando o decisión de HITL (tanto por voz: *aprobar*, *rechazar*, *desviar*, *finalizar*, *refinar*, como por clic en los botones de la interfaz), se invoca inmediatamente `stopTts()` para que Atenea (o el agente activo) deje de hablar de inmediato, silenciando el audio en reproducción exactamente igual que el botón "Silenciar".
+
+#### Alternancia de Selección de Agentes por Voz en HITL:
+- **Con HITL Activo (`isHitlRequired = true`):** Si el usuario pronuncia el nombre o alias de un agente (ej. *"Hestia"*, *"Ícaro"*), en lugar de actuar como Wake Word para iniciar una grabación directa, el sistema conmuta (toggle) dicho agente en la lista de seleccionables de HITL (`hitlTargetAgents`).
+  - Si el agente no estaba seleccionado, se añade y su chip se ilumina en la interfaz.
+  - Si ya estaba seleccionado, se deselecciona.
+  - El supervisor y el estado de grabación no se ven interrumpidos.
+- **Sin HITL Activo (`isHitlRequired = false`):** Se mantiene el comportamiento estándar de Wake Word: selecciona el agente en el selector principal y activa la grabación de audio.
+
+### 3.7 Comando de Silenciado Global por Voz (Wake Word de Silencio)
+Disponible **en todo momento** (tanto si hay un punto de control HITL activo como si no, o durante cualquier momento del debate):
+- **Disparadores de Silencio:** *"silencio"*, *"silenciar"*, *"calla"*, *"callate"*, *"cállate"*.
+- **Comportamiento:**
+  - `WakeWordService` detecta la palabra clave y genera un resultado con `command="silence"`.
+  - El WebSocket `/ws/audio/wake-word` emite el mensaje `{ "type": "SILENCE_VOICE_COMMAND" }`.
+  - El cliente frontend en `useDebateStore` intercepta el evento e invoca `stopTts()`, interrumpiendo de forma instantánea la locución de voz en curso y restableciendo el reproductor de audio, replicando exactamente el comportamiento del botón "Silenciar" del chat.
+
+
 ## 4. Consideraciones de Rendimiento y Hardware
 El despliegue está objetivo para un **Intel N100 con 12GB RAM**:
 - **STT:** `faster-whisper` usa CTranslate2, ideal para la CPU del N100 con un rendimiento rápido para modelos `base`. Se fija `language="es"` y un `initial_prompt` técnico para evitar alucinaciones idiomáticas.

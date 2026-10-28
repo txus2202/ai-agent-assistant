@@ -4,7 +4,7 @@ import logging
 import re
 import unicodedata
 from dataclasses import dataclass
-from vosk import Model, KaldiRecognizer
+from vosk import Model, KaldiRecognizer  # type: ignore[import-untyped]
 
 from src.domain.agents.sub_agent_profiles import get_all_profiles
 
@@ -40,7 +40,24 @@ class WakeWordService:
         "cambiar": "refine",
         "modificar": "refine",
         "ajustar": "refine",
+        "finalizar": "finish",
+        "terminar": "finish",
+        "concluir": "finish",
+        "fin": "finish",
+        "desviar": "divert",
+        "bifurcar": "divert",
+        "derivar": "divert",
+        "delegar": "divert",
     }
+
+    _SILENCE_TRIGGERS: dict[str, str] = {
+        "silencio": "silence",
+        "silenciar": "silence",
+        "calla": "silence",
+        "callate": "silence",
+        "cállate": "silence",
+    }
+
 
     def __init__(self):
         """
@@ -129,6 +146,16 @@ class WakeWordService:
 
         norm_text = self._normalize_text(text)
         logger.debug(f"[WW] Vosk decoded: '{text}' (normalized: '{norm_text}')")
+
+        # Check for silence triggers (available at all times)
+        for trigger, cmd in self._SILENCE_TRIGGERS.items():
+            pattern = rf"\b{re.escape(trigger)}\b"
+            if re.search(pattern, norm_text) or re.search(pattern, text.lower()):
+                print(f"[WW] Silence voice command '{trigger}' detected in text: '{text}'")
+                return WakeWordDetection(
+                    detected=True,
+                    command=cmd
+                )
 
         # Check for registered agent trigger keywords
         for trigger, (role, display_name) in self._agent_triggers.items():

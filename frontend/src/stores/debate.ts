@@ -117,6 +117,7 @@ export const useDebateStore = defineStore('debate', () => {
   const isDebating = ref(false)
   const isHitlRequired = ref(false)
   const hitlCheckpoint = ref<string | null>(null)
+  const hitlTargetAgents = ref<string[]>([])
   const currentSessionId = ref<string | null>(null)
   const messages = ref<ChatMessage[]>([])
   const rawEvents = ref<SupervisorEvent[]>([])
@@ -393,6 +394,7 @@ export const useDebateStore = defineStore('debate', () => {
     sessionCachedTokens.value = 0
     isHitlRequired.value = false
     hitlCheckpoint.value = null
+    hitlTargetAgents.value = []
     isDebating.value = false
     agents.value.forEach(a => {
       a.state = 'STANDBY'
@@ -482,6 +484,17 @@ export const useDebateStore = defineStore('debate', () => {
       normalizeAgentRole(a.role) === norm ||
       a.role?.toLowerCase() === clean
     )
+  }
+
+  function toggleHitlTargetAgent(identifier: string) {
+    const agent = findAgent(identifier)
+    const targetRole = agent?.role || identifier
+    const idx = hitlTargetAgents.value.indexOf(targetRole)
+    if (idx !== -1) {
+      hitlTargetAgents.value.splice(idx, 1)
+    } else {
+      hitlTargetAgents.value.push(targetRole)
+    }
   }
 
   function resolveAgentDisplay(role?: string | null) {
@@ -620,9 +633,14 @@ export const useDebateStore = defineStore('debate', () => {
     feedback?: string,
     targetAgents?: string[]
   ) {
+    stopTts()
     isHitlRequired.value = false
     hitlCheckpoint.value = null
     resetWakeWordSession()
+
+
+    const effectiveTargets = targetAgents ?? [...hitlTargetAgents.value]
+    hitlTargetAgents.value = []
     
     if ((decision === 'refine' || decision === 'divert') && feedback?.trim()) {
       messages.value.push({
@@ -651,8 +669,8 @@ export const useDebateStore = defineStore('debate', () => {
         decision,
         feedback: feedback || ''
       }
-      if (targetAgents && targetAgents.length > 0) {
-        payload.target_agents = targetAgents
+      if (effectiveTargets && effectiveTargets.length > 0) {
+        payload.target_agents = effectiveTargets
       }
       ws.send(JSON.stringify(payload))
     }
@@ -761,6 +779,11 @@ export const useDebateStore = defineStore('debate', () => {
     wakeWordWs.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
+        if (data.type === 'SILENCE_VOICE_COMMAND') {
+          console.log('[WW] Silence voice command received')
+          stopTts()
+          return
+        }
         if (data.type === 'HITL_VOICE_COMMAND') {
           console.log('[WW] HITL Voice command received:', data.command)
           if (isHitlRequired.value) {
@@ -768,7 +791,12 @@ export const useDebateStore = defineStore('debate', () => {
               submitHitlDecision('approve')
             } else if (data.command === 'reject') {
               submitHitlDecision('reject')
+            } else if (data.command === 'finish') {
+              submitHitlDecision('finish')
+            } else if (data.command === 'divert') {
+              submitHitlDecision('divert')
             } else if (data.command === 'refine') {
+              stopTts()
               // Trigger voice recording so user can dictate refinement
               isWakeWordTriggered.value = true
               setTimeout(() => {
@@ -777,7 +805,16 @@ export const useDebateStore = defineStore('debate', () => {
             }
           }
         } else if (data.type === 'WAKE_WORD_DETECTED') {
+
           console.log('[WW] Wake word detected for agent:', data.agent_role || 'supervisor')
+          if (isHitlRequired.value) {
+            const targetIdentifier = data.agent_role || data.display_name
+            if (targetIdentifier) {
+              toggleHitlTargetAgent(targetIdentifier)
+            }
+            return
+          }
+
           stopTts() // Interrupt any ongoing TTS
           if (data.agent_role) {
             selectedAgent.value = data.agent_role
@@ -829,6 +866,8 @@ export const useDebateStore = defineStore('debate', () => {
     isDebating,
     isHitlRequired,
     hitlCheckpoint,
+    hitlTargetAgents,
+    toggleHitlTargetAgent,
     messages,
     rawEvents,
     draftMessage,

@@ -749,7 +749,39 @@ describe('useDebateStore', () => {
       feedback: ''
     }))
 
-    // 2. Voice command "refine" when HITL is required -> triggers wake word recording mode
+    // 2. Voice command "finish" when HITL is required
+    store.isHitlRequired = true
+    wwSocket!.onmessage?.({
+      data: JSON.stringify({
+        type: 'HITL_VOICE_COMMAND',
+        command: 'finish'
+      })
+    })
+
+    expect(store.isHitlRequired).toBe(false)
+    expect(mockSend).toHaveBeenCalledWith(JSON.stringify({
+      type: 'hitl_response',
+      decision: 'finish',
+      feedback: ''
+    }))
+
+    // 3. Voice command "divert" when HITL is required
+    store.isHitlRequired = true
+    wwSocket!.onmessage?.({
+      data: JSON.stringify({
+        type: 'HITL_VOICE_COMMAND',
+        command: 'divert'
+      })
+    })
+
+    expect(store.isHitlRequired).toBe(false)
+    expect(mockSend).toHaveBeenCalledWith(JSON.stringify({
+      type: 'hitl_response',
+      decision: 'divert',
+      feedback: ''
+    }))
+
+    // 4. Voice command "refine" when HITL is required -> triggers wake word recording mode
     vi.useFakeTimers()
     store.isHitlRequired = true
     wwSocket!.onmessage?.({
@@ -773,6 +805,158 @@ describe('useDebateStore', () => {
     expect(store.isWakeWordTriggered).toBe(false)
     expect(store.isRecording).toBe(false)
     expect(mockSend).toHaveBeenCalledWith(JSON.stringify({ type: 'RESET' }))
+
+    store.stopAutoListen()
+  })
+
+  it('toggles agent selection in HITL when saying agent names during HITL, and acts as regular wake word when HITL is inactive', () => {
+    const mockGetUserMedia = vi.fn().mockResolvedValue({
+      getTracks: () => [{ stop: vi.fn() }]
+    })
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: { getUserMedia: mockGetUserMedia },
+      writable: true,
+      configurable: true
+    })
+
+    const store = useDebateStore()
+    store.agents = [
+      { role: 'senior_architect', name: 'Hestia', state: 'STANDBY' },
+      { role: 'innovator_architect', name: 'Ícaro', state: 'STANDBY' },
+      { role: 'supervisor', name: 'Atenea', state: 'STANDBY' }
+    ]
+    store.connect()
+    store.startAutoListen()
+
+    const wwSocket = activeSockets[activeSockets.length - 1]
+    expect(wwSocket).toBeDefined()
+
+    // 1. With HITL active
+    store.isHitlRequired = true
+    store.selectedAgent = 'supervisor'
+
+    // Say "Hestia" -> selects Hestia
+    wwSocket!.onmessage?.({
+      data: JSON.stringify({
+        type: 'WAKE_WORD_DETECTED',
+        agent_role: 'senior_architect',
+        display_name: 'Hestia'
+      })
+    })
+
+    expect(store.hitlTargetAgents).toEqual(['senior_architect'])
+    expect(store.selectedAgent).toBe('supervisor')
+    expect(store.isWakeWordTriggered).toBe(false)
+
+    // Say "Ícaro" -> selects Ícaro as well
+    wwSocket!.onmessage?.({
+      data: JSON.stringify({
+        type: 'WAKE_WORD_DETECTED',
+        agent_role: 'innovator_architect',
+        display_name: 'Ícaro'
+      })
+    })
+
+    expect(store.hitlTargetAgents).toEqual(['senior_architect', 'innovator_architect'])
+    expect(store.selectedAgent).toBe('supervisor')
+    expect(store.isWakeWordTriggered).toBe(false)
+
+    // Say "Hestia" again -> deselects Hestia, leaving only Ícaro
+    wwSocket!.onmessage?.({
+      data: JSON.stringify({
+        type: 'WAKE_WORD_DETECTED',
+        agent_role: 'senior_architect',
+        display_name: 'Hestia'
+      })
+    })
+
+    expect(store.hitlTargetAgents).toEqual(['innovator_architect'])
+    expect(store.selectedAgent).toBe('supervisor')
+    expect(store.isWakeWordTriggered).toBe(false)
+
+    // 2. Without HITL (regular mode)
+    store.isHitlRequired = false
+
+    // Say "Hestia" -> triggers regular wake word for Hestia
+    wwSocket!.onmessage?.({
+      data: JSON.stringify({
+        type: 'WAKE_WORD_DETECTED',
+        agent_role: 'senior_architect',
+        display_name: 'Hestia'
+      })
+    })
+
+    expect(store.selectedAgent).toBe('senior_architect')
+    expect(store.isWakeWordTriggered).toBe(true)
+    // hitlTargetAgents should remain unchanged by non-HITL wake words
+    expect(store.hitlTargetAgents).toEqual(['innovator_architect'])
+
+    store.stopAutoListen()
+  })
+
+  it('stops TTS when a SILENCE_VOICE_COMMAND is received via wakeWordWs', () => {
+    const mockGetUserMedia = vi.fn().mockResolvedValue({
+      getTracks: () => [{ stop: vi.fn() }]
+    })
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: { getUserMedia: mockGetUserMedia },
+      writable: true,
+      configurable: true
+    })
+
+    const store = useDebateStore()
+    store.connect()
+    store.startAutoListen()
+
+    const wwSocket = activeSockets[activeSockets.length - 1]
+    expect(wwSocket).toBeDefined()
+
+    // Simulate TTS playing
+    store.isTtsPlaying = true
+
+    // Receive SILENCE_VOICE_COMMAND from backend
+    wwSocket!.onmessage?.({
+      data: JSON.stringify({
+        type: 'SILENCE_VOICE_COMMAND'
+      })
+    })
+
+    expect(store.isTtsPlaying).toBe(false)
+    store.stopAutoListen()
+  })
+
+  it('stops TTS when any HITL decision is submitted or refine voice command is triggered', () => {
+    const mockGetUserMedia = vi.fn().mockResolvedValue({
+      getTracks: () => [{ stop: vi.fn() }]
+    })
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: { getUserMedia: mockGetUserMedia },
+      writable: true,
+      configurable: true
+    })
+
+    const store = useDebateStore()
+    store.connect()
+    store.startAutoListen()
+
+    const wwSocket = activeSockets[activeSockets.length - 1]
+    expect(wwSocket).toBeDefined()
+
+    // 1. Calling submitHitlDecision stops ongoing TTS
+    store.isTtsPlaying = true
+    store.submitHitlDecision('approve')
+    expect(store.isTtsPlaying).toBe(false)
+
+    // 2. HITL refine voice command stops ongoing TTS
+    store.isHitlRequired = true
+    store.isTtsPlaying = true
+    wwSocket!.onmessage?.({
+      data: JSON.stringify({
+        type: 'HITL_VOICE_COMMAND',
+        command: 'refine'
+      })
+    })
+    expect(store.isTtsPlaying).toBe(false)
 
     store.stopAutoListen()
   })

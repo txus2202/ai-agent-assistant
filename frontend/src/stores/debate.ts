@@ -49,6 +49,15 @@ export interface DebateSession {
   [key: string]: unknown
 }
 
+export interface DebateTopology {
+  supervisor: string
+  interpreters: string[]
+  proposers: string[]
+  reviewers: string[]
+  evaluators: string[]
+  implementers: string[]
+}
+
 // Builds a valid 0.1s silent 8-bit mono WAV (Safari rejects malformed/tiny headers)
 function buildSilentWavUrl(): string {
   const samples = 800
@@ -125,6 +134,16 @@ export const useDebateStore = defineStore('debate', () => {
   
   const agents = ref<Agent[]>([])
   const isAgentsLoaded = ref(false)
+  const executionTrail = ref<string[]>([])
+  const topology = ref<DebateTopology | null>(null)
+
+  function recordExecutionTrail(name?: string | null) {
+    if (!name) return
+    const trail = executionTrail.value
+    if (trail.at(-1) !== name) {
+      executionTrail.value = [...trail, name]
+    }
+  }
 
   // Context caching & session token efficiency
   const sessionTotalTokens = ref(0)
@@ -325,6 +344,21 @@ export const useDebateStore = defineStore('debate', () => {
     }
   }
 
+  async function fetchTopology() {
+    try {
+      const endpoint = typeof window !== 'undefined' && window.location?.origin
+        ? `${window.location.origin}/api/config/topology`
+        : '/api/config/topology'
+      const response = await fetch(endpoint)
+      if (response.ok) {
+        topology.value = await response.json()
+      }
+    } catch {
+      // Ignore network errors or unmocked URLs in testing environments
+    }
+  }
+
+
   let ws: WebSocket | null = null
   let reconnectAttempts = 0
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
@@ -396,6 +430,7 @@ export const useDebateStore = defineStore('debate', () => {
     hitlCheckpoint.value = null
     hitlTargetAgents.value = []
     isDebating.value = false
+    executionTrail.value = []
     agents.value.forEach(a => {
       a.state = 'STANDBY'
       a.tokens = 0
@@ -448,6 +483,7 @@ export const useDebateStore = defineStore('debate', () => {
 
     // Reset agent states to STANDBY for the new turn
     agents.value.forEach(a => a.state = 'STANDBY')
+    executionTrail.value = ['Atenea']
     
     // Capture session chat history before adding the new user message
     const history = messages.value.slice(-10).map(m => ({
@@ -533,6 +569,7 @@ export const useDebateStore = defineStore('debate', () => {
     if (!agent) return
     agent.state = 'ACTIVE'
     agent.startedAt = Date.now()
+    recordExecutionTrail(agent.name)
   }
 
   function updateAgentLatency(agent: Agent, event: SupervisorEvent) {
@@ -586,6 +623,7 @@ export const useDebateStore = defineStore('debate', () => {
     isDebating.value = false
     resetWakeWordSession()
     pushAgentMessage(event.content || 'Debate finished.', event.role)
+    recordExecutionTrail('Atenea')
   }
 
   function handleError(event: SupervisorEvent) {
@@ -903,6 +941,10 @@ export const useDebateStore = defineStore('debate', () => {
     clearSession,
     loadAgents,
     loadDebate,
+    fetchTopology,
+    topology,
+    executionTrail,
+    recordExecutionTrail,
     connect,
     startDebate,
     uploadFile,

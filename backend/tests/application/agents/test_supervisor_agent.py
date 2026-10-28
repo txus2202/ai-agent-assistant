@@ -23,6 +23,8 @@ Scenarios covered:
 """
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from src.domain.agents.supervisor_events import (
@@ -920,5 +922,70 @@ class TestAdaptiveSupervisorRouting:
         done_events = [e for e in events if e.type == EventType.DONE]
         assert len(done_events) == 1
         assert done_events[0].role == "Coordinator"
+
+    @pytest.mark.anyio
+    async def test_supervisor_agent_executes_dynamic_plan_omitting_unplanned_stages(self, monkeypatch):
+        """
+        When Atenea plans a dynamic route (e.g. ['interpreters', 'implementers']),
+        the orchestrator follows only the planned stages, omitting proposers and evaluators.
+        """
+        import src.application.agents.supervisor_agent as _mod
+        from src.application.agents.sub_agent_runner import SubAgentResponse
+        from src.application.agents.supervisor_agent import SupervisorAgent, TriageDecision
+        from src.domain.agents.debate_topology import DebateTopology
+
+        called_agents: list[str] = []
+
+        async def _capturing_runner(role, user_request, llm_provider, document_store, model_name, **kwargs):
+            key = role.value if hasattr(role, "value") else str(role)
+            called_agents.append(key)
+            return SubAgentResponse(role=role, content=f"{key}: output", context_chunks=[])
+
+        monkeypatch.setattr(_mod.SubAgentRunner, "run", _capturing_runner)
+
+        # Mock classify_intent to return a dynamic plan: interpreters -> implementers
+        monkeypatch.setattr(
+            _mod,
+            "classify_intent",
+            lambda *args, **kwargs: TriageDecision(
+                mode="adaptive_debate",
+                execution_plan=("interpreters", "implementers"),
+                reasoning="Requisitos directos para implementación",
+            ),
+        )
+
+        async def _approve_hitl(_event: SupervisorEvent) -> HITLResponse:
+            return HITLResponse(decision=HITLDecision.APPROVE)
+
+        custom_topology = DebateTopology(
+            supervisor="Coordinator",
+            interpreters=("Interpreter",),
+            proposers=("PropOne", "PropTwo"),
+            reviewers=("Auditor",),
+            evaluators=("Auditor",),
+            implementers=("ImplOne",),
+        )
+
+        events = await _collect(SupervisorAgent.run(
+            user_request="Generar script directo de despliegue",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_approve_hitl,
+            topology=custom_topology,
+        ))
+
+        # Interpreters and Implementers ran
+        assert "Interpreter" in called_agents
+        assert "ImplOne" in called_agents
+
+        # Proposers and Evaluators were NOT planned and did NOT run
+        assert "PropOne" not in called_agents
+        assert "PropTwo" not in called_agents
+        assert "Auditor" not in called_agents
+
+        done_events = [e for e in events if e.type == EventType.DONE]
+        assert len(done_events) == 1
+
 
 

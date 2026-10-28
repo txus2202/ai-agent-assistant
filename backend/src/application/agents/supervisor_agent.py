@@ -92,6 +92,7 @@ class TriageDecision:
     target_agent: str | None = None
     skip_interpreter: bool = False
     reasoning: str = ""
+    execution_plan: tuple[str, ...] = ()
 
 
 def _parse_triage_json(raw: str) -> dict[str, Any] | None:
@@ -136,7 +137,8 @@ Eres {supervisor_name}. Analiza la petición del usuario y clasifica la intenci�
 1. "direct_chat": Saludos, preguntas directas a {supervisor_name} sobre quién es o su consejo, dudas conceptuales rápidas o reflexiones donde NO se requiere un trabajo técnico ni un debate.
 2. "single_agent": El usuario solicita expresamente una tarea acotada a un único especialista:
 {specialists_lines}
-3. "adaptive_debate": Problemas o requerimientos que necesitan deliberación colegiada del consejo.
+3. "adaptive_debate": Problemas o requerimientos que necesitan deliberación del consejo. Opcionalmente puedes definir un plan dinámico de etapas en "execution_plan" seleccionando entre: "interpreters", "proposers", "evaluators", "implementers".
+   - Si no especificas plan, se seguirá el flujo natural del consejo.
    - skip_interpreter=false: La petición es vaga, coloquial o requiere desambiguación y formalización de requisitos por parte de {interpreter_name}.
    - skip_interpreter=true: La petición ya incluye requisitos estrictos, métricas, componentes y restricciones bien definidas.
 
@@ -145,6 +147,7 @@ Responde ÚNICAMENTE un objeto JSON válido con este formato:
   "mode": "direct_chat" | "single_agent" | "adaptive_debate",
   "target_agent": {specialist_names_union},
   "skip_interpreter": true | false,
+  "execution_plan": ["interpreters", "implementers"] | null,
   "reasoning": "Breve justificación de 1 frase"
 }}
 
@@ -166,11 +169,22 @@ Petición del usuario:
                     target_agent = str(target_str)
             skip_interpreter = bool(parsed.get("skip_interpreter", False))
             reasoning = str(parsed.get("reasoning", ""))
-            return TriageDecision(mode=mode, target_agent=target_agent, skip_interpreter=skip_interpreter, reasoning=reasoning)
+            raw_plan = parsed.get("execution_plan")
+            plan_tuple: tuple[str, ...] = ()
+            if isinstance(raw_plan, list):
+                plan_tuple = tuple(str(x) for x in raw_plan)
+            return TriageDecision(
+                mode=mode,
+                target_agent=target_agent,
+                skip_interpreter=skip_interpreter,
+                reasoning=reasoning,
+                execution_plan=plan_tuple,
+            )
     except Exception:
         pass
 
     return TriageDecision(mode="adaptive_debate", target_agent=None, skip_interpreter=False, reasoning="Fallback estándar")
+
 
 
 class SupervisorAgent:
@@ -415,30 +429,9 @@ async def _run_phase_with_divert(
             yield event
 
 
-async def _execute_phase_1_if_needed(
-    state: DebateState,
-    user_request: str,
-    run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
-    hitl_callback: Callable[[SupervisorEvent], Awaitable[HITLResponse]],
-    triage: Any,
-    interpreter_roles: tuple[str, ...],
-) -> AsyncGenerator[SupervisorEvent, None]:
-    if not interpreter_roles or triage.skip_interpreter:
-        state.formalized = user_request
-        return
-
-    async for event in _run_phase_1(
-        state,
-        user_request,
-        run_role,
-        hitl_callback,
-        interpreter_roles=interpreter_roles,
-    ):
-        yield event
-
-
 async def _execute_phase_step(
     phase_gen: AsyncGenerator[SupervisorEvent, None],
+
     state: DebateState,
     run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
     supervisor_provider: Any,
@@ -460,6 +453,52 @@ def _should_halt_phases(state: DebateState) -> bool:
     return bool(state.finish_early or state.target_agents)
 
 
+def _build_planned_stages(triage: Any, active_topology: DebateTopology) -> list[str]:
+    if triage and getattr(triage, "execution_plan", None):
+        valid_slots = {"interpreters", "proposers", "evaluators", "implementers"}
+        return [s for s in triage.execution_plan if s in valid_slots]
+
+    plan: list[str] = []
+    if active_topology.interpreters and not (triage and getattr(triage, "skip_interpreter", False)):
+        plan.append("interpreters")
+    if active_topology.proposers:
+        plan.append("proposers")
+    if active_topology.evaluators:
+        plan.append("evaluators")
+    if active_topology.implementers:
+        plan.append("implementers")
+    return plan
+
+
+async def _execute_single_stage(
+    stage: str,
+    state: DebateState,
+    user_request: str,
+    run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
+    hitl_callback: Callable[[SupervisorEvent], Awaitable[HITLResponse]],
+    active_topology: DebateTopology,
+    effective_review_rounds: int,
+    supervisor_provider: Any,
+    sup_model_name: str,
+    sup_agent_name: str,
+) -> AsyncGenerator[SupervisorEvent, None]:
+    if stage == "interpreters" and active_topology.interpreters:
+        phase1 = _run_phase_1(state, user_request, run_role, hitl_callback, active_topology.interpreters)
+        async for event in _execute_phase_step(phase1, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology):
+            yield event
+    elif stage == "proposers" and active_topology.proposers:
+        phase2 = _run_phase_2(state, run_role, hitl_callback, active_topology.proposers, active_topology.reviewers, effective_review_rounds)
+        async for event in _execute_phase_step(phase2, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology):
+            yield event
+    elif stage == "evaluators" and active_topology.evaluators:
+        phase3 = _run_phase_3(state, run_role, hitl_callback, active_topology.evaluators)
+        async for event in _execute_phase_step(phase3, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology):
+            yield event
+    elif stage == "implementers" and active_topology.implementers:
+        async for event in _run_phase_4(state, run_role, active_topology.implementers):
+            yield event
+
+
 async def _run_adaptive_debate(
     state: DebateState,
     user_request: str,
@@ -472,54 +511,30 @@ async def _run_adaptive_debate(
     sup_model_name: str,
     sup_agent_name: str,
 ) -> AsyncGenerator[SupervisorEvent, None]:
-    phase1 = _execute_phase_1_if_needed(
-        state, user_request, run_role, hitl_callback, triage, active_topology.interpreters
-    )
-    async for event in _execute_phase_step(
-        phase1, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology
-    ):
-        yield event
-    if _should_halt_phases(state):
-        return
+    state.formalized = user_request
+    stages = _build_planned_stages(triage, active_topology)
 
-    phase2 = _run_phase_2(
-        state,
-        run_role,
-        hitl_callback,
-        proposer_roles=active_topology.proposers,
-        reviewer_roles=active_topology.reviewers,
-        review_rounds=effective_review_rounds,
-    )
-    async for event in _execute_phase_step(
-        phase2, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology
-    ):
-        yield event
-    if _should_halt_phases(state):
-        return
-
-    phase3 = _run_phase_3(
-        state,
-        run_role,
-        hitl_callback,
-        evaluator_roles=active_topology.evaluators,
-    )
-    async for event in _execute_phase_step(
-        phase3, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology
-    ):
-        yield event
-    if _should_halt_phases(state):
-        return
-
-    async for event in _run_phase_4(
-        state,
-        run_role,
-        implementer_roles=active_topology.implementers,
-    ):
-        yield event
+    for stage in stages:
+        async for event in _execute_single_stage(
+            stage,
+            state,
+            user_request,
+            run_role,
+            hitl_callback,
+            active_topology,
+            effective_review_rounds,
+            supervisor_provider,
+            sup_model_name,
+            sup_agent_name,
+        ):
+            yield event
+        if _should_halt_phases(state):
+            return
 
     yield await _run_consolidation(
         state, supervisor_provider, sup_model_name, supervisor_name=sup_agent_name, topology=active_topology
     )
+
 
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import uuid
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,65 @@ from src.presentation.api.ws.serializers import dict_to_hitl_response, event_to_
 
 router = APIRouter(tags=["debate"])
 logger = logging.getLogger(__name__)
+
+LEARN_DIRECTIVE_REGEX = re.compile(
+    r"^(?:aprende\s+esto|aprende|memoriza|guarda\s+este\s+conocimiento)[:\s]+(.+)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _detect_source_type(source: str) -> SourceType:
+    lower = source.lower()
+    if lower.startswith("http://") or lower.startswith("https://"):
+        return SourceType.URL
+    if lower.endswith(".pdf"):
+        return SourceType.PDF
+    if lower.endswith((".md", ".markdown")):
+        return SourceType.MARKDOWN
+    if lower.endswith((".png", ".jpg", ".jpeg", ".webp")):
+        return SourceType.IMAGE
+    return SourceType.PDF
+
+
+def _extract_tags(text: str) -> list[str]:
+    tags: list[str] = []
+    # 1. Bracket syntax: [tags: foo, bar] or [tag: foo]
+    bracket_match = re.search(r"\[(?:tags?|etiquetas?):\s*([^\]]+)\]", text, re.IGNORECASE)
+    if bracket_match:
+        for t in bracket_match.group(1).split(","):
+            clean = t.strip().lstrip("#")
+            if clean and clean not in tags:
+                tags.append(clean)
+
+    # 2. Natural language syntax: (con tags|con etiquetas|tags:|etiquetas:) a, b
+    nl_match = re.search(
+        r"(?:con (?:los )?(?:tags|etiquetas)|(?:^|\s)(?:tags|etiquetas)):\s*([^#\n\[\]]+)",
+        text,
+        re.IGNORECASE,
+    )
+    if nl_match:
+        for t in nl_match.group(1).split(","):
+            clean = t.strip().lstrip("#")
+            if clean and clean not in tags and not clean.startswith(("http://", "https://")):
+                tags.append(clean)
+
+    # 3. Hashtags: #atenea #seguridad
+    hashtags = re.findall(r"(?<!\S)#([a-zA-Z0-9_\-\.]+)", text)
+    for h in hashtags:
+        clean = h.strip()
+        if clean and clean not in tags:
+            tags.append(clean)
+
+    return tags
+
+
+def _is_skip_tags_response(text: str) -> bool:
+    low = text.strip().lower()
+    return low in (
+        "sin tags", "sin tag", "sin etiquetas", "sin etiqueta",
+        "no", "ninguno", "ninguna", "asímilalo directamente", "asimilalo directamente",
+        "directamente", "adelante", "omitir", "ningun tag", "ninguna etiqueta", "no gracias"
+    ) or low.startswith(("sin tag", "sin etiqueta", "asimil", "adelante"))
 
 
 class DebateWebSocketHandler:
@@ -165,7 +225,79 @@ class DebateWebSocketHandler:
             except Exception:
                 pass
 
-    async def _handle_learning(self, learn_profile: Any, attachments: list[str]) -> None:
+    def _get_pending_learning(self) -> dict[str, Any] | None:
+        if not self.debate_record or not self.debate_record.events:
+            return None
+        for ev in reversed(self.debate_record.events):
+            if ev.get("type") in ("agent_completed", "done") and ev.get("role") in ("Metis", "learning"):
+                meta = ev.get("metadata", {})
+                if isinstance(meta, dict) and meta.get("pending_learning"):
+                    raw = meta.get("pending_learning")
+                    if isinstance(raw, str):
+                        try:
+                            return json.loads(raw)
+                        except Exception:
+                            return None
+                    if isinstance(raw, dict):
+                        return raw
+            if ev.get("type") == "user_message":
+                continue
+            break
+        return None
+
+    async def _execute_learning_ingest(
+        self,
+        text_to_learn: str,
+        attachments: list[str],
+        tags: list[str],
+        llm_prov: Any,
+        mod_name: str,
+    ) -> list[str]:
+        results: list[str] = []
+        tag_suffix = f" [tags: {', '.join(tags)}]" if tags else ""
+        if attachments:
+            for attachment_path in attachments:
+                stype = _detect_source_type(attachment_path)
+                res = await asyncio.to_thread(
+                    LearnFromSource.run,
+                    source=attachment_path,
+                    source_type=stype,
+                    llm_provider=llm_prov,
+                    document_store=self.document_store,
+                    vault_root=self.settings.vault_root,
+                    model_name=mod_name,
+                    tags=tags,
+                )
+                if res.errors:
+                    results.append(f"❌ Error al procesar {attachment_path}: {res.errors}")
+                else:
+                    file_name = res.generated_file.name if res.generated_file else "nota"
+                    results.append(f"✅ Conocimiento asimilado desde {attachment_path}. Generada nota: {file_name}{tag_suffix}")
+        elif text_to_learn:
+            res = await asyncio.to_thread(
+                LearnFromSource.run,
+                source=text_to_learn,
+                source_type=SourceType.TEXT,
+                llm_provider=llm_prov,
+                document_store=self.document_store,
+                vault_root=self.settings.vault_root,
+                model_name=mod_name,
+                tags=tags,
+            )
+            if res.errors:
+                results.append(f"❌ Error al aprender el texto: {res.errors}")
+            else:
+                file_name = res.generated_file.name if res.generated_file else "nota"
+                results.append(f"✅ He asimilado y guardado este conocimiento en mi memoria persistente y en el Vault ({file_name}){tag_suffix}.")
+        return results
+
+    async def _handle_learning(
+        self,
+        learn_profile: Any,
+        user_request: str,
+        attachments: list[str],
+        directive_match: re.Match[str] | None = None,
+    ) -> None:
         learn_role = learn_profile.display_name
         yield_event = SupervisorEvent(type=EventType.AGENT_STARTED, role=learn_role, content="")
         await self.send_event(yield_event)
@@ -177,23 +309,85 @@ class DebateWebSocketHandler:
         mod_name = config.model_name if config else self.settings.default_model
         llm_prov = get_llm_provider(prov_name)
         
-        results = []
-        for attachment_path in attachments:
-            res = await asyncio.to_thread(
-                LearnFromSource.run,
-                source=attachment_path,
-                source_type=SourceType.PDF,
-                llm_provider=llm_prov,
-                document_store=self.document_store,
-                vault_root=self.settings.vault_root,
-                model_name=mod_name
+        extracted_tags = _extract_tags(user_request)
+        text_to_learn = directive_match.group(1).strip() if directive_match else ""
+
+        # If user did NOT specify tags via hashtags or syntax, prompt them first
+        if not extracted_tags:
+            ask_content = (
+                "He recibido este conocimiento para asimilarlo. "
+                "Antes de sellarlo e integrarlo en el Vault, ¿deseas catalogarlo con algún tag o etiqueta específico "
+                "(por ejemplo: `#atenea`, `#arquitectura`, `#seguridad`), o prefieres que lo asimile directamente según su contenido?"
             )
-            if res.errors:
-                results.append(f"❌ Error processing {attachment_path}: {res.errors}")
-            else:
-                results.append(f"✅ Successfully learned from {attachment_path}. Generated {res.generated_file.name}")
-                
-        content = "\n".join(results) or "No attachments provided to learn from."
+            learn_meta = {
+                "model": mod_name,
+                "pending_learning": json.dumps({
+                    "text": text_to_learn,
+                    "attachments": attachments,
+                }),
+            }
+            await self.send_event(SupervisorEvent(
+                type=EventType.AGENT_COMPLETED, role=learn_role, content=ask_content, metadata=learn_meta
+            ))
+            await self.send_event(SupervisorEvent(
+                type=EventType.DONE, role=learn_role, content=ask_content, metadata=learn_meta
+            ))
+            return
+
+        results = await self._execute_learning_ingest(
+            text_to_learn=text_to_learn,
+            attachments=attachments,
+            tags=extracted_tags,
+            llm_prov=llm_prov,
+            mod_name=mod_name,
+        )
+        content = "\n".join(results) or "No se proporcionó contenido para el aprendizaje."
+        learn_meta = {"model": mod_name}
+        await self.send_event(SupervisorEvent(
+            type=EventType.AGENT_COMPLETED, role=learn_role, content=content, metadata=learn_meta
+        ))
+        await self.send_event(SupervisorEvent(
+            type=EventType.DONE, role=learn_role, content=content, metadata=learn_meta
+        ))
+
+    async def _handle_pending_learning(
+        self,
+        learn_profile: Any,
+        user_request: str,
+        pending_learning: dict[str, Any],
+    ) -> None:
+        learn_role = learn_profile.display_name
+        yield_event = SupervisorEvent(type=EventType.AGENT_STARTED, role=learn_role, content="")
+        await self.send_event(yield_event)
+        
+        config = self.agent_config_repo.find_by_role(learn_profile.id)
+        if not config:
+            config = self.agent_config_repo.find_by_role(learn_role)
+        prov_name = config.provider if config else self.settings.default_provider
+        mod_name = config.model_name if config else self.settings.default_model
+        llm_prov = get_llm_provider(prov_name)
+        
+        tags: list[str] = []
+        if not _is_skip_tags_response(user_request):
+            tags = _extract_tags(user_request)
+            if not tags:
+                tags = [
+                    t.strip().lstrip("#")
+                    for t in re.split(r"[,;]", user_request)
+                    if t.strip() and len(t.strip()) < 30
+                ]
+
+        text_to_learn = pending_learning.get("text", "")
+        attachments = pending_learning.get("attachments", [])
+
+        results = await self._execute_learning_ingest(
+            text_to_learn=text_to_learn,
+            attachments=attachments,
+            tags=tags,
+            llm_prov=llm_prov,
+            mod_name=mod_name,
+        )
+        content = "\n".join(results) or "No se proporcionó contenido para el aprendizaje."
         learn_meta = {"model": mod_name}
         await self.send_event(SupervisorEvent(
             type=EventType.AGENT_COMPLETED, role=learn_role, content=content, metadata=learn_meta
@@ -295,7 +489,14 @@ class DebateWebSocketHandler:
         if target_profile.is_supervisor:
             await self._handle_supervisor(user_request, chat_history=chat_history)
         elif target_profile.can_ingest_documents:
-            await self._handle_learning(target_profile, attachments)
+            directive_match = LEARN_DIRECTIVE_REGEX.match(user_request.strip()) if user_request else None
+            pending_learning = self._get_pending_learning() if not directive_match else None
+            if pending_learning:
+                await self._handle_pending_learning(target_profile, user_request, pending_learning)
+            elif attachments or directive_match:
+                await self._handle_learning(target_profile, user_request, attachments, directive_match)
+            else:
+                await self._handle_sub_agent(target_agent, user_request, chat_history=chat_history)
         else:
             await self._handle_sub_agent(target_agent, user_request, chat_history=chat_history)
         return True

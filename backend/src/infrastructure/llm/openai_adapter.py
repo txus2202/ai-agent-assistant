@@ -11,6 +11,7 @@ API key resolution order:
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from src.domain.exceptions import LLMProviderError
 from src.domain.ports.llm_provider import ILLMProvider
@@ -50,7 +51,32 @@ class OpenAIAdapter(ILLMProvider):
                 }
             else:
                 self._last_usage = {}
-            return response.choices[0].message.content
+            return response.choices[0].message.content or ""
+        except Exception as exc:  # noqa: BLE001
+            raise LLMProviderError(str(exc)) from exc
+
+    def complete_image(self, prompt: str, image_path: Path, model_name: str) -> str:
+        try:
+            import base64  # noqa: PLC0415
+            import mimetypes  # noqa: PLC0415
+
+            mime_type = mimetypes.guess_type(str(image_path))[0] or "image/jpeg"
+            b64_data = base64.b64encode(image_path.read_bytes()).decode("utf-8")
+            data_url = f"data:{mime_type};base64,{b64_data}"
+
+            response = self._client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": data_url}},
+                        ],
+                    }
+                ],
+            )
+            return response.choices[0].message.content or ""
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
 

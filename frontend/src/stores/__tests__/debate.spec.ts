@@ -1072,3 +1072,54 @@ describe('cleanAgentMessageContent', () => {
     expect(cleanAgentMessageContent('   ')).toBe('')
   })
 })
+
+describe('learnSession action', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('successfully learns session and sets learningStatusMessage', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        files_processed: 1,
+        chunks_upserted: 3,
+        generated_file: '/vault/learned/architecture_solution.md',
+        errors: []
+      })
+    })
+
+    const store = useDebateStore()
+    store.currentSessionId = 'test-session-123'
+
+    const result = await store.learnSession()
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('architecture_solution.md')
+    expect(store.isLearningSession).toBe(false)
+    expect(store.learningStatusMessage).toContain('architecture_solution.md')
+    expect(global.fetch).toHaveBeenCalledWith('/api/learning/session', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ session_id: 'test-session-123' })
+    }))
+  })
+
+  it('handles error in learnSession gracefully', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      json: () => Promise.resolve({ detail: 'No conversation events found' })
+    })
+
+    const store = useDebateStore()
+    const result = await store.learnSession('empty-session')
+
+    expect(result.success).toBe(false)
+    expect(result.message).toBe('No conversation events found')
+    expect(store.isLearningSession).toBe(false)
+    expect(store.learningStatusMessage).toContain('No conversation events found')
+  })
+})

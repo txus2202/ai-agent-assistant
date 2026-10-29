@@ -17,6 +17,7 @@ Raises LLMProviderError for:
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from src.domain.exceptions import LLMProviderError
 from src.domain.ports.llm_provider import ILLMProvider
@@ -62,12 +63,15 @@ class GeminiAdapter(ILLMProvider):
                 contents=prompt,
             )
             
-            if token_count_resp.total_tokens >= 32768:
+            total_toks = getattr(token_count_resp, "total_tokens", None)
+            if total_toks is not None and total_toks >= 32768:
                 # Use explicit context caching
                 cache = self._client.caches.create(
                     model=clean_model,
-                    contents=prompt,
-                    config={'ttl': '3600s'} # 1 hour
+                    config={
+                        'contents': [prompt],
+                        'ttl': '3600s',  # 1 hour
+                    },
                 )
                 response = self._client.models.generate_content(
                     model=clean_model,
@@ -75,7 +79,8 @@ class GeminiAdapter(ILLMProvider):
                     config={'cached_content': cache.name}
                 )
                 # Cleanup cache after use to save costs (since this is per-agent specific)
-                self._client.caches.delete(name=cache.name)
+                if getattr(cache, "name", None):
+                    self._client.caches.delete(name=str(cache.name))
             else:
                 # Normal request for smaller contexts
                 response = self._client.models.generate_content(
@@ -92,8 +97,29 @@ class GeminiAdapter(ILLMProvider):
             else:
                 self._last_usage = {}
 
-            return response.text
+            return getattr(response, "text", "") or ""
 
+        except Exception as exc:  # noqa: BLE001
+            raise LLMProviderError(str(exc)) from exc
+
+    def complete_image(self, prompt: str, image_path: Path, model_name: str) -> str:
+        """
+        Send prompt along with an image to Gemini using google-genai multimodal capabilities.
+        """
+        clean_model = model_name.strip().lower().replace(" ", "-")
+        try:
+            import mimetypes  # noqa: PLC0415
+            from google.genai import types  # noqa: PLC0415
+
+            mime_type = mimetypes.guess_type(str(image_path))[0] or "image/jpeg"
+            image_bytes = image_path.read_bytes()
+            part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+
+            response = self._client.models.generate_content(
+                model=clean_model,
+                contents=[prompt, part],
+            )
+            return getattr(response, "text", "") or ""
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
 
@@ -110,7 +136,8 @@ class GeminiAdapter(ILLMProvider):
                 # Filter for models that support text generation
                 methods = getattr(m, "supported_generation_methods", [])
                 if "generateContent" in methods or not methods:
-                    name_id = m.name.replace("models/", "") if hasattr(m, "name") else str(m)
+                    raw_name = getattr(m, "name", None)
+                    name_id = str(raw_name).replace("models/", "") if raw_name else str(m)
                     
                     # Exclude deprecated, vision-specific (old), and snapshot versions
                     if "vision" in name_id.lower() or "1.0" in name_id or "-00" in name_id:

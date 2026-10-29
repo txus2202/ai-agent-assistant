@@ -342,4 +342,196 @@ class TestDebateWebSocket:
         assert user_events[1]["content"] == "Hefesto prepara el pipeline"
 
 
+def test_debate_learning_conversational_chat(ws_client, monkeypatch):
+    """Metis chats naturally when no attachments and no explicit learning directive are provided."""
+    from src.application.agents.sub_agent_runner import SubAgentRunner, SubAgentResponse
+
+    async def fake_subagent_run(*args, **kwargs):
+        return SubAgentResponse(
+            role="Metis",
+            content="Hola, soy Metis. He consultado el vault y aquí tienes la información sobre Clean Architecture.",
+            context_chunks=[],
+            tokens={"input": 10, "output": 20, "total": 30},
+            latency=0.1,
+            model_name="mock-model",
+        )
+
+    monkeypatch.setattr(SubAgentRunner, "run", fake_subagent_run)
+
+    with ws_client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({
+            "type": "start",
+            "session_id": str(uuid.uuid4()),
+            "target_agent": "learning",
+            "user_request": "¿Qué sabes sobre Clean Architecture?",
+        })
+
+        ev_started = websocket.receive_json()
+        assert ev_started["type"] == EventType.AGENT_STARTED.value
+        assert ev_started["role"] == "Metis"
+
+        ev_completed = websocket.receive_json()
+        assert ev_completed["type"] == EventType.AGENT_COMPLETED.value
+        assert "Clean Architecture" in ev_completed["content"]
+
+        ev_done = websocket.receive_json()
+        assert ev_done["type"] == EventType.DONE.value
+
+
+def test_debate_learning_explicit_directive_with_tags(ws_client, monkeypatch):
+    """Metis detects 'Aprende esto:' directive with tags and completes immediately."""
+    from src.application.services.learn_from_source import LearnFromSource, SourceType, LearnResult
+    from src.application.services.ingest_vault import IngestResult
+    from pathlib import Path
+
+    captured = {}
+
+    def fake_learn_run(**kwargs):
+        captured.update(kwargs)
+        return LearnResult(
+            source=kwargs.get("source", ""),
+            generated_file=Path("/vault/concepts/pattern.md"),
+            ingest_result=IngestResult(files_processed=1, chunks_upserted=2),
+            errors=[],
+        )
+
+    monkeypatch.setattr(LearnFromSource, "run", fake_learn_run)
+
+    with ws_client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({
+            "type": "start",
+            "session_id": str(uuid.uuid4()),
+            "target_agent": "learning",
+            "user_request": "Aprende esto #mensajeria: El patrón Outbox garantiza atomicidad en mensajería.",
+        })
+
+        ev_started = websocket.receive_json()
+        assert ev_started["type"] == EventType.AGENT_STARTED.value
+
+        ev_completed = websocket.receive_json()
+        assert ev_completed["type"] == EventType.AGENT_COMPLETED.value
+        assert "pattern.md" in ev_completed["content"]
+        assert "mensajeria" in ev_completed["content"]
+
+        ev_done = websocket.receive_json()
+        assert ev_done["type"] == EventType.DONE.value
+
+    assert captured["source_type"] == SourceType.TEXT
+    assert "El patrón Outbox" in captured["source"]
+    assert captured["tags"] == ["mensajeria"]
+
+
+def test_debate_learning_interactive_tag_flow(ws_client, monkeypatch):
+    """Metis asks for tags when none are provided, and completes upon user response."""
+    from src.application.services.learn_from_source import LearnFromSource, SourceType, LearnResult
+    from src.application.services.ingest_vault import IngestResult
+    from pathlib import Path
+
+    captured = {}
+
+    def fake_learn_run(**kwargs):
+        captured.update(kwargs)
+        return LearnResult(
+            source=kwargs.get("source", ""),
+            generated_file=Path("/vault/concepts/pattern.md"),
+            ingest_result=IngestResult(files_processed=1, chunks_upserted=2),
+            errors=[],
+        )
+
+    monkeypatch.setattr(LearnFromSource, "run", fake_learn_run)
+    session_id = str(uuid.uuid4())
+
+    # Turn 1: User sends learning directive without tags
+    with ws_client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({
+            "type": "start",
+            "session_id": session_id,
+            "target_agent": "learning",
+            "user_request": "Aprende esto: El patrón CQRS separa comandos y queries.",
+        })
+
+        ev_started = websocket.receive_json()
+        assert ev_started["type"] == EventType.AGENT_STARTED.value
+
+        ev_completed = websocket.receive_json()
+        assert ev_completed["type"] == EventType.AGENT_COMPLETED.value
+        assert "¿deseas catalogarlo con algún tag o etiqueta específico" in ev_completed["content"]
+
+        ev_done = websocket.receive_json()
+        assert ev_done["type"] == EventType.DONE.value
+
+    # Turn 2: User responds with tags in the same session
+    with ws_client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({
+            "type": "start",
+            "session_id": session_id,
+            "target_agent": "learning",
+            "user_request": "#atenea #arquitectura",
+        })
+
+        ev_started = websocket.receive_json()
+        assert ev_started["type"] == EventType.AGENT_STARTED.value
+
+        ev_completed = websocket.receive_json()
+        assert ev_completed["type"] == EventType.AGENT_COMPLETED.value
+        assert "pattern.md" in ev_completed["content"]
+        assert "atenea" in ev_completed["content"]
+
+        ev_done = websocket.receive_json()
+        assert ev_done["type"] == EventType.DONE.value
+
+    assert captured["tags"] == ["atenea", "arquitectura"]
+
+
+def test_debate_learning_multisource_attachments(ws_client, monkeypatch):
+    """Metis processes different attachment file extensions with explicit tags."""
+    from src.application.services.learn_from_source import LearnFromSource, SourceType, LearnResult
+    from src.application.services.ingest_vault import IngestResult
+    from pathlib import Path
+
+    captured_types = []
+
+    def fake_learn_run(**kwargs):
+        captured_types.append(kwargs["source_type"])
+        return LearnResult(
+            source=kwargs.get("source", ""),
+            generated_file=Path("/vault/concepts/note.md"),
+            ingest_result=IngestResult(files_processed=1, chunks_upserted=2),
+            errors=[],
+        )
+
+    monkeypatch.setattr(LearnFromSource, "run", fake_learn_run)
+
+    with ws_client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({
+            "type": "start",
+            "session_id": str(uuid.uuid4()),
+            "target_agent": "learning",
+            "user_request": "Metis aprende estos documentos #docs #arquitectura",
+            "attachments": [
+                "/tmp/guide.pdf",
+                "/tmp/architecture.md",
+                "/tmp/diagram.png",
+                "https://example.com/spec",
+            ],
+        })
+
+        ev_started = websocket.receive_json()
+        assert ev_started["type"] == EventType.AGENT_STARTED.value
+
+        ev_completed = websocket.receive_json()
+        assert ev_completed["type"] == EventType.AGENT_COMPLETED.value
+
+        ev_done = websocket.receive_json()
+        assert ev_done["type"] == EventType.DONE.value
+
+    assert captured_types == [
+        SourceType.PDF,
+        SourceType.MARKDOWN,
+        SourceType.IMAGE,
+        SourceType.URL,
+    ]
+
+
+
 

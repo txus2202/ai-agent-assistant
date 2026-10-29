@@ -33,7 +33,11 @@ const mockStore = {
   clearSession: vi.fn(() => {
     mockStore.messages.splice(0, mockStore.messages.length)
     mockStore.rawEvents.splice(0, mockStore.rawEvents.length)
-  })
+  }),
+  isLearningSession: false,
+  learningStatusMessage: null as string | null,
+  currentSessionId: 'session-test-id',
+  learnSession: vi.fn()
 }
 
 vi.mock('../../stores/debate', () => ({
@@ -95,6 +99,89 @@ describe('ChatPanel.vue', () => {
 
     expect(mockStartDebate).toHaveBeenCalledWith('Help me learn Vue', 'learning', null)
   })
+
+  it('supports selecting and submitting multiple files to Metis', async () => {
+    mockUploadFile.mockResolvedValueOnce('/uploads/file1.pdf')
+    mockUploadFile.mockResolvedValueOnce('/uploads/file2.png')
+
+    const wrapper = mount(ChatPanel, {
+      props: {
+        messages: [],
+        isDebating: false
+      }
+    })
+
+    // Select Metis
+    const dropdownBtn = wrapper.find('[data-test="agent-dropdown-btn"]')
+    await dropdownBtn.trigger('click')
+    const learningOption = wrapper.findAll('[data-test="agent-option"]').find(btn => btn.text().includes('Learning Agent'))
+    await learningOption!.trigger('click')
+
+    // Simulate selecting multiple files via change event
+    const file1 = new File(['content1'], 'arch.pdf', { type: 'application/pdf' })
+    const file2 = new File(['content2'], 'diagram.png', { type: 'image/png' })
+    const fileInput = wrapper.find('[data-test="file-input"]')
+
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [file1, file2],
+      writable: true
+    })
+    await fileInput.trigger('change')
+
+    // Verify chips container and chips rendered
+    expect(wrapper.find('[data-test="file-attachments-container"]').exists()).toBe(true)
+    const chips = wrapper.findAll('[data-test="attached-file-chip"]')
+    expect(chips).toHaveLength(2)
+    expect(chips[0]!.text()).toContain('arch.pdf')
+    expect(chips[1]!.text()).toContain('diagram.png')
+
+    // Submit form
+    await wrapper.find('textarea').setValue('Aprende estos dos archivos')
+    await wrapper.find('form').trigger('submit.prevent')
+
+    expect(mockUploadFile).toHaveBeenCalledTimes(2)
+    expect(mockStartDebate).toHaveBeenCalledWith(
+      'Aprende estos dos archivos',
+      'learning',
+      ['/uploads/file1.pdf', '/uploads/file2.png']
+    )
+  })
+
+  it('allows removing an attached file or clearing all files', async () => {
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: false }
+    })
+
+    // Select Metis
+    await wrapper.find('[data-test="agent-dropdown-btn"]').trigger('click')
+    const learningOption = wrapper.findAll('[data-test="agent-option"]').find(btn => btn.text().includes('Learning Agent'))
+    await learningOption!.trigger('click')
+
+    const file1 = new File(['1'], 'doc1.md', { type: 'text/markdown' })
+    const file2 = new File(['2'], 'doc2.md', { type: 'text/markdown' })
+    const fileInput = wrapper.find('[data-test="file-input"]')
+
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [file1, file2],
+      writable: true
+    })
+    await fileInput.trigger('change')
+
+    // Remove first file
+    const removeBtns = wrapper.findAll('[data-test="remove-file-btn"]')
+    expect(removeBtns).toHaveLength(2)
+    await removeBtns[0]!.trigger('click')
+
+    expect(wrapper.findAll('[data-test="attached-file-chip"]')).toHaveLength(1)
+    expect(wrapper.find('[data-test="attached-file-chip"]').text()).toContain('doc2.md')
+
+    // Clear all files
+    const clearBtn = wrapper.find('[data-test="clear-files-btn"]')
+    await clearBtn.trigger('click')
+
+    expect(wrapper.find('[data-test="file-attachments-container"]').exists()).toBe(false)
+  })
+
 
   it('renders user and assistant messages properly', () => {
     const messages = [
@@ -507,6 +594,47 @@ describe('ChatPanel.vue', () => {
     const body = JSON.parse(synthCall?.opts?.body || '{}')
     expect(body.text).not.toContain('flowchart')
     expect(body.text).not.toContain('Frontend --> Backend')
+  })
+
+  it('renders learning button in header, and triggers learnSession on click', async () => {
+    const mockLearnSession = vi.fn().mockResolvedValue({ success: true, message: 'Aprendido' })
+    mockStore.learnSession = mockLearnSession
+    mockStore.isLearningSession = false
+    mockStore.learningStatusMessage = null
+
+    const wrapper = mount(ChatPanel, {
+      props: {
+        messages: [
+          { role: 'user', content: 'Diseña la arquitectura' },
+          { role: 'assistant', content: 'Solución acordada: Clean Architecture', agentName: 'Atenea' }
+        ],
+        isDebating: false
+      }
+    })
+
+    // Header learning button
+    const headerBtn = wrapper.find('[data-test="learn-session-btn"]')
+    expect(headerBtn.exists()).toBe(true)
+    expect(headerBtn.text()).toContain('Aprender')
+
+    // Verify bottom solution learning card was removed
+    expect(wrapper.find('[data-test="solution-learning-card"]').exists()).toBe(false)
+
+    await headerBtn.trigger('click')
+
+    expect(mockLearnSession).toHaveBeenCalledWith('session-test-id')
+  })
+
+  it('displays learning status banner when learningStatusMessage is present', () => {
+    mockStore.learningStatusMessage = '✅ Metis ha aprendido la solución'
+
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: false }
+    })
+
+    const banner = wrapper.find('[data-test="learning-status-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('Metis ha aprendido la solución')
   })
 })
 

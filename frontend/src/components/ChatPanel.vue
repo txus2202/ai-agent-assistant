@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
-import { SendHorizontal, Paperclip, Activity, MessageSquare, Check, User, Bot, ChevronDown, Copy, Eye } from '@lucide/vue'
+import { SendHorizontal, Paperclip, Activity, MessageSquare, Check, User, Bot, ChevronDown, Copy, Eye, Brain, X } from '@lucide/vue'
 import { useDebateStore, type ChatMessage } from '../stores/debate'
 import ObservabilityPanel from './ObservabilityPanel.vue'
 import DiagramModal from './DiagramModal.vue'
@@ -69,7 +69,7 @@ watch(() => store.selectedAgent, (newAgent) => {
   }
 })
 
-const selectedFile = ref<File | null>(null)
+const selectedFiles = ref<File[]>([])
 const isAgentDropdownOpen = ref(false)
 const agentDropdownRef = ref<HTMLElement | null>(null)
 const selectedAgentLabel = computed(() => {
@@ -230,8 +230,17 @@ watch(() => props.messages.length, (newLen, oldLen) => {
 const handleFileChange = (e: Event) => {
   const target = e.target as HTMLInputElement
   if (target.files && target.files.length > 0) {
-    selectedFile.value = target.files[0] || null
+    selectedFiles.value = [...selectedFiles.value, ...Array.from(target.files)]
+    target.value = ''
   }
+}
+
+const removeFile = (index: number) => {
+  selectedFiles.value.splice(index, 1)
+}
+
+const clearFiles = () => {
+  selectedFiles.value = []
 }
 
 const selectedTargetAgents = ref<string[]>([])
@@ -322,10 +331,10 @@ const onSubmit = async () => {
     store.unlockAudioContext()
   }
   
-  let attachmentUrl = null
-  if (selectedFile.value) {
+  let attachmentUrls: string[] = []
+  if (selectedFiles.value.length > 0) {
     try {
-      attachmentUrl = await store.uploadFile(selectedFile.value)
+      attachmentUrls = await Promise.all(selectedFiles.value.map(file => store.uploadFile(file)))
     } catch (e) {
       console.error('Failed to upload file:', e)
       alert('Error uploading file. Please try again.')
@@ -333,10 +342,17 @@ const onSubmit = async () => {
     }
   }
 
-  store.startDebate(store.draftMessage, selectedAgent.value, attachmentUrl)
+  let attachmentParam: string | string[] | null = null
+  if (attachmentUrls.length === 1 && attachmentUrls[0]) {
+    attachmentParam = attachmentUrls[0]
+  } else if (attachmentUrls.length > 1) {
+    attachmentParam = attachmentUrls
+  }
+
+  store.startDebate(store.draftMessage, selectedAgent.value, attachmentParam)
   
   store.draftMessage = ''
-  selectedFile.value = null
+  selectedFiles.value = []
 }
 
 const clearChat = () => {
@@ -347,6 +363,13 @@ const clearChat = () => {
       store.messages.splice(0, store.messages.length)
       store.rawEvents.splice(0, store.rawEvents.length)
     }
+  }
+}
+
+const handleLearnSession = async () => {
+  if (props.isDebating || store.isLearningSession) return
+  if (typeof store.learnSession === 'function') {
+    await store.learnSession(store.currentSessionId)
   }
 }
 
@@ -415,6 +438,17 @@ defineExpose({
           </div>
         </div>
         <div class="flex items-center space-x-2">
+          <!-- Learn Button -->
+          <button 
+            @click="handleLearnSession"
+            :disabled="store.isLearningSession || messages.length === 0 || props.isDebating"
+            class="text-[9px] border border-cyan-800/80 hover:border-neon-cyan text-neon-cyan font-mono px-3 py-1.5 rounded transition-all uppercase tracking-widest bg-[#040e1a] hover:bg-neon-cyan/15 flex items-center space-x-1.5 disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_0_10px_rgba(0,229,255,0.08)] cursor-pointer"
+            title="Pedir a Metis que sintetice y aprenda la sesión en Obsidian Vault"
+            data-test="learn-session-btn"
+          >
+            <Brain class="w-3.5 h-3.5" :class="{ 'animate-pulse': store.isLearningSession }" />
+            <span>{{ store.isLearningSession ? 'Asimilando...' : 'Aprender' }}</span>
+          </button>
 
           <!-- Clear Chat -->
           <button 
@@ -426,11 +460,62 @@ defineExpose({
         </div>
       </div>
       
-      <!-- File attachment indicator (if selected) -->
-      <div v-if="selectedFile" class="mt-4 bg-[#0a192f] border border-neon-cyan/30 rounded-lg p-3 flex items-center space-x-3 shadow-inner">
-        <Check class="w-4 h-4 text-neon-cyan shrink-0" />
-        <div class="text-[11px] text-neon-cyan/90 font-mono truncate">
-          Archivo de contexto cargado ({{ selectedFile.name }})
+      <!-- Learning status notification banner -->
+      <div 
+        v-if="store.learningStatusMessage" 
+        class="mt-3 bg-[#031525] border border-neon-cyan/40 rounded-lg p-3 flex items-center justify-between shadow-[0_0_15px_rgba(0,229,255,0.15)] text-xs font-mono text-cyan-200 animate-fade-in"
+        data-test="learning-status-banner"
+      >
+        <div class="flex items-center space-x-2.5">
+          <Brain class="w-4 h-4 text-neon-cyan shrink-0" />
+          <span>{{ store.learningStatusMessage }}</span>
+        </div>
+        <button 
+          @click="store.learningStatusMessage = null"
+          class="text-space-400 hover:text-white p-1 rounded hover:bg-space-800 transition-colors cursor-pointer"
+          title="Cerrar notificación"
+        >
+          <X class="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      <!-- File attachments indicator (if files selected) -->
+      <div v-if="selectedFiles.length > 0" class="mt-4 bg-[#0a192f] border border-neon-cyan/30 rounded-lg p-3 flex flex-col gap-2 shadow-inner" data-test="file-attachments-container">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <Check class="w-4 h-4 text-neon-cyan shrink-0" />
+            <span class="text-[11px] text-neon-cyan/90 font-mono font-bold tracking-wide">
+              {{ selectedFiles.length === 1 ? `Archivo de contexto cargado (${selectedFiles[0]?.name})` : `${selectedFiles.length} archivos cargados para Metis` }}
+            </span>
+          </div>
+          <button 
+            type="button" 
+            @click="clearFiles" 
+            class="text-[9px] font-mono text-space-400 hover:text-red-400 uppercase tracking-wider transition-colors cursor-pointer"
+            data-test="clear-files-btn"
+          >
+            Quitar todos
+          </button>
+        </div>
+
+        <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scrollbar pt-1">
+          <div 
+            v-for="(file, index) in selectedFiles" 
+            :key="index"
+            class="bg-[#030509] border border-neon-cyan/40 px-2 py-1 rounded text-[10px] font-mono text-cyan-200 flex items-center space-x-1.5 shadow-sm"
+            data-test="attached-file-chip"
+          >
+            <span class="truncate max-w-[160px]">{{ file.name }}</span>
+            <button 
+              type="button" 
+              @click="removeFile(index)" 
+              class="text-space-400 hover:text-red-400 transition-colors cursor-pointer p-0.5 rounded hover:bg-space-800"
+              title="Quitar archivo"
+              data-test="remove-file-btn"
+            >
+              <X class="w-3 h-3" />
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -695,10 +780,18 @@ defineExpose({
             v-if="selectedAgent === 'learning'" 
             for="chat-file-upload" 
             class="cursor-pointer text-space-400 hover:text-neon-cyan transition-colors flex items-center justify-center px-3 py-1.5 border border-cyan-900/50 rounded bg-[#030509] hover:bg-space-800 shadow-[0_0_10px_-2px_rgba(0,229,255,0.05)] hover:border-neon-cyan/50" 
-            title="Adjuntar archivo"
+            title="Adjuntar PDF, Markdown o Imagen para Metis"
           >
             <span class="sr-only">Adjuntar archivo</span>
-            <input id="chat-file-upload" type="file" @change="handleFileChange" class="hidden" data-test="file-input" />
+            <input 
+              id="chat-file-upload" 
+              type="file" 
+              multiple
+              accept=".pdf,.md,.markdown,.png,.jpg,.jpeg,.webp" 
+              @change="handleFileChange" 
+              class="hidden" 
+              data-test="file-input" 
+            />
             <Paperclip class="w-4 h-4" />
           </label>
         </div>

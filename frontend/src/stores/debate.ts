@@ -167,6 +167,10 @@ export const useDebateStore = defineStore('debate', () => {
   const isWakeWordTriggered = ref(false)
   const selectedAgent = ref<string>('supervisor')
 
+  // Learning Session State (Metis Vault & Vector persistence)
+  const isLearningSession = ref(false)
+  const learningStatusMessage = ref<string | null>(null)
+
   let wakeWordWs: WebSocket | null = null
   let wwAudioContext: AudioContext | null = null
   let wwMicrophone: MediaStreamAudioSourceNode | null = null
@@ -465,7 +469,7 @@ export const useDebateStore = defineStore('debate', () => {
     isDebating.value = debate.status === 'running'
   }
 
-  function startDebate(userRequest: string, targetAgent: string = 'supervisor', attachmentUrl: string | null = null) {
+  function startDebate(userRequest: string, targetAgent: string = 'supervisor', attachmentUrl: string | string[] | null = null) {
     stopTts() // Interrupt any ongoing TTS
 
     if (!isConnected.value || !ws) {
@@ -500,12 +504,19 @@ export const useDebateStore = defineStore('debate', () => {
       timestamp: new Date().toISOString()
     })
     
+    let attachments: string[] = []
+    if (Array.isArray(attachmentUrl)) {
+      attachments = attachmentUrl
+    } else if (attachmentUrl) {
+      attachments = [attachmentUrl]
+    }
+
     const payload = {
       type: 'start',
       session_id: currentSessionId.value,
       user_request: userRequest,
       target_agent: targetAgent,
-      attachments: attachmentUrl ? [attachmentUrl] : [],
+      attachments,
       history
     }
     ws.send(JSON.stringify(payload))
@@ -910,6 +921,37 @@ export const useDebateStore = defineStore('debate', () => {
     }
   }
 
+  async function learnSession(sessionId?: string | null, content?: string): Promise<{ success: boolean; message: string }> {
+    isLearningSession.value = true
+    learningStatusMessage.value = null
+    try {
+      const sid = sessionId || currentSessionId.value
+      const response = await fetch('/api/learning/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sid || undefined,
+          content: content || undefined,
+        }),
+      })
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error(err.detail || 'Error al persistir el aprendizaje')
+      }
+      const data = await response.json()
+      const fileName = data.generated_file ? data.generated_file.split('/').pop() : 'nota de arquitectura'
+      const msg = `✅ Metis ha asimilado y guardado la síntesis en el Vault: ${fileName}`
+      learningStatusMessage.value = msg
+      return { success: true, message: msg }
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Error inesperado al aprender la sesión'
+      learningStatusMessage.value = `❌ Error: ${errMsg}`
+      return { success: false, message: errMsg }
+    } finally {
+      isLearningSession.value = false
+    }
+  }
+
   return {
     isConnected,
     isDebating,
@@ -953,6 +995,9 @@ export const useDebateStore = defineStore('debate', () => {
     startAutoListen,
     stopAutoListen,
     resetWakeWordSession,
+    isLearningSession,
+    learningStatusMessage,
+    learnSession,
     findAgent,
     normalizeAgentRole,
     cleanAgentMessageContent,

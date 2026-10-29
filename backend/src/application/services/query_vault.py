@@ -6,6 +6,8 @@ helper used by all sub-agents to inject RAG context into their prompts.
 """
 from __future__ import annotations
 
+import os
+
 from src.domain.ports.document_store import IDocumentStore
 from src.domain.value_objects.document_chunk import DocumentChunk, SearchFilter
 
@@ -19,6 +21,7 @@ class QueryVault:
         document_store: IDocumentStore,
         filter: SearchFilter | None = None,
         top_k: int | None = None,
+        min_score: float | None = None,
     ) -> list[DocumentChunk]:
         """
         Search the document store for chunks relevant to ``query``.
@@ -28,6 +31,7 @@ class QueryVault:
             document_store: The IDocumentStore to search.
             filter:         Optional metadata filter.
             top_k:          Max results. ``None`` → reads ``RAG_TOP_K`` env var.
+            min_score:      Minimum similarity score threshold (default: reads ``RAG_MIN_SCORE`` or 0.30).
 
         Raises:
             ValueError: if ``query`` is empty or whitespace-only.
@@ -35,7 +39,13 @@ class QueryVault:
         if not query or not query.strip():
             raise ValueError("query cannot be empty")
 
-        return document_store.search(query=query, top_k=top_k, filter=filter)
+        chunks = document_store.search(query=query, top_k=top_k, filter=filter)
+        threshold = min_score if min_score is not None else float(
+            os.getenv("RAG_MIN_SCORE", "0.30")
+        )
+        if threshold > 0.0:
+            chunks = [c for c in chunks if c.score is None or c.score >= threshold]
+        return chunks
 
     @staticmethod
     def chunks_to_context(chunks: list[DocumentChunk]) -> str:

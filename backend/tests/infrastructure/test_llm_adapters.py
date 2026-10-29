@@ -15,6 +15,7 @@ Scenarios covered:
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -74,6 +75,45 @@ class TestGeminiAdapter:
 
         adapter = GeminiAdapter(api_key="test-key")
         result = adapter.complete("Hello", "gemini-3.6-flash")
+
+        assert isinstance(result, str)
+        assert result == "Gemini response"
+
+    def test_complete_with_context_caching(self):
+        from src.infrastructure.llm.gemini_adapter import GeminiAdapter
+
+        # Simulate large prompt >= 32768 tokens
+        count_mock = MagicMock()
+        count_mock.total_tokens = 35000
+        self._mock_genai.Client.return_value.models.count_tokens.return_value = count_mock
+
+        cache_mock = MagicMock()
+        cache_mock.name = "cachedContents/test-cache-id"
+        self._mock_genai.Client.return_value.caches.create.return_value = cache_mock
+
+        adapter = GeminiAdapter(api_key="test-key")
+        result = adapter.complete("Very large prompt", "gemini-2.5-flash")
+
+        assert result == "Gemini response"
+        self._mock_genai.Client.return_value.caches.create.assert_called_once_with(
+            model="gemini-2.5-flash",
+            config={
+                "contents": ["Very large prompt"],
+                "ttl": "3600s",
+            },
+        )
+        self._mock_genai.Client.return_value.caches.delete.assert_called_once_with(
+            name="cachedContents/test-cache-id"
+        )
+
+    def test_complete_image_returns_string(self, tmp_path: Path):
+        from src.infrastructure.llm.gemini_adapter import GeminiAdapter
+
+        img_file = tmp_path / "test.png"
+        img_file.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        adapter = GeminiAdapter(api_key="test-key")
+        result = adapter.complete_image("Describe diagram", img_file, "gemini-2.5-flash")
 
         assert isinstance(result, str)
         assert result == "Gemini response"
@@ -139,6 +179,18 @@ class TestOpenAIAdapter:
 
         adapter = OpenAIAdapter(api_key="test-key")
         result = adapter.complete("Hello", "gpt-4o-mini")
+
+        assert isinstance(result, str)
+        assert result == "OpenAI response"
+
+    def test_complete_image_returns_string(self, tmp_path: Path):
+        from src.infrastructure.llm.openai_adapter import OpenAIAdapter
+
+        img_file = tmp_path / "test.png"
+        img_file.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        adapter = OpenAIAdapter(api_key="test-key")
+        result = adapter.complete_image("Describe diagram", img_file, "gpt-4o")
 
         assert isinstance(result, str)
         assert result == "OpenAI response"

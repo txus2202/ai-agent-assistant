@@ -27,8 +27,9 @@ class Settings(BaseSettings):
     default_provider: str = "gemini"
     default_model: str = "gemini-3.6-flash"
 
-    # RAG (Can be overridden by RAG_TOP_K)
+    # RAG (Can be overridden by RAG_TOP_K and RAG_MIN_SCORE)
     rag_top_k: int = 5
+    rag_min_score: float = 0.30
 
     # Multi-Agent Debate Internal Review (Can be overridden by REVIEW_ROUNDS)
     review_rounds: int = 1

@@ -284,3 +284,85 @@ class TestLearnFromSource:
 
         # Filename must match YYYY-MM-DD_*.md
         assert re.match(r"\d{4}-\d{2}-\d{2}_", result.generated_file.name)
+
+    def test_learn_from_markdown_source(self, tmp_path: Path, monkeypatch):
+        from src.application.services.learn_from_source import LearnFromSource, SourceType
+        from src.infrastructure.learning.markdown_extractor import MarkdownExtractor
+
+        md_file = tmp_path / "raw.md"
+        md_file.write_text("# Raw notes\nContent", encoding="utf-8")
+
+        result = LearnFromSource.run(
+            source=str(md_file),
+            source_type=SourceType.MARKDOWN,
+            llm_provider=FakeLLM(),
+            document_store=InMemoryDocumentStore(),
+            vault_root=tmp_path,
+        )
+
+        assert result.errors == []
+        assert result.generated_file is not None
+        assert result.generated_file.exists()
+
+    def test_learn_from_image_source(self, tmp_path: Path, monkeypatch):
+        from src.application.services.learn_from_source import LearnFromSource, SourceType
+        from src.infrastructure.learning.image_extractor import ImageExtractor
+
+        img_file = tmp_path / "diag.png"
+        img_file.write_bytes(b"fakebytes")
+
+        monkeypatch.setattr(ImageExtractor, "extract", lambda path, llm, **kwargs: "# Architecture\nComponent A -> B")
+
+        result = LearnFromSource.run(
+            source=str(img_file),
+            source_type=SourceType.IMAGE,
+            llm_provider=FakeLLM(),
+            document_store=InMemoryDocumentStore(),
+            vault_root=tmp_path,
+        )
+
+        assert result.errors == []
+        assert result.generated_file is not None
+        assert result.generated_file.exists()
+
+    def test_learn_from_text_source(self, tmp_path: Path):
+        from src.application.services.learn_from_source import LearnFromSource, SourceType
+
+        result = LearnFromSource.run(
+            source="Aprende esto: El patrón CQRS separa comandos de consultas.",
+            source_type=SourceType.TEXT,
+            llm_provider=FakeLLM(),
+            document_store=InMemoryDocumentStore(),
+            vault_root=tmp_path,
+        )
+
+        assert result.errors == []
+        assert result.generated_file is not None
+        assert result.generated_file.exists()
+
+    def test_learn_from_source_includes_filename_in_tags(self, tmp_path: Path, monkeypatch):
+        from src.application.services.learn_from_source import LearnFromSource, SourceType
+        from src.infrastructure.learning.markdown_extractor import MarkdownExtractor
+
+        md_file = tmp_path / "guia-arquitectura-distribuida.md"
+        md_file.write_text("# Guía Técnica\nContenido detallado.", encoding="utf-8")
+
+        monkeypatch.setattr(MarkdownExtractor, "extract", lambda p: p.read_text(encoding="utf-8"))
+
+        result = LearnFromSource.run(
+            source=str(md_file),
+            source_type=SourceType.MARKDOWN,
+            llm_provider=FakeLLM(),
+            document_store=InMemoryDocumentStore(),
+            vault_root=tmp_path,
+        )
+
+        assert result.errors == []
+        assert result.generated_file is not None
+        content = result.generated_file.read_text(encoding="utf-8")
+
+        # Verifica que el nombre del archivo y su stem estén en los tags
+        assert "guia-arquitectura-distribuida.md" in content
+        assert "guia-arquitectura-distribuida" in content
+
+

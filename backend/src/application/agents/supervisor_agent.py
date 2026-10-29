@@ -470,6 +470,24 @@ def _build_planned_stages(triage: Any, active_topology: DebateTopology) -> list[
     return plan
 
 
+def _build_stage_stream(
+    stage: str,
+    state: DebateState,
+    user_request: str,
+    run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
+    hitl_callback: Callable[[SupervisorEvent], Awaitable[HITLResponse]],
+    active_topology: DebateTopology,
+    effective_review_rounds: int,
+) -> AsyncGenerator[SupervisorEvent, None] | None:
+    if stage == "interpreters" and active_topology.interpreters:
+        return _run_phase_1(state, user_request, run_role, hitl_callback, active_topology.interpreters)
+    if stage == "proposers" and active_topology.proposers:
+        return _run_phase_2(state, run_role, hitl_callback, active_topology.proposers, active_topology.reviewers, effective_review_rounds)
+    if stage == "evaluators" and active_topology.evaluators:
+        return _run_phase_3(state, run_role, hitl_callback, active_topology.evaluators)
+    return None
+
+
 async def _execute_single_stage(
     stage: str,
     state: DebateState,
@@ -482,21 +500,21 @@ async def _execute_single_stage(
     sup_model_name: str,
     sup_agent_name: str,
 ) -> AsyncGenerator[SupervisorEvent, None]:
-    if stage == "interpreters" and active_topology.interpreters:
-        phase1 = _run_phase_1(state, user_request, run_role, hitl_callback, active_topology.interpreters)
-        async for event in _execute_phase_step(phase1, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology):
-            yield event
-    elif stage == "proposers" and active_topology.proposers:
-        phase2 = _run_phase_2(state, run_role, hitl_callback, active_topology.proposers, active_topology.reviewers, effective_review_rounds)
-        async for event in _execute_phase_step(phase2, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology):
-            yield event
-    elif stage == "evaluators" and active_topology.evaluators:
-        phase3 = _run_phase_3(state, run_role, hitl_callback, active_topology.evaluators)
-        async for event in _execute_phase_step(phase3, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology):
-            yield event
-    elif stage == "implementers" and active_topology.implementers:
+    if stage == "implementers" and active_topology.implementers:
         async for event in _run_phase_4(state, run_role, active_topology.implementers):
             yield event
+        return
+
+    phase_stream = _build_stage_stream(
+        stage, state, user_request, run_role, hitl_callback, active_topology, effective_review_rounds
+    )
+    if not phase_stream:
+        return
+
+    async for event in _execute_phase_step(
+        phase_stream, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology
+    ):
+        yield event
 
 
 async def _run_adaptive_debate(

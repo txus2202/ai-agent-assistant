@@ -158,3 +158,80 @@ class TestURLExtractor:
 
         with pytest.raises(ExtractionError):
             URLExtractor.extract("https://example.com/gone")
+
+
+# ===========================================================================
+# MarkdownExtractor
+# ===========================================================================
+
+class TestMarkdownExtractor:
+    def test_extract_returns_markdown_text(self, tmp_path):
+        from src.infrastructure.learning.markdown_extractor import MarkdownExtractor
+
+        md_file = tmp_path / "architecture.md"
+        content = "# System Architecture\n\n## Overview\nThis is a test architecture note."
+        md_file.write_text(content, encoding="utf-8")
+
+        result = MarkdownExtractor.extract(md_file)
+        assert result == content
+
+    def test_extract_raises_extraction_error_if_file_missing(self, tmp_path):
+        from src.infrastructure.learning.markdown_extractor import MarkdownExtractor
+
+        missing_file = tmp_path / "nonexistent.md"
+        with pytest.raises(ExtractionError, match="File not found"):
+            MarkdownExtractor.extract(missing_file)
+
+
+# ===========================================================================
+# ImageExtractor
+# ===========================================================================
+
+class TestImageExtractor:
+    def test_extract_calls_llm_and_returns_description(self, tmp_path):
+        from src.infrastructure.learning.image_extractor import ImageExtractor
+
+        img_file = tmp_path / "diagram.png"
+        img_file.write_bytes(b"\x89PNG\r\n\x1a\nfakeimagebytes")
+
+        mock_llm = MagicMock()
+        mock_llm.complete_image.return_value = "# Diagrama de Arquitectura\n\n## Componentes\n- Web Client\n- API Gateway"
+
+        result = ImageExtractor.extract(img_file, mock_llm, model_name="gemini-2.5-flash")
+        assert "Diagrama de Arquitectura" in result
+        mock_llm.complete_image.assert_called_once()
+
+    def test_extract_falls_back_to_complete_if_no_complete_image(self, tmp_path):
+        from src.infrastructure.learning.image_extractor import ImageExtractor
+
+        img_file = tmp_path / "diagram.png"
+        img_file.write_bytes(b"\x89PNG\r\n\x1a\nfakeimagebytes")
+
+        mock_llm = MagicMock(spec=["complete"])
+        mock_llm.complete.return_value = "# Diagrama Textual"
+
+        result = ImageExtractor.extract(img_file, mock_llm, model_name="test-model")
+        assert "Diagrama Textual" in result
+        mock_llm.complete.assert_called_once()
+
+    def test_extract_raises_extraction_error_if_image_missing(self, tmp_path):
+        from src.infrastructure.learning.image_extractor import ImageExtractor
+
+        missing_img = tmp_path / "missing.png"
+        mock_llm = MagicMock()
+
+        with pytest.raises(ExtractionError, match="Image file not found"):
+            ImageExtractor.extract(missing_img, mock_llm, model_name="test-model")
+
+    def test_extract_raises_extraction_error_on_llm_failure(self, tmp_path):
+        from src.infrastructure.learning.image_extractor import ImageExtractor
+
+        img_file = tmp_path / "diagram.png"
+        img_file.write_bytes(b"\x89PNG\r\n\x1a\nfakeimagebytes")
+
+        mock_llm = MagicMock()
+        mock_llm.complete_image.side_effect = RuntimeError("Vision API quota exceeded")
+
+        with pytest.raises(ExtractionError, match="Vision API quota exceeded"):
+            ImageExtractor.extract(img_file, mock_llm, model_name="test-model")
+

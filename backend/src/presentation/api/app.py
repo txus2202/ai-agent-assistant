@@ -88,7 +88,7 @@ def create_app() -> FastAPI:
     )
 
     # ── Routers ──────────────────────────────────────────────────────────
-    from src.presentation.api.routes import health, config, upload, history, models, audio, observability
+    from src.presentation.api.routes import health, config, upload, history, models, audio, observability, learning
     from src.presentation.api.ws import debate, wake_word
 
     # Register routes
@@ -99,8 +99,10 @@ def create_app() -> FastAPI:
     app.include_router(models.router)
     app.include_router(audio.router)
     app.include_router(observability.router)
+    app.include_router(learning.router)
     app.include_router(debate.router)
     app.include_router(wake_word.router)
+
     
     # Future routers registered here as they are implemented:
     # app.include_router(settings_router, prefix="/settings")

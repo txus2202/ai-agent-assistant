@@ -10,6 +10,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 
+from pathlib import Path
+
+
 class ILLMProvider(ABC):
     """
     Port (output) for LLM text completion.
@@ -19,6 +22,23 @@ class ILLMProvider(ABC):
     - Catch all SDK-specific exceptions and re-raise them as
       ``src.domain.exceptions.LLMProviderError``.
     """
+
+    def complete_image(self, prompt: str, image_path: Path, model_name: str) -> str:
+        """
+        Send ``prompt`` along with an image file to a multimodal LLM.
+
+        Args:
+            prompt: Text instruction or question about the image.
+            image_path: Path to the local image file.
+            model_name: Multimodal model identifier.
+
+        Returns:
+            Textual response describing or analyzing the image.
+
+        Raises:
+            LLMProviderError: On any provider-level failure or unsupported modal.
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} does not support image analysis.")
 
     @abstractmethod
     def complete(self, prompt: str, model_name: str) -> str:

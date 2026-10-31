@@ -121,4 +121,32 @@ def test_ingest_result_has_expected_fields(
     assert isinstance(result, IngestResult)
     assert isinstance(result.files_processed, int)
     assert isinstance(result.chunks_upserted, int)
+    assert isinstance(result.files_deleted, int)
     assert isinstance(result.errors, list)
+
+
+def test_ingest_vault_cleans_up_orphaned_files(
+    tmp_path: Path,
+    store: InMemoryDocumentStore,
+) -> None:
+    file_a = tmp_path / "note_a.md"
+    file_b = tmp_path / "note_b.md"
+    _write_md(file_a, "## Section A\nContent of A.\n")
+    _write_md(file_b, "## Section B\nContent of B.\n")
+
+    # Initial ingestion of both files
+    res1 = IngestVault.run(vault_root=tmp_path, document_store=store)
+    assert res1.files_processed == 2
+    assert res1.files_deleted == 0
+    assert store.count() == 2
+
+    # User deletes note_b.md from the vault
+    file_b.unlink()
+
+    # Re-running ingestion must detect that note_b.md is gone and purge its chunks
+    res2 = IngestVault.run(vault_root=tmp_path, document_store=store)
+    assert res2.files_processed == 1
+    assert res2.files_deleted == 1
+    assert store.count() == 1
+    assert store.get_indexed_file_paths() == {"note_a.md"}
+

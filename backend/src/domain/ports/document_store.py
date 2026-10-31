@@ -52,5 +52,14 @@ class IDocumentStore(ABC):
         """Remove chunks by id. Idempotent — no error for unknown ids."""
 
     @abstractmethod
+    def delete_by_file_paths(self, file_paths: list[str]) -> None:
+        """Remove all chunks originating from the specified relative file paths."""
+
+    @abstractmethod
+    def get_indexed_file_paths(self) -> set[str]:
+        """Return the set of relative file paths currently indexed in the store."""
+
+    @abstractmethod
     def count(self) -> int:
         """Return the total number of stored chunks."""
+

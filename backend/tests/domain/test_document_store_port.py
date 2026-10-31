@@ -151,3 +151,18 @@ def test_document_chunk_is_immutable() -> None:
     chunk = _make_chunk("f.md", "S", "content")
     with pytest.raises((AttributeError, TypeError)):
         chunk.content = "mutated"  # type: ignore[misc]
+
+
+def test_get_indexed_file_paths_and_delete_by_file_paths(store: InMemoryDocumentStore) -> None:
+    chunk1 = _make_chunk("a.md", "S1", "content 1")
+    chunk2 = _make_chunk("a.md", "S2", "content 2")
+    chunk3 = _make_chunk("b.md", "S1", "content 3")
+    store.upsert([chunk1, chunk2, chunk3])
+
+    indexed = store.get_indexed_file_paths()
+    assert indexed == {"a.md", "b.md"}
+
+    store.delete_by_file_paths(["a.md"])
+    assert store.get_indexed_file_paths() == {"b.md"}
+    assert store.count() == 1
+

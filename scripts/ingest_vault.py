@@ -56,6 +56,7 @@ if str(_BACKEND_SRC) not in sys.path:
     sys.path.insert(0, str(_BACKEND_SRC))
 
 from src.application.services.ingest_vault import IngestVault  # noqa: E402
+from src.domain.ports.document_store import IDocumentStore  # noqa: E402
 from src.infrastructure.rag.chroma_document_store import ChromaDBDocumentStore  # noqa: E402
 from src.infrastructure.rag.in_memory_document_store import InMemoryDocumentStore  # noqa: E402
 
@@ -133,6 +134,7 @@ def main() -> int:
         return 1
 
     # ── Choose document store ─────────────────────────────────────────────
+    store: IDocumentStore
     if dry_run:
         store = InMemoryDocumentStore()
         store_label = "dry-run (InMemory — nothing written to disk)"
@@ -162,9 +164,10 @@ def main() -> int:
 
     # ── Summary ───────────────────────────────────────────────────────────
     status_icon = _green("✓") if not result.errors else _red("⚠")
+    deleted_info = f" · {_bold(str(result.files_deleted))} orphaned files purged" if result.files_deleted else ""
     print(
         f"\n  {status_icon}  {_bold(str(result.files_processed))} files processed · "
-        f"{_bold(str(result.chunks_upserted))} chunks upserted · "
+        f"{_bold(str(result.chunks_upserted))} chunks upserted{deleted_info} · "
         f"{_bold(str(len(result.errors)))} errors  "
         f"({elapsed:.2f}s)\n"
     )

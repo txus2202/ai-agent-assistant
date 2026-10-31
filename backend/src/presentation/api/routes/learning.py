@@ -28,30 +28,46 @@ def get_agent_config_repo(settings: Settings = Depends(get_settings)) -> SqliteA
     return SqliteAgentConfigRepository(str(settings.sqlite_db_path))
 
 
-@router.post("/session")
+def _extract_chat_history(repo: SqliteDebateRepository, session_id: str) -> list[dict[str, Any]]:
+    record = repo.find_by_id(session_id)
+    if not record or not record.events:
+        return []
+    history: list[dict[str, Any]] = []
+    for ev in record.events:
+        ev_type = ev.get("type")
+        if ev_type in ("user_message", "message", "agent_completed"):
+            history.append({
+                "role": "user" if ev_type == "user_message" else "assistant",
+                "agent": ev.get("role") or ev.get("metadata", {}).get("agent_name"),
+                "content": ev.get("content", ""),
+            })
+    return history
+
+
+def _resolve_learning_config(
+    agent_config_repo: SqliteAgentConfigRepository,
+    settings: Settings,
+) -> tuple[str, str]:
+    config = agent_config_repo.find_by_role("learning")
+    prov_name = config.provider if config else settings.default_provider
+    mod_name = config.model_name if config else settings.default_model
+    return prov_name, mod_name
+
+
+@router.post(
+    "/session",
+    responses={
+        400: {"description": "Learning session failed or invalid content"}
+    },
+)
 async def learn_session(
     payload: LearnSessionRequest,
     settings: Settings = Depends(get_settings),
     repo: SqliteDebateRepository = Depends(get_debate_repo),
     agent_config_repo: SqliteAgentConfigRepository = Depends(get_agent_config_repo),
 ) -> Dict[str, Any]:
-    chat_history: list[dict[str, Any]] = []
-
-    debate_record = repo.find_by_id(payload.session_id)
-    if debate_record and debate_record.events:
-        for ev in debate_record.events:
-            ev_type = ev.get("type")
-            if ev_type in ("user_message", "message", "agent_completed"):
-                chat_history.append({
-                    "role": "user" if ev_type == "user_message" else "assistant",
-                    "agent": ev.get("role") or ev.get("metadata", {}).get("agent_name"),
-                    "content": ev.get("content", ""),
-                })
-
-    # Query Metis's specific provider and model configuration
-    config = agent_config_repo.find_by_role("learning")
-    prov_name = config.provider if config else settings.default_provider
-    mod_name = config.model_name if config else settings.default_model
+    chat_history = _extract_chat_history(repo, payload.session_id)
+    prov_name, mod_name = _resolve_learning_config(agent_config_repo, settings)
 
     llm = get_llm_provider(prov_name)
     vault_root = Path(settings.vault_root)

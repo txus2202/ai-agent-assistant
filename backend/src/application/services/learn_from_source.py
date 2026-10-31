@@ -38,7 +38,7 @@ generate a well-structured Markdown document strictly following this format:
 1. Start with YAML frontmatter (between --- delimiters) containing:
    - type: note
    - created: {date} (today's date, YYYY-MM-DD format)
-   - tags: [list, of, relevant, tags, including "{source_tag}"]
+   - tags: A comprehensive YAML list of 5 to 10 relevant tags. You MUST automatically infer and generate meaningful domain and technical tags from the content (e.g. key concepts, architecture patterns, technologies, protocols). {mandatory_tags_clause}
    - source_url or source_file (the origin of the content)
 
 2. A single H1 title (# Title) that summarises the document in 5-10 words.
@@ -136,18 +136,9 @@ class LearnFromSource:
 
         # ── 2. Generate structured .md via LLM ───────────────────────────
         date_str = datetime.now().strftime("%Y-%m-%d")
-        tags_to_ensure: list[str] = []
-        if tags:
-            for t in tags:
-                clean_t = t.strip().lstrip("#")
-                if clean_t and clean_t not in tags_to_ensure:
-                    tags_to_ensure.append(clean_t)
+        tags_to_ensure, mandatory_clause = _prepare_tags_and_clause(tags, source, source_type)
 
         if source_type in (SourceType.PDF, SourceType.MARKDOWN, SourceType.IMAGE):
-            file_p = Path(source)
-            for t in (file_p.name, file_p.stem):
-                if t not in tags_to_ensure:
-                    tags_to_ensure.append(t)
             source_field = f"source_file: {source}"
         elif source_type == SourceType.URL:
             source_field = f"source_url: {source}"
@@ -155,7 +146,7 @@ class LearnFromSource:
             source_field = "source: direct_dialogue"
 
         prompt = (
-            f"{_SYSTEM_PROMPT.format(date=date_str, source_tag=', '.join(tags_to_ensure) if tags_to_ensure else 'relevante')}\n\n"
+            f"{_SYSTEM_PROMPT.format(date=date_str, mandatory_tags_clause=mandatory_clause)}\n\n"
             f"--- Source metadata ---\n{source_field}\n\n"
             f"--- Raw text ---\n{raw_text}"
         )
@@ -192,9 +183,58 @@ class LearnFromSource:
         )
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
+def _extract_clean_file_tags(file_p: Path) -> list[str]:
+    """
+    Extract meaningful filename and stem tags from a file path.
+    Filters out raw UUIDs and strips random hex prefixes (e.g. 'a1b2c3d4_').
+    """
+    stem = file_p.stem
+    uuid_pattern = r"^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}$"
+    if re.match(uuid_pattern, stem):
+        return []
+
+    prefix_match = re.match(r"^[0-9a-fA-F]{8}_(.+)$", stem)
+    clean_stem = prefix_match.group(1) if prefix_match else stem
+    clean_name = f"{clean_stem}{file_p.suffix}" if prefix_match else file_p.name
+
+    tags: list[str] = []
+    for candidate in (clean_name, clean_stem):
+        if candidate and candidate not in tags:
+            tags.append(candidate)
+    return tags
+
+
+def _prepare_tags_and_clause(
+    tags: list[str] | None,
+    source: str,
+    source_type: SourceType,
+) -> tuple[list[str], str]:
+    """
+    Compiles mandatory tags (user-requested + meaningful filename tags)
+    and formats the prompt clause for the LLM.
+    """
+    tags_to_ensure: list[str] = []
+    if tags:
+        for t in tags:
+            clean_t = t.strip().lstrip("#")
+            if clean_t and clean_t not in tags_to_ensure:
+                tags_to_ensure.append(clean_t)
+
+    if source_type in (SourceType.PDF, SourceType.MARKDOWN, SourceType.IMAGE):
+        for file_tag in _extract_clean_file_tags(Path(source)):
+            if file_tag not in tags_to_ensure:
+                tags_to_ensure.append(file_tag)
+
+    if tags_to_ensure:
+        clause = (
+            f"In addition to your automatically inferred tags, you MUST also include these specific tags: "
+            f"{', '.join(tags_to_ensure)}."
+        )
+    else:
+        clause = "Select tags that best characterize the technical concepts and domain."
+
+    return tags_to_ensure, clause
+
 
 def _inject_source_tags(md_content: str, tags_to_add: list[str]) -> str:
     """

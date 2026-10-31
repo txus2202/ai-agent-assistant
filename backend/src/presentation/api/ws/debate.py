@@ -229,7 +229,7 @@ class DebateWebSocketHandler:
         if not self.debate_record or not self.debate_record.events:
             return None
         for ev in reversed(self.debate_record.events):
-            if ev.get("type") in ("agent_completed", "done") and ev.get("role") in ("Metis", "learning"):
+            if ev.get("type") in ("agent_completed", "done"):
                 meta = ev.get("metadata", {})
                 if isinstance(meta, dict) and meta.get("pending_learning"):
                     raw = meta.get("pending_learning")

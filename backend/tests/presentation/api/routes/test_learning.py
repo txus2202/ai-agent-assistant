@@ -7,18 +7,10 @@ from src.application.services.learn_from_session import LearnFromSession
 from src.application.services.learn_from_source import LearnResult
 from src.application.services.ingest_vault import IngestResult
 
-from src.presentation.api.routes import learning
-
 @pytest.fixture
 def client():
     app = create_app()
     return TestClient(app)
-
-@pytest.fixture(autouse=True)
-def mock_learning_dependencies(monkeypatch):
-    from src.infrastructure.rag.in_memory_document_store import InMemoryDocumentStore
-    monkeypatch.setattr(learning, "get_llm_provider", lambda _: MagicMock())
-    monkeypatch.setattr(learning, "ChromaDBDocumentStore", lambda _: InMemoryDocumentStore())
 
 def test_post_learn_session(client, tmp_path, monkeypatch):
     mock_result = LearnResult(

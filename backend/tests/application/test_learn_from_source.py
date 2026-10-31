@@ -365,4 +365,41 @@ class TestLearnFromSource:
         assert "guia-arquitectura-distribuida.md" in content
         assert "guia-arquitectura-distribuida" in content
 
+    def test_extract_clean_file_tags_filters_uuid(self):
+        from src.application.services.learn_from_source import _extract_clean_file_tags
+
+        uuid_path = Path("/tmp/atenea_uploads/12535bde-9d79-4573-a805-05cd3812847e.jpg")
+        assert _extract_clean_file_tags(uuid_path) == []
+
+        prefixed_path = Path("/tmp/atenea_uploads/3a7b1c2d_diagrama_arquitectura.jpg")
+        tags = _extract_clean_file_tags(prefixed_path)
+        assert "diagrama_arquitectura.jpg" in tags
+        assert "diagrama_arquitectura" in tags
+
+    def test_learn_from_source_preserves_inferred_tags_and_user_tags(self, tmp_path: Path):
+        from src.application.services.learn_from_source import LearnFromSource, SourceType
+
+        # FakeLLM returns _SAMPLE_MD which has tags: [python, architecture]
+        result = LearnFromSource.run(
+            source="Texto sobre microservicios y mensajería.",
+            source_type=SourceType.TEXT,
+            llm_provider=FakeLLM(),
+            document_store=InMemoryDocumentStore(),
+            vault_root=tmp_path,
+            tags=["#atenea", "proyecto", "tfm"],
+        )
+
+        assert result.errors == []
+        assert result.generated_file is not None
+        content = result.generated_file.read_text(encoding="utf-8")
+
+        # Inferred tags from LLM must be preserved
+        assert "python" in content
+        assert "architecture" in content
+        # User requested tags must also be included
+        assert "atenea" in content
+        assert "proyecto" in content
+        assert "tfm" in content
+
+
 

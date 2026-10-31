@@ -2,7 +2,7 @@ import os
 import shutil
 import tempfile
 import uuid
-import aiofiles
+import aiofiles  # type: ignore[import-untyped]
 from typing import Annotated, Dict
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -33,11 +33,12 @@ async def upload_file(file: Annotated[UploadFile, File(...)]) -> Dict[str, str]:
 
     import re
 
-    # Generate a unique filename and sanitize the extension to prevent Path Traversal
-    raw_ext = os.path.splitext(file.filename)[1]
+    # Generate a unique filename and sanitize the stem and extension
+    raw_stem, raw_ext = os.path.splitext(file.filename)
+    safe_stem = re.sub(r'[^a-zA-Z0-9_\-]', '_', raw_stem).strip('_')
     safe_ext = re.sub(r'[^a-zA-Z0-9.]', '', raw_ext)
     
-    unique_filename = f"{uuid.uuid4()}{safe_ext}"
+    unique_filename = f"{uuid.uuid4().hex[:8]}_{safe_stem}{safe_ext}" if safe_stem else f"{uuid.uuid4()}{safe_ext}"
     file_path = os.path.join(TEMP_UPLOAD_DIR, unique_filename)
 
     # Save the file (we read in chunks to avoid loading large files in memory,

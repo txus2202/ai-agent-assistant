@@ -26,7 +26,7 @@ Strictly adhere to this format:
 1. Start with YAML frontmatter (between --- delimiters):
    - type: solution
    - created: {date} (YYYY-MM-DD)
-   - tags: [solucion, arquitectura, consenso, "{session_tag}"]
+   - tags: [solucion, arquitectura, consenso, "{session_tag}", plus 3 to 6 relevant topical tags automatically inferred from the discussion]
    - session_id: {session_id}
 
 2. A single H1 title starting with "Solución: " or "Decisión: " summarizing the consensus in 5-10 words.

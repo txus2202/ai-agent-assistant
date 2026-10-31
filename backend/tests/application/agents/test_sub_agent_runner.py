@@ -207,3 +207,33 @@ class TestSubAgentRunner:
         )
 
         assert response.content == "This is flawed because..."
+
+    @pytest.mark.anyio
+    async def test_supervisor_profile_injects_team_roster(self):
+        from src.domain.agents.sub_agent_profiles import (
+            SubAgentProfile,
+            register_profile,
+            unregister_profile,
+        )
+
+        sup_profile = SubAgentProfile(
+            id="test_sup",
+            display_name="TestSup",
+            description="Supervisor for testing",
+            color_hex="#123456",
+            system_prompt="You are TestSup.",
+            is_supervisor=True,
+        )
+        register_profile(sup_profile)
+        try:
+            llm = FakeLLM("I am the supervisor.")
+            await SubAgentRunner.run(
+                role="TestSup",
+                user_request="Preséntate y al equipo",
+                llm_provider=llm,
+                document_store=InMemoryDocumentStore(),
+                model_name="gemini-3.6-flash",
+            )
+            assert any("MIEMBROS OFICIALES DEL CONSEJO TÉCNICO" in p for p in llm.received_prompts)
+        finally:
+            unregister_profile("test_sup")

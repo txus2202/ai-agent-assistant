@@ -39,6 +39,20 @@ LEARN_DIRECTIVE_REGEX = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+BRACKET_TAGS_REGEX = re.compile(
+    r"\[(?:tag|etiqueta)s?:\s*([^\s\]\r\n][^\]\r\n]*)\]",
+    re.IGNORECASE,
+)
+
+NL_TAGS_REGEX = re.compile(
+    r"\b(?:con\s+(?:(?:los|las)\s+)?)?(?:tag|etiqueta)s?:\s*([^\s#\r\n\[\]][^#\r\n\[\]]*)",
+    re.IGNORECASE,
+)
+
+HASHTAGS_REGEX = re.compile(
+    r"(?<!\S)#([a-zA-Z0-9_\-\.]+)",
+)
+
 
 def _detect_source_type(source: str) -> SourceType:
     lower = source.lower()
@@ -61,21 +75,17 @@ def _append_unique_tags(target: list[str], candidates: Iterable[str]) -> None:
 
 
 def _extract_bracket_tags(text: str) -> list[str]:
-    match = re.search(r"\[(?:tags|tag|etiquetas|etiqueta):\s*([^\]\r\n]+)\]", text, re.IGNORECASE)
+    match = BRACKET_TAGS_REGEX.search(text)
     return match.group(1).split(",") if match else []
 
 
 def _extract_nl_tags(text: str) -> list[str]:
-    match = re.search(
-        r"\b(?:con\s+(?:los\s+)?(?:tags|etiquetas)|tags|etiquetas):\s*([^#\r\n\[\]]+)",
-        text,
-        re.IGNORECASE,
-    )
+    match = NL_TAGS_REGEX.search(text)
     return match.group(1).split(",") if match else []
 
 
 def _extract_hashtags(text: str) -> list[str]:
-    return re.findall(r"(?<!\S)#([a-zA-Z0-9_\-\.]+)", text)
+    return HASHTAGS_REGEX.findall(text)
 
 
 def _extract_tags(text: str) -> list[str]:

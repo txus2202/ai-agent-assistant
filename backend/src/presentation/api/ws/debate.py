@@ -12,7 +12,7 @@ import logging
 import re
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -42,7 +42,7 @@ LEARN_DIRECTIVE_REGEX = re.compile(
 
 def _detect_source_type(source: str) -> SourceType:
     lower = source.lower()
-    if lower.startswith("http://") or lower.startswith("https://"):
+    if lower.startswith(("http://", "https://")):
         return SourceType.URL
     if lower.endswith(".pdf"):
         return SourceType.PDF
@@ -53,35 +53,36 @@ def _detect_source_type(source: str) -> SourceType:
     return SourceType.PDF
 
 
-def _extract_tags(text: str) -> list[str]:
-    tags: list[str] = []
-    # 1. Bracket syntax: [tags: foo, bar] or [tag: foo]
-    bracket_match = re.search(r"\[(?:tags?|etiquetas?):\s*([^\]]+)\]", text, re.IGNORECASE)
-    if bracket_match:
-        for t in bracket_match.group(1).split(","):
-            clean = t.strip().lstrip("#")
-            if clean and clean not in tags:
-                tags.append(clean)
+def _append_unique_tags(target: list[str], candidates: Iterable[str]) -> None:
+    for item in candidates:
+        clean = item.strip().lstrip("#")
+        if clean and clean not in target and not clean.startswith(("http://", "https://")):
+            target.append(clean)
 
-    # 2. Natural language syntax: (con tags|con etiquetas|tags:|etiquetas:) a, b
-    nl_match = re.search(
-        r"(?:con (?:los )?(?:tags|etiquetas)|(?:^|\s)(?:tags|etiquetas)):\s*([^#\n\[\]]+)",
+
+def _extract_bracket_tags(text: str) -> list[str]:
+    match = re.search(r"\[(?:tags|tag|etiquetas|etiqueta):\s*([^\]\r\n]+)\]", text, re.IGNORECASE)
+    return match.group(1).split(",") if match else []
+
+
+def _extract_nl_tags(text: str) -> list[str]:
+    match = re.search(
+        r"\b(?:con\s+(?:los\s+)?(?:tags|etiquetas)|tags|etiquetas):\s*([^#\r\n\[\]]+)",
         text,
         re.IGNORECASE,
     )
-    if nl_match:
-        for t in nl_match.group(1).split(","):
-            clean = t.strip().lstrip("#")
-            if clean and clean not in tags and not clean.startswith(("http://", "https://")):
-                tags.append(clean)
+    return match.group(1).split(",") if match else []
 
-    # 3. Hashtags: #atenea #seguridad
-    hashtags = re.findall(r"(?<!\S)#([a-zA-Z0-9_\-\.]+)", text)
-    for h in hashtags:
-        clean = h.strip()
-        if clean and clean not in tags:
-            tags.append(clean)
 
+def _extract_hashtags(text: str) -> list[str]:
+    return re.findall(r"(?<!\S)#([a-zA-Z0-9_\-\.]+)", text)
+
+
+def _extract_tags(text: str) -> list[str]:
+    tags: list[str] = []
+    _append_unique_tags(tags, _extract_bracket_tags(text))
+    _append_unique_tags(tags, _extract_nl_tags(text))
+    _append_unique_tags(tags, _extract_hashtags(text))
     return tags
 
 
@@ -92,6 +93,27 @@ def _is_skip_tags_response(text: str) -> bool:
         "no", "ninguno", "ninguna", "asímilalo directamente", "asimilalo directamente",
         "directamente", "adelante", "omitir", "ningun tag", "ninguna etiqueta", "no gracias"
     ) or low.startswith(("sin tag", "sin etiqueta", "asimil", "adelante"))
+
+
+def _parse_pending_learning_payload(raw: Any) -> dict[str, Any] | None:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else None
+        except Exception:
+            return None
+    return None
+
+
+def _extract_pending_from_event(ev: dict[str, Any]) -> dict[str, Any] | None:
+    if ev.get("type") not in ("agent_completed", "done"):
+        return None
+    meta = ev.get("metadata")
+    if not isinstance(meta, dict):
+        return None
+    return _parse_pending_learning_payload(meta.get("pending_learning"))
 
 
 class DebateWebSocketHandler:
@@ -229,21 +251,59 @@ class DebateWebSocketHandler:
         if not self.debate_record or not self.debate_record.events:
             return None
         for ev in reversed(self.debate_record.events):
-            if ev.get("type") in ("agent_completed", "done"):
-                meta = ev.get("metadata", {})
-                if isinstance(meta, dict) and meta.get("pending_learning"):
-                    raw = meta.get("pending_learning")
-                    if isinstance(raw, str):
-                        try:
-                            return json.loads(raw)
-                        except Exception:
-                            return None
-                    if isinstance(raw, dict):
-                        return raw
-            if ev.get("type") == "user_message":
-                continue
-            break
+            pending = _extract_pending_from_event(ev)
+            if pending:
+                return pending
+            if ev.get("type") != "user_message":
+                break
         return None
+
+    async def _learn_single_attachment(
+        self,
+        attachment_path: str,
+        tags: list[str],
+        tag_suffix: str,
+        llm_prov: Any,
+        mod_name: str,
+    ) -> str:
+        stype = _detect_source_type(attachment_path)
+        res = await asyncio.to_thread(
+            LearnFromSource.run,
+            source=attachment_path,
+            source_type=stype,
+            llm_provider=llm_prov,
+            document_store=self.document_store,
+            vault_root=self.settings.vault_root,
+            model_name=mod_name,
+            tags=tags,
+        )
+        if res.errors:
+            return f"❌ Error al procesar {attachment_path}: {res.errors}"
+        file_name = res.generated_file.name if res.generated_file else "nota"
+        return f"✅ Conocimiento asimilado desde {attachment_path}. Generada nota: {file_name}{tag_suffix}"
+
+    async def _learn_single_text(
+        self,
+        text_to_learn: str,
+        tags: list[str],
+        tag_suffix: str,
+        llm_prov: Any,
+        mod_name: str,
+    ) -> str:
+        res = await asyncio.to_thread(
+            LearnFromSource.run,
+            source=text_to_learn,
+            source_type=SourceType.TEXT,
+            llm_provider=llm_prov,
+            document_store=self.document_store,
+            vault_root=self.settings.vault_root,
+            model_name=mod_name,
+            tags=tags,
+        )
+        if res.errors:
+            return f"❌ Error al aprender el texto: {res.errors}"
+        file_name = res.generated_file.name if res.generated_file else "nota"
+        return f"✅ He asimilado y guardado este conocimiento en mi memoria persistente y en el Vault ({file_name}){tag_suffix}."
 
     async def _execute_learning_ingest(
         self,
@@ -253,43 +313,15 @@ class DebateWebSocketHandler:
         llm_prov: Any,
         mod_name: str,
     ) -> list[str]:
-        results: list[str] = []
         tag_suffix = f" [tags: {', '.join(tags)}]" if tags else ""
         if attachments:
-            for attachment_path in attachments:
-                stype = _detect_source_type(attachment_path)
-                res = await asyncio.to_thread(
-                    LearnFromSource.run,
-                    source=attachment_path,
-                    source_type=stype,
-                    llm_provider=llm_prov,
-                    document_store=self.document_store,
-                    vault_root=self.settings.vault_root,
-                    model_name=mod_name,
-                    tags=tags,
-                )
-                if res.errors:
-                    results.append(f"❌ Error al procesar {attachment_path}: {res.errors}")
-                else:
-                    file_name = res.generated_file.name if res.generated_file else "nota"
-                    results.append(f"✅ Conocimiento asimilado desde {attachment_path}. Generada nota: {file_name}{tag_suffix}")
-        elif text_to_learn:
-            res = await asyncio.to_thread(
-                LearnFromSource.run,
-                source=text_to_learn,
-                source_type=SourceType.TEXT,
-                llm_provider=llm_prov,
-                document_store=self.document_store,
-                vault_root=self.settings.vault_root,
-                model_name=mod_name,
-                tags=tags,
-            )
-            if res.errors:
-                results.append(f"❌ Error al aprender el texto: {res.errors}")
-            else:
-                file_name = res.generated_file.name if res.generated_file else "nota"
-                results.append(f"✅ He asimilado y guardado este conocimiento en mi memoria persistente y en el Vault ({file_name}){tag_suffix}.")
-        return results
+            return [
+                await self._learn_single_attachment(path, tags, tag_suffix, llm_prov, mod_name)
+                for path in attachments
+            ]
+        if text_to_learn:
+            return [await self._learn_single_text(text_to_learn, tags, tag_suffix, llm_prov, mod_name)]
+        return []
 
     async def _handle_learning(
         self,

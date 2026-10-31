@@ -204,6 +204,16 @@ def _extract_clean_file_tags(file_p: Path) -> list[str]:
     return tags
 
 
+def _clean_user_tags(tags: list[str] | None) -> list[str]:
+    cleaned: list[str] = []
+    if tags:
+        for t in tags:
+            clean = t.strip().lstrip("#")
+            if clean and clean not in cleaned:
+                cleaned.append(clean)
+    return cleaned
+
+
 def _prepare_tags_and_clause(
     tags: list[str] | None,
     source: str,
@@ -213,12 +223,7 @@ def _prepare_tags_and_clause(
     Compiles mandatory tags (user-requested + meaningful filename tags)
     and formats the prompt clause for the LLM.
     """
-    tags_to_ensure: list[str] = []
-    if tags:
-        for t in tags:
-            clean_t = t.strip().lstrip("#")
-            if clean_t and clean_t not in tags_to_ensure:
-                tags_to_ensure.append(clean_t)
+    tags_to_ensure = _clean_user_tags(tags)
 
     if source_type in (SourceType.PDF, SourceType.MARKDOWN, SourceType.IMAGE):
         for file_tag in _extract_clean_file_tags(Path(source)):
@@ -236,6 +241,49 @@ def _prepare_tags_and_clause(
     return tags_to_ensure, clause
 
 
+def _format_tag_item(tag: str) -> str:
+    return f'"{tag}"' if any(c in tag for c in (" ", ".")) else tag
+
+
+def _inject_inline_tags(md_content: str, tags_to_add: list[str]) -> str | None:
+    inline_match = re.search(r"^(tags:\s*\[)(.*?)(\])", md_content, re.MULTILINE)
+    if not inline_match:
+        return None
+
+    existing_tags_raw = inline_match.group(2)
+    existing_tags = [t.strip().strip("'\"") for t in existing_tags_raw.split(",") if t.strip()]
+
+    added = False
+    for tag in tags_to_add:
+        clean_tag = tag.strip()
+        if clean_tag and clean_tag not in existing_tags:
+            existing_tags.append(clean_tag)
+            added = True
+
+    if not added:
+        return md_content
+
+    formatted_tags = ", ".join(_format_tag_item(t) for t in existing_tags)
+    return f"{md_content[:inline_match.start()]}tags: [{formatted_tags}]{md_content[inline_match.end():]}"
+
+
+def _inject_multiline_tags(md_content: str, tags_to_add: list[str]) -> str | None:
+    multiline_match = re.search(r"^(tags:\s*\n(?:\s*-\s*[^\n]+\n)+)", md_content, re.MULTILINE)
+    if not multiline_match:
+        return None
+
+    block = multiline_match.group(0)
+    lines_to_append = [
+        f"  - {_format_tag_item(tag.strip())}\n"
+        for tag in tags_to_add
+        if tag.strip() and tag.strip() not in block
+    ]
+    if not lines_to_append:
+        return md_content
+
+    return f"{md_content[:multiline_match.end()]}{''.join(lines_to_append)}{md_content[multiline_match.end():]}"
+
+
 def _inject_source_tags(md_content: str, tags_to_add: list[str]) -> str:
     """
     Ensures that specific tags (such as the uploaded filename or stem) are
@@ -244,37 +292,13 @@ def _inject_source_tags(md_content: str, tags_to_add: list[str]) -> str:
     if not tags_to_add:
         return md_content
 
-    # Match standard inline list syntax: tags: [tag1, tag2]
-    inline_match = re.search(r"^(tags:\s*\[)(.*?)(\])", md_content, re.MULTILINE)
-    if inline_match:
-        existing_tags_raw = inline_match.group(2)
-        existing_tags = [t.strip().strip("'\"") for t in existing_tags_raw.split(",") if t.strip()]
+    inlined = _inject_inline_tags(md_content, tags_to_add)
+    if inlined is not None:
+        return inlined
 
-        added = False
-        for tag in tags_to_add:
-            clean_tag = tag.strip()
-            if clean_tag and clean_tag not in existing_tags:
-                existing_tags.append(clean_tag)
-                added = True
-
-        if added:
-            formatted_tags = ", ".join(f'"{t}"' if (" " in t or "." in t) else t for t in existing_tags)
-            return md_content[:inline_match.start()] + f"tags: [{formatted_tags}]" + md_content[inline_match.end():]
-        return md_content
-
-    # Match multiline bullet list: tags:\n  - tag1\n  - tag2
-    multiline_match = re.search(r"^(tags:\s*\n(?:\s*-\s*[^\n]+\n)+)", md_content, re.MULTILINE)
-    if multiline_match:
-        block = multiline_match.group(0)
-        lines_to_append = []
-        for tag in tags_to_add:
-            clean_tag = tag.strip()
-            formatted = f'"{clean_tag}"' if (" " in clean_tag or "." in clean_tag) else clean_tag
-            if clean_tag not in block:
-                lines_to_append.append(f"  - {formatted}\n")
-        if lines_to_append:
-            return md_content[:multiline_match.end()] + "".join(lines_to_append) + md_content[multiline_match.end():]
-        return md_content
+    multilined = _inject_multiline_tags(md_content, tags_to_add)
+    if multilined is not None:
+        return multilined
 
     return md_content
 

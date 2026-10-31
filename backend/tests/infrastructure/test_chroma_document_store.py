@@ -129,3 +129,20 @@ def test_delete_removes_chunk(chroma_store: ChromaDBDocumentStore) -> None:
     chroma_store.delete([chunk.id])
 
     assert chroma_store.count() == 0
+
+
+def test_get_indexed_file_paths_and_delete_by_file_paths(chroma_store: ChromaDBDocumentStore) -> None:
+    chunk_a1 = _make_chunk("docs/a.md#s1", "First section of document A")
+    chunk_a2 = _make_chunk("docs/a.md#s2", "Second section of document A")
+    chunk_b = _make_chunk("docs/b.md#s1", "Single section of document B")
+
+    chroma_store.upsert([chunk_a1, chunk_a2, chunk_b])
+    assert chroma_store.count() == 3
+
+    indexed = chroma_store.get_indexed_file_paths()
+    assert indexed == {"docs/a.md", "docs/b.md"}
+
+    chroma_store.delete_by_file_paths(["docs/a.md"])
+    assert chroma_store.get_indexed_file_paths() == {"docs/b.md"}
+    assert chroma_store.count() == 1
+

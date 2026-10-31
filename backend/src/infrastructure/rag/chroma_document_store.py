@@ -128,6 +128,24 @@ class ChromaDBDocumentStore(IDocumentStore):
         if chunk_ids:
             self._collection.delete(ids=chunk_ids)
 
+    def delete_by_file_paths(self, file_paths: list[str]) -> None:
+        if not file_paths:
+            return
+        for fp in file_paths:
+            self._collection.delete(where={"_file_path": fp})
+
+    def get_indexed_file_paths(self) -> set[str]:
+        total = self._collection.count()
+        if total == 0:
+            return set()
+        results = self._collection.get(include=["metadatas"])
+        metadatas = results.get("metadatas") or []
+        indexed: set[str] = set()
+        for meta in metadatas:
+            if meta and "_file_path" in meta and meta["_file_path"]:
+                indexed.add(str(meta["_file_path"]))
+        return indexed
+
     def count(self) -> int:
         return self._collection.count()
 

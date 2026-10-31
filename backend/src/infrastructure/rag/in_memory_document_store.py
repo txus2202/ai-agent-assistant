@@ -76,6 +76,15 @@ class InMemoryDocumentStore(IDocumentStore):
         for chunk_id in chunk_ids:
             self._store.pop(chunk_id, None)
 
+    def delete_by_file_paths(self, file_paths: list[str]) -> None:
+        targets = set(file_paths)
+        to_delete = [cid for cid, chunk in self._store.items() if chunk.file_path in targets]
+        for cid in to_delete:
+            self._store.pop(cid, None)
+
+    def get_indexed_file_paths(self) -> set[str]:
+        return {chunk.file_path for chunk in self._store.values() if chunk.file_path}
+
     def count(self) -> int:
         return len(self._store)
 

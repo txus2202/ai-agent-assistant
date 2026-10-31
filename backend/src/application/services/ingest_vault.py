@@ -26,6 +26,7 @@ class IngestResult:
 
     files_processed: int = 0
     chunks_upserted: int = 0
+    files_deleted: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -43,6 +44,7 @@ class IngestVault:
 
         Hidden directories (those whose name starts with ``.``, e.g. ``.obsidian``)
         are silently skipped.
+        Orphaned files (indexed in store but no longer present in the vault) are purged.
 
         Args:
             vault_root:     Root directory of the Obsidian vault.
@@ -53,7 +55,7 @@ class IngestVault:
                             presentation layers — keeps them DRY.
 
         Returns:
-            ``IngestResult`` with counts of files, chunks, and any errors.
+            ``IngestResult`` with counts of files, chunks, deleted files, and any errors.
         """
         result = IngestResult()
         all_chunks = []
@@ -63,6 +65,21 @@ class IngestVault:
             # Skip any path component that is a hidden directory (starts with ".")
             if not any(part.startswith(".") for part in f.relative_to(vault_root).parts)
         )
+
+        current_files = {
+            f.relative_to(vault_root).as_posix()
+            for f in md_files
+        }
+
+        # Orphan detection and cleanup
+        try:
+            indexed_files = document_store.get_indexed_file_paths()
+            orphaned_files = sorted(indexed_files - current_files)
+            if orphaned_files:
+                document_store.delete_by_file_paths(orphaned_files)
+                result.files_deleted = len(orphaned_files)
+        except Exception as exc:  # noqa: BLE001
+            result.errors.append(f"Orphan cleanup error: {exc}")
 
         for md_file in md_files:
             try:

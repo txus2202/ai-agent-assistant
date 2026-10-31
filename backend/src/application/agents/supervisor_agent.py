@@ -41,7 +41,11 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 
 from src.application.agents.sub_agent_runner import SubAgentRunner
 from src.domain.agents.debate_topology import DebateTopology, load_topology
-from src.domain.agents.sub_agent_profiles import get_all_profiles, get_profile
+from src.domain.agents.sub_agent_profiles import (
+    format_team_roster,
+    get_all_profiles,
+    get_profile,
+)
 from src.domain.agents.supervisor_events import (
     EventType,
     HITLDecision,
@@ -115,7 +119,19 @@ def classify_intent(
     req_clean = user_request.strip().lower()
 
     # Fast heuristics for direct greetings or direct questions to the supervisor
-    greetings = (r"^hola\b", r"^buenos d[ií]as\b", r"^buenas tardes\b", r"^buenas noches\b", r"^qui[eé]n eres\b", r"^qu[eé] haces\b", r"^c[oó]mo est[aá]s\b")
+    greetings = (
+        r"^hola\b",
+        r"^buenos d[ií]as\b",
+        r"^buenas tardes\b",
+        r"^buenas noches\b",
+        r"^qui[eé]n eres\b",
+        r"^qu[eé] haces\b",
+        r"^c[oó]mo est[aá]s\b",
+        r"^pres[eé]ntate\b",
+        r"^presenta\b",
+        r"^qui[eé]nes sois\b",
+        r"^qui[eé]nes son\b",
+    )
     for g in greetings:
         if re.search(g, req_clean):
             return TriageDecision(mode="direct_chat", reasoning=f"Saludo o consulta directa a {supervisor_name}")
@@ -277,8 +293,12 @@ async def _run_direct_chat_mode(
             hist_lines.append(f"- {m.get('role', 'user')}: {m.get('content', '')}")
     hist_str = "\n".join(hist_lines)
 
+    roster_context = format_team_roster(exclude_id=supervisor_profile.id)
+
     direct_prompt = f"""# INSTRUCCIÓN DE SISTEMA
 {supervisor_profile.system_prompt}
+
+{roster_context}
 
 # HISTORIAL DE CONVERSACIÓN
 {hist_str or 'Sin historial previo.'}
@@ -286,7 +306,7 @@ async def _run_direct_chat_mode(
 # MENSAJE DEL USUARIO
 {user_request}
 
-Responde directamente al usuario como {sup_agent_name} en español, manteniendo la personalidad y el tono definidos en tu instrucción de sistema."""
+Responde directamente al usuario como {sup_agent_name} en español, manteniendo la personalidad y el tono definidos en tu instrucción de sistema. Si te piden presentar al equipo o sus miembros y funciones, básate estrictamente en la información oficial y veraz del consejo técnico."""
     start_time = time.perf_counter()
     resp_text = await asyncio.to_thread(supervisor_provider.complete, direct_prompt, sup_model_name)
     latency = round(time.perf_counter() - start_time, 2)

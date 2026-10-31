@@ -477,8 +477,11 @@ class TestAdaptiveSupervisorRouting:
 
         monkeypatch.setattr(_mod.SubAgentRunner, "run", _mock_runner)
 
+        recorded_prompts: list[str] = []
+
         class GreetingLLM(FakeLLM):
             def complete(self, prompt: str, model_name: str) -> str:
+                recorded_prompts.append(prompt)
                 if "clasifica la intención" in prompt.lower() or "triage" in prompt.lower():
                     return '{"mode": "direct_chat", "target_agent": null, "skip_interpreter": false, "reasoning": "Simple saludo"}'
                 return "Hola, soy Coordinator. ¿Qué desafío someteremos hoy al escrutinio del consejo?"
@@ -499,6 +502,19 @@ class TestAdaptiveSupervisorRouting:
         assert "Coordinator" in events[-1].content
         # SubAgentRunner was NOT called because council was not invoked
         assert runner_called is False
+        assert any("MIEMBROS OFICIALES DEL CONSEJO TÉCNICO" in p for p in recorded_prompts)
+
+    def test_classify_intent_presentation_triggers_direct_chat(self):
+        from src.application.agents.supervisor_agent import classify_intent
+
+        decision = classify_intent(
+            user_request="Preséntate y presenta al equipo",
+            llm_provider=FakeLLM(),
+            model_name="default",
+            supervisor_name="Coordinator",
+            interpreter_name="Interpreter",
+        )
+        assert decision.mode == "direct_chat"
 
     @pytest.mark.anyio
     async def test_single_agent_mode_delegates_directly_to_impl_one(self, monkeypatch):

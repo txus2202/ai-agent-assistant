@@ -18,9 +18,10 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 from src.application.services.query_vault import QueryVault
-from src.domain.agents.sub_agent_profiles import get_profile
+from src.domain.agents.sub_agent_profiles import format_team_roster, get_profile
 from src.domain.ports.document_store import IDocumentStore
 from src.domain.ports.llm_provider import ILLMProvider
 from src.domain.value_objects.document_chunk import DocumentChunk
@@ -112,6 +113,10 @@ class SubAgentRunner:
 
         # ── 2. Build prompt ───────────────────────────────────────────────
         parts: list[str] = [profile.system_prompt]
+        if profile.is_supervisor:
+            roster_context = format_team_roster(exclude_id=profile.id)
+            if roster_context:
+                parts.append(roster_context)
         if context_block:
             parts.append(context_block)
         chat_history_block = format_chat_history(chat_history)
@@ -126,7 +131,7 @@ class SubAgentRunner:
         content = await asyncio.to_thread(llm_provider.complete, prompt, model_name)
         latency = round(time.perf_counter() - start_time, 2)
 
-        usage = {}
+        usage: dict[str, int] = {}
         if hasattr(llm_provider, "get_last_usage"):
             usage = llm_provider.get_last_usage() or {}
 

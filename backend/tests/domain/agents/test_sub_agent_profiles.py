@@ -303,6 +303,20 @@ class TestShippedCatalogIsConsistentWithShippedTopology:
             if not profile.uses_rag:
                 assert profile.rag_filter is None
 
+    def test_format_team_roster_lists_specialists_excluding_supervisor(self):
+        from src.domain.agents.sub_agent_profiles import format_team_roster
+
+        sup = next((p for p in get_all_profiles() if p.is_supervisor), None)
+        assert sup is not None
+        roster = format_team_roster(exclude_id=sup.id)
+        assert "MIEMBROS OFICIALES DEL CONSEJO TÉCNICO" in roster
+        for p in get_all_profiles():
+            if p.id != sup.id:
+                assert p.display_name in roster
+                assert p.description in roster
+            else:
+                assert f"- **{p.display_name}**:" not in roster
+
 
 class TestSupervisorEventsAndHitl:
     def test_hitl_response_supports_target_agents(self):

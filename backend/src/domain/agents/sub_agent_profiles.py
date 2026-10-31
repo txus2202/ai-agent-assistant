@@ -224,6 +224,26 @@ def get_all_profiles() -> list[SubAgentProfile]:
     return list(_ALL_PROFILES)
 
 
+def format_team_roster(exclude_id: str | None = None) -> str:
+    """Format a truthful, markdown-structured roster of the council specialists.
+
+    Lists all registered agents except the excluded one (e.g. the supervisor).
+    """
+    profiles = get_all_profiles()
+    team_members = [p for p in profiles if p.id != exclude_id]
+    if not team_members:
+        return ""
+    lines = [
+        "# MIEMBROS OFICIALES DEL CONSEJO TÉCNICO",
+        "A continuación figura la lista veraz y oficial de los especialistas que componen el consejo técnico. "
+        "Si debes presentarte o presentar al equipo y a sus miembros, o explicar qué hace cada uno, "
+        "básate ESTRICTAMENTE en esta información oficial y no inventes ningún otro agente ni función:",
+    ]
+    for p in team_members:
+        lines.append(f"- **{p.display_name}**: {p.description}")
+    return "\n".join(lines)
+
+
 def reset_default_profiles() -> None:
     """
     Reset the registry to its configured state: all agents loaded from

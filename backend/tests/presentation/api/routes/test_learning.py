@@ -12,6 +12,12 @@ def client():
     app = create_app()
     return TestClient(app)
 
+
+@pytest.fixture(autouse=True)
+def mock_external_services(monkeypatch):
+    monkeypatch.setattr("src.presentation.api.routes.learning.get_llm_provider", lambda _: MagicMock())
+    monkeypatch.setattr("src.presentation.api.routes.learning.ChromaDBDocumentStore", lambda _: MagicMock())
+
 def test_post_learn_session(client, tmp_path, monkeypatch):
     mock_result = LearnResult(
         source="test-123",

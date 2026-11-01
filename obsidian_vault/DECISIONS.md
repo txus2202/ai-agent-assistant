@@ -193,3 +193,17 @@
 4. **Self-Hosted Docker Resource Caps:** In `docker-compose.yml`, impose strict container resource limits (`ClickHouse: 1GB`, `Langfuse Server: 512MB`, `Postgres: 256MB`, `Redis: 128MB`), reserving >5GB RAM for the host OS and real-time audio models.
 5. **Mission-Control UI:** Implement a dedicated Observability view in Vue 3 (cluster gauge, CPU/RAM sparklines, agent latency benchmarks, critical audit highlight, and colored event logs) and enrich `AgentCard.vue` with cumulative token and latency badges.
    **Consequences:** Provides enterprise-grade observability while preserving local-first privacy, system resilience, and adhering to strict clean architecture boundaries.
+
+## ADR 021: Horizontal Scalability Strategy & Hybrid Deployment Profiles (Edge/Homelab vs. Cloud-Native)
+
+**Date:** 2026-11-01
+**Context:** The application was initially designed and deployed in a single-node homelab/edge environment utilizing lightweight, zero-configuration local adapters (SQLite, embedded ChromaDB, and local filesystem vault). For academic evaluation (Master's Thesis / TFM) and enterprise readiness, the architecture must formally define and prove horizontal scalability without compromising the low resource footprint required for local homelab execution.
+**Decision:**
+
+1. **Hexagonal Scalability Decoupling:** Enforce strict adherence to Clean Architecture ports (`IDebateRepository`, `IAgentConfigRepository`, `IDocumentStore`, `ILLMProvider`, `IObservabilityService`). The domain and application agent logic remains 100% stateless and decoupled from underlying storage engines.
+2. **Dual-Deployment Profiles:** Formally define two deployment profiles:
+   - *Homelab / Edge Profile (Default):* Uses `SqliteDebateRepository`, embedded `ChromaDBDocumentStore`, and local filesystem markdown vault. Operates under <500 MB RAM baseline with zero cloud cost and single-directory backup ergonomics.
+   - *Cloud-Native Distributed Profile (Target Enterprise Scale):* Specifies migration paths to `PostgresDebateRepository` (connection pooling), networked Chroma/Qdrant vector clusters, Redis Pub/Sub for distributed WebSocket event backplanes and HITL session routing, and S3-compatible Object Storage for vault persistence.
+3. **Architectural Guard Validation:** Utilize automated architectural tests (`test_decoupling_guard.py`) in CI/CD to prevent leakage of concrete storage, vendor, or agent implementations into generic core modules.
+4. **Asynchronous Parallel Streaming:** Leverage `asyncio.gather()` for concurrent specialist deliberation and `AsyncGenerator` streams over WebSockets, ensuring non-blocking event-loop execution regardless of concurrency scale.
+   **Consequences:** Validates that the system achieves enterprise-grade horizontal scalability by design while preserving optimal efficiency and zero-cost autonomy for homelab operations. Transitioning between edge and cloud deployments requires only swapping infrastructure adapters without altering core business rules or multi-agent orchestration.

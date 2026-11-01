@@ -40,12 +40,12 @@ LEARN_DIRECTIVE_REGEX = re.compile(
 )
 
 BRACKET_TAGS_REGEX = re.compile(
-    r"\[(?:tag|etiqueta)s?:\s*([^\s\]\r\n][^\]\r\n]*)\]",
+    r"\[(?:tag|etiqueta)s?:\s*([^\s\]][^\]\r\n]*)\]",
     re.IGNORECASE,
 )
 
 NL_TAGS_REGEX = re.compile(
-    r"\b(?:con\s+(?:(?:los|las)\s+)?)?(?:tag|etiqueta)s?:\s*([^\s#\r\n\[\]][^#\r\n\[\]]*)",
+    r"\b(?:con\s+(?:(?:los|las)\s+)?)?(?:tag|etiqueta)s?:\s*([^\s#\[\]][^#\r\n\[\]]*)",
     re.IGNORECASE,
 )
 

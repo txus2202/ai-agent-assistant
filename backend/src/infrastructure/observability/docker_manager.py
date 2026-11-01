@@ -35,7 +35,7 @@ class DockerObservabilityManager:
         if not self.is_docker_available() or not self.compose_file.exists():
             return False
         try:
-            cmd = ["docker", "compose", "-f", str(self.compose_file), "ps", "--status", "running", "-q"]
+            cmd = ["docker", "compose", "-f", str(self.compose_file), "--profile", "observability", "ps", "--status", "running", "-q"]
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=False)
             return bool(res.stdout and res.stdout.strip())
         except Exception as exc:
@@ -57,7 +57,7 @@ class DockerObservabilityManager:
 
         try:
             logger.info("Starting Langfuse Docker stack via docker compose up -d...")
-            cmd = ["docker", "compose", "-f", str(self.compose_file), "up", "-d"]
+            cmd = ["docker", "compose", "-f", str(self.compose_file), "--profile", "observability", "up", "-d"]
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=False)
             if res.returncode == 0:
                 logger.info("Langfuse Docker stack started successfully.")
@@ -79,7 +79,7 @@ class DockerObservabilityManager:
 
         try:
             logger.info("Stopping Langfuse Docker stack via docker compose stop...")
-            cmd = ["docker", "compose", "-f", str(self.compose_file), "stop"]
+            cmd = ["docker", "compose", "-f", str(self.compose_file), "--profile", "observability", "stop"]
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
             if res.returncode == 0:
                 logger.info("Langfuse Docker stack stopped successfully.")

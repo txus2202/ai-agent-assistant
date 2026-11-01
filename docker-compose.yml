@@ -1,11 +1,160 @@
 # =============================================================================
-# ATENEA — Langfuse Self-Hosted Observability Stack (Phase 6 / ADR 020)
+# ATENEA — Multi-Agent Architecture with Docker Compose Profiles
+# =============================================================================
+# Profiles available:
+#   (default / no profile) : Starts core local stack (backend + frontend)
+#   --profile local        : Starts core local stack (backend + frontend)
+#   --profile scale        : Starts backend + frontend + external Chroma Server + Postgres + Redis
+#   --profile observability: Starts self-hosted Langfuse telemetry stack
+#   --profile full         : Starts complete enterprise stack (app + scale + observability)
 # =============================================================================
 
 services:
+  # ---------------------------------------------------------------------------
+  # Core Application Stack (Local & Production-ready)
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: atenea-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./obsidian_vault:/app/obsidian_vault
+      - atenea_data:/app/data
+      - ./agents.yaml:/app/agents.yaml:ro
+      - ./topology.yaml:/app/topology.yaml:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - VAULT_ROOT=/app/obsidian_vault
+      - SQLITE_DB_PATH=/app/data/atenea.db
+      - CHROMA_PERSIST_DIR=/app/data/chroma
+      - CHROMA_HOST=${CHROMA_HOST:-}
+      - CHROMA_PORT=${CHROMA_PORT:-8000}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - DEFAULT_PROVIDER=${DEFAULT_PROVIDER:-gemini}
+      - DEFAULT_MODEL=${DEFAULT_MODEL:-gemini-3.6-flash}
+      - LANGFUSE_HOST=http://langfuse-web:3000
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_METRICS_ENABLED=${LANGFUSE_METRICS_ENABLED:-false}
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8000/api/config || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: atenea-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "5173:8080"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ---------------------------------------------------------------------------
+  # Scaled Infrastructure (Activated via --profile scale or --profile full)
+  # ---------------------------------------------------------------------------
+  chroma-server:
+    image: chromadb/chroma:latest
+    container_name: atenea-chroma-server
+    profiles:
+      - scale
+      - full
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    volumes:
+      - atenea_chroma_data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - ANONYMIZED_TELEMETRY=FALSE
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8000/api/v1/heartbeat || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: atenea-postgres
+    profiles:
+      - scale
+      - observability
+      - full
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - atenea_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  redis:
+    image: redis:7-alpine
+    container_name: atenea-redis
+    profiles:
+      - scale
+      - observability
+      - full
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - atenea_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # ---------------------------------------------------------------------------
+  # Langfuse Observability Stack (Phase 6 / ADR 020)
+  # ---------------------------------------------------------------------------
   langfuse-web:
     image: docker.langfuse.com/langfuse/langfuse:3
     container_name: atenea-langfuse-web
+    profiles:
+      - observability
+      - full
     restart: unless-stopped
     depends_on:
       postgres:
@@ -28,16 +177,13 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
       TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-false}
       LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
-      # ClickHouse settings
       CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
       CLICKHOUSE_MIGRATION_URL: ${CLICKHOUSE_MIGRATION_URL:-clickhouse://clickhouse:9000}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
       CLICKHOUSE_CLUSTER_ENABLED: "false"
-      # Redis settings
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      # S3 / MinIO event storage
       LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
       LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
       LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
@@ -58,6 +204,9 @@ services:
   langfuse-worker:
     image: docker.langfuse.com/langfuse/langfuse-worker:3
     container_name: atenea-langfuse-worker
+    profiles:
+      - observability
+      - full
     restart: unless-stopped
     depends_on:
       postgres:
@@ -95,32 +244,12 @@ services:
         limits:
           memory: 1024M
 
-
-  postgres:
-    image: postgres:16-alpine
-    container_name: atenea-langfuse-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-postgres}
-    ports:
-      - "127.0.0.1:5432:5432"
-    volumes:
-      - atenea_postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-
   clickhouse:
     image: clickhouse/clickhouse-server:24.3-alpine
     container_name: atenea-langfuse-clickhouse
+    profiles:
+      - observability
+      - full
     restart: unless-stopped
     environment:
       CLICKHOUSE_DB: default
@@ -142,28 +271,12 @@ services:
         limits:
           memory: 1024M
 
-  redis:
-    image: redis:7-alpine
-    container_name: atenea-langfuse-redis
-    restart: unless-stopped
-    command: redis-server --save "" --appendonly no
-    ports:
-      - "127.0.0.1:6379:6379"
-    volumes:
-      - atenea_redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-
   minio:
     image: cgr.dev/chainguard/minio:latest
     container_name: atenea-langfuse-minio
+    profiles:
+      - observability
+      - full
     restart: unless-stopped
     entrypoint: sh
     command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
@@ -185,8 +298,9 @@ services:
         limits:
           memory: 256M
 
-
 volumes:
+  atenea_data:
+  atenea_chroma_data:
   atenea_postgres_data:
   atenea_clickhouse_data:
   atenea_redis_data:

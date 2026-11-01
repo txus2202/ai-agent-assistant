@@ -146,3 +146,14 @@ def test_get_indexed_file_paths_and_delete_by_file_paths(chroma_store: ChromaDBD
     assert chroma_store.get_indexed_file_paths() == {"docs/b.md"}
     assert chroma_store.count() == 1
 
+
+def test_chroma_store_initializes_http_client_when_host_provided(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import MagicMock
+    import chromadb
+
+    mock_http_client = MagicMock()
+    monkeypatch.setattr(chromadb, "HttpClient", mock_http_client)
+
+    store = ChromaDBDocumentStore(host="chroma-cluster", port=8000)
+    mock_http_client.assert_called_once_with(host="chroma-cluster", port=8000)
+

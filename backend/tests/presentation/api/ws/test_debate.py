@@ -95,7 +95,7 @@ def ws_client(monkeypatch):
     
     # Mock the ChromaDB store init to avoid creating directories
     from src.infrastructure.rag.chroma_document_store import ChromaDBDocumentStore
-    monkeypatch.setattr(ChromaDBDocumentStore, "__init__", lambda self, persist_directory: None)
+    monkeypatch.setattr(ChromaDBDocumentStore, "__init__", lambda self, *a, **kw: None)
 
     # Mock the debate runner
     from src.presentation.api.ws import debate

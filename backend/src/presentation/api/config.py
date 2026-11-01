@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     vault_root: Path = Path("../obsidian_vault")
     chroma_persist_dir: Path = Path(".chroma")
     sqlite_db_path: Path = Path("atenea.db")
+    chroma_host: str | None = None
+    chroma_port: int = 8000
 
     # Server
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:4173"]

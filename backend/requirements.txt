@@ -4,7 +4,7 @@
 
 # Phase 2: RAG pipeline
 chromadb==1.5.9              # Vector store
-sentence-transformers==6.0.1 # Local embedding model (all-MiniLM-L6-v2); not bundled with chromadb >= 0.4
+sentence-transformers==6.2.0 # Local embedding model (all-MiniLM-L6-v2); not bundled with chromadb >= 0.4
 PyYAML==6.0.3                # Obsidian frontmatter parsing
 
 # Phase 2+: LLM adapters (uncomment when implementing)

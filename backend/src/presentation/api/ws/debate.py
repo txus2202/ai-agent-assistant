@@ -135,8 +135,13 @@ class DebateWebSocketHandler:
         db_path = str(self.settings.sqlite_db_path)
         self.agent_config_repo = SqliteAgentConfigRepository(db_path)
         self.debate_repo = SqliteDebateRepository(db_path)
+        store_kwargs: dict[str, Any] = {}
+        if self.settings.chroma_host:
+            store_kwargs["host"] = self.settings.chroma_host
+            store_kwargs["port"] = self.settings.chroma_port
         self.document_store = ChromaDBDocumentStore(
-            persist_directory=str(self.settings.chroma_persist_dir)
+            persist_directory=str(self.settings.chroma_persist_dir),
+            **store_kwargs,
         )
         self.debate_record: DebateRecord | None = None
         self.observability = get_observability_service()

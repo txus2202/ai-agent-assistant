@@ -71,7 +71,14 @@ async def learn_session(
 
     llm = get_llm_provider(prov_name)
     vault_root = Path(settings.vault_root)
-    doc_store = ChromaDBDocumentStore(str(settings.chroma_persist_dir))
+    store_kwargs: dict[str, Any] = {}
+    if settings.chroma_host:
+        store_kwargs["host"] = settings.chroma_host
+        store_kwargs["port"] = settings.chroma_port
+    doc_store = ChromaDBDocumentStore(
+        persist_directory=str(settings.chroma_persist_dir),
+        **store_kwargs,
+    )
 
     result = LearnFromSession.run(
         session_id=payload.session_id,

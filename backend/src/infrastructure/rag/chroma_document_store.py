@@ -47,9 +47,16 @@ class ChromaDBDocumentStore(IDocumentStore):
         persist_directory: str | None = None,
         ephemeral: bool = False,
         collection_name: str = _COLLECTION_NAME,
+        host: str | None = None,
+        port: int | None = None,
     ) -> None:
         if ephemeral:
             self._client: chromadb.ClientAPI = chromadb.EphemeralClient()
+        elif host or os.getenv("CHROMA_HOST"):
+            chroma_host = host or os.getenv("CHROMA_HOST", "localhost")
+            raw_port = port or os.getenv("CHROMA_PORT", "8000")
+            chroma_port = int(raw_port)
+            self._client = chromadb.HttpClient(host=chroma_host, port=chroma_port)
         else:
             path = persist_directory or os.getenv("CHROMA_PATH", _DEFAULT_CHROMA_PATH)
             self._client = chromadb.PersistentClient(path=path)

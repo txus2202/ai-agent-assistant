@@ -22,8 +22,8 @@ ENV UV_LINK_MODE=copy
 # Copy dependency specifications and lockfile
 COPY pyproject.toml uv.lock ./
 
-# Install strictly locked dependencies (resolves docker:S8544 and guarantees reproducible builds, prevents setup script execution)
-RUN uv sync --frozen --no-install-project --no-dev --no-build
+# Install strictly locked dependencies (resolves docker:S8544; --no-build is omitted because srt==3.5.3 is sdist-only, uv.lock guarantees integrity via sha256 hashes)
+RUN uv sync --frozen --no-install-project --no-dev
 
 # Copy application files with unprivileged ownership
 COPY --chown=atenea:atenea src/ /app/src/

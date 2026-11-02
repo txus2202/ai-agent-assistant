@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -m -u 1000 -s /bin/bash atenea \
-    && mkdir -p /app/data /app/obsidian_vault \
+    && mkdir -p /app/data /app/obsidian_vault /app/voices \
     && chown -R atenea:atenea /app
 
 # Install uv binary from official pinned image (prevents unpinned tool warnings)
@@ -27,7 +27,6 @@ RUN uv sync --frozen --no-install-project --no-dev --no-build
 
 # Copy application files with unprivileged ownership
 COPY --chown=atenea:atenea src/ /app/src/
-COPY --chown=atenea:atenea voices/ /app/voices/
 COPY --chown=atenea:atenea pyproject.toml uv.lock requirements.txt /app/
 
 # Ensure virtual environment and application directories are owned by atenea

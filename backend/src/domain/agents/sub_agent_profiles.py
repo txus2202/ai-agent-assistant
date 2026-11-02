@@ -66,7 +66,16 @@ _RAG_FILTER_FIELDS = ("type", "phase", "layer", "status")
 
 def project_root() -> Path:
     """Absolute path to the repository root (independent of the working directory)."""
-    return Path(__file__).resolve().parents[4]
+    override = os.environ.get("PROJECT_ROOT")
+    if override:
+        return Path(override)
+    p = Path(__file__).resolve()
+    for parent in p.parents:
+        if (parent / "agents.yaml").exists():
+            return parent
+    if len(p.parents) > 4:
+        return p.parents[4]
+    return p.parents[3] if len(p.parents) > 3 else p.parent
 
 
 def default_agents_file() -> Path:

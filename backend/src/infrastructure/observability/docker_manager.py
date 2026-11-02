@@ -22,7 +22,8 @@ class DockerObservabilityManager:
             self.compose_file = compose_file
         else:
             # Locate docker-compose.yml relative to project root
-            base_dir = Path(__file__).resolve().parents[4]
+            parents = Path(__file__).resolve().parents
+            base_dir = parents[4] if len(parents) > 4 else parents[len(parents) - 1]
             candidate = base_dir / "docker-compose.yml"
             self.compose_file = candidate if candidate.exists() else Path("docker-compose.yml")
 

@@ -29,8 +29,9 @@ jobs:
         working-directory: ./backend
         run: |
           pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-          pip install --no-cache-dir -r requirements.txt
-          pip install --no-cache-dir -e ".[dev]"
+          pip install --no-cache-dir -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+          pip install --no-cache-dir -e ".[dev]" --extra-index-url https://download.pytorch.org/whl/cpu
+          pip uninstall -y torchaudio || true
 
       - name: Run tests with coverage
         working-directory: ./backend

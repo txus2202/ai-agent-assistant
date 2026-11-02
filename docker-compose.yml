@@ -26,6 +26,7 @@ services:
       - atenea_data:/app/data
       - ./agents.yaml:/app/agents.yaml:ro
       - ./topology.yaml:/app/topology.yaml:ro
+      - ./backend/voices:/app/voices
     environment:
       - PYTHONUNBUFFERED=1
       - VAULT_ROOT=/app/obsidian_vault

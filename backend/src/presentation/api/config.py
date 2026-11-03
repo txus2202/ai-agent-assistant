@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     # Audio Integration (Phase 5)
     whisper_model: str = "base"
     whisper_language: str = "es"
+    whisper_beam_size: int = 1
+    whisper_threads: int = 4
     whisper_initial_prompt: str = (
         "Conversación técnica en castellano sobre desarrollo de software, arquitectura de sistemas e infraestructura. "
         "Uso frecuente de términos técnicos, herramientas, patrones y nombres en inglés: "

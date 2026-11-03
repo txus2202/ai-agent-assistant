@@ -110,7 +110,14 @@ class WakeWordService:
             return
         
         # Path to Vosk model
-        model_path = os.path.join(os.path.dirname(__file__), "..", "models", "vosk", "vosk-model-small-es-0.42")
+        env_path = os.environ.get("VOSK_MODEL_PATH")
+        candidates = [
+            env_path,
+            "/app/models/vosk-model-small-es-0.42",
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models", "vosk", "vosk-model-small-es-0.42")),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "models", "vosk-model-small-es-0.42")),
+        ]
+        model_path = next((p for p in candidates if p and os.path.exists(p)), env_path or candidates[2])
         print(f"[WW] Initializing WakeWordService with Vosk model: {model_path}")
         
         try:
@@ -119,7 +126,7 @@ class WakeWordService:
             self.is_initialized = True
             print("[WW] Vosk model loaded successfully!")
         except Exception:
-            logger.exception("Failed to load Vosk model")
+            logger.exception("Failed to load Vosk model at %s", model_path)
             self.model = None
             self.recognizer = None
             self.is_initialized = True

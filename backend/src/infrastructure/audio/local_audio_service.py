@@ -36,12 +36,16 @@ class LocalAudioService(IAudioService):
         kokoro_voice_name: str,
         whisper_language: str = "es",
         whisper_initial_prompt: str | None = None,
+        whisper_beam_size: int = 5,
+        whisper_threads: int = 4,
     ):
         self.whisper_model_size = whisper_model_size
         self.kokoro_model_path = kokoro_model_path
         self.kokoro_voices_path = kokoro_voices_path
         self.kokoro_voice_name = kokoro_voice_name
         self.whisper_language = whisper_language
+        self.whisper_beam_size = whisper_beam_size
+        self.whisper_threads = whisper_threads
         self.whisper_initial_prompt = whisper_initial_prompt or (
             "Conversación técnica en castellano sobre desarrollo de software, arquitectura de sistemas e infraestructura. "
             "Uso frecuente de términos técnicos, herramientas, patrones y nombres en inglés: "
@@ -63,8 +67,13 @@ class LocalAudioService(IAudioService):
 
     def _get_whisper_model(self) -> WhisperModel:
         if self.whisper_model is None:
-            print(f"Loading Whisper model '{self.whisper_model_size}'...")
-            self.whisper_model = WhisperModel(self.whisper_model_size, device="cpu", compute_type="int8")
+            print(f"Loading Whisper model '{self.whisper_model_size}' with {self.whisper_threads} threads...")
+            self.whisper_model = WhisperModel(
+                self.whisper_model_size,
+                device="cpu",
+                compute_type="int8",
+                cpu_threads=self.whisper_threads,
+            )
         return self.whisper_model
 
     def _get_kokoro(self) -> Kokoro:
@@ -100,7 +109,7 @@ class LocalAudioService(IAudioService):
             segments, _ = model.transcribe(
                 audio_file, 
                 language=self.whisper_language,
-                beam_size=5,
+                beam_size=self.whisper_beam_size,
                 vad_filter=True,
                 vad_parameters={"min_silence_duration_ms": 500},
                 initial_prompt=prompt,

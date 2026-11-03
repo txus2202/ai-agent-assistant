@@ -23,6 +23,8 @@ def get_audio_service() -> LocalAudioService:
             kokoro_voice_name=settings.kokoro_voice_name,
             whisper_language=settings.whisper_language,
             whisper_initial_prompt=settings.whisper_initial_prompt,
+            whisper_beam_size=settings.whisper_beam_size,
+            whisper_threads=settings.whisper_threads,
         )
     return _audio_service
 

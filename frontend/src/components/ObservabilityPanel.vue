@@ -208,9 +208,17 @@ function getAgentStatusBadge(agent: { state: string; latency?: number; tokens?: 
   }
 }
 
+const langfuseDashboardUrl = computed(() => {
+  if (typeof window !== 'undefined' && window.location) {
+    const hostname = window.location.hostname
+    return `http://${hostname}:3000`
+  }
+  return 'http://localhost:3000'
+})
+
 function openLangfuse(e: MouseEvent) {
   if (typeof window !== 'undefined') {
-    window.open('http://localhost:3000', '_blank', 'noopener,noreferrer')
+    window.open(langfuseDashboardUrl.value, '_blank', 'noopener,noreferrer')
     e.preventDefault()
   }
 }
@@ -420,7 +428,7 @@ function openLangfuse(e: MouseEvent) {
     <!-- Langfuse Dashboard External Link Button / Card -->
     <a
       v-if="isLangfuseEnabled"
-      href="http://localhost:3000"
+      :href="langfuseDashboardUrl"
       target="_blank"
       rel="noopener noreferrer"
       data-test="langfuse-dashboard-link"

@@ -58,6 +58,21 @@ export interface DebateTopology {
   implementers: string[]
 }
 
+// Resolves WebSocket URL dynamically to support local dev, reverse proxies, and Tailscale (WSS)
+export function resolveWsUrl(path: string): string {
+  if (import.meta.env.VITE_WS_URL) {
+    return import.meta.env.VITE_WS_URL.replace('/ws/debate', path)
+  }
+  if (typeof window !== 'undefined' && window.location) {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    if (window.location.port === '5173' || window.location.port === '4173') {
+      return `ws://${window.location.hostname}:8000${path}`
+    }
+    return `${protocol}//${window.location.host}${path}`
+  }
+  return `ws://localhost:8000${path}`
+}
+
 // Builds a valid 0.1s silent 8-bit mono WAV (Safari rejects malformed/tiny headers)
 function buildSilentWavUrl(): string {
   const samples = 800
@@ -368,7 +383,7 @@ export const useDebateStore = defineStore('debate', () => {
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
 
   function connect() {
-    const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/debate'
+    const wsUrl = resolveWsUrl('/ws/debate')
     
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
       return
@@ -738,9 +753,7 @@ export const useDebateStore = defineStore('debate', () => {
     // Create AudioContext immediately on user click to avoid browser suspension
     wwAudioContext = new AudioContext({ sampleRate: 16000 })
     
-    // Convert ws://localhost:8000/ws/debate to /ws/audio/wake-word
-    let wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/debate'
-    wsUrl = wsUrl.replace('/ws/debate', '/ws/audio/wake-word')
+    const wsUrl = resolveWsUrl('/ws/audio/wake-word')
     
     wakeWordWs = new WebSocket(wsUrl)
     wakeWordWs.binaryType = 'arraybuffer'

@@ -34,6 +34,8 @@ async def get_agents_config(repo: Annotated[SqliteAgentConfigRepository, Depends
             config = repo.find_by_role(profile.display_name)
         
         top_roles = []
+        if profile.display_name == top.supervisor or profile.id == top.supervisor or getattr(profile, "is_supervisor", False) or role_value == "supervisor":
+            top_roles.append("supervisor")
         if profile.display_name in top.interpreters or profile.id in top.interpreters:
             top_roles.append("interpreter")
         if profile.display_name in top.proposers or profile.id in top.proposers:

@@ -30,7 +30,12 @@ defineExpose({
 })
 
 const displayedAgents = computed(() => {
-  return (props.agents || []).filter(a => a.role !== 'supervisor')
+  const all = [...(props.agents || [])]
+  return all.sort((a, b) => {
+    if (a.role === 'supervisor') return -1
+    if (b.role === 'supervisor') return 1
+    return 0
+  })
 })
 
 const isAgentActive = (agentRole: string, agentState: string) => {

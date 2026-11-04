@@ -82,7 +82,7 @@ const handleToggleMic = () => {
 </script>
 
 <template>
-  <div class="h-screen w-full bg-space-950 flex flex-col overflow-hidden text-slate-300 font-sans">
+  <div class="h-screen w-full bg-space-950 flex flex-col overflow-hidden text-slate-900 dark:text-slate-300 font-sans">
     
     <!-- Top Header -->
     <AppHeader />

@@ -102,6 +102,32 @@ describe('AgentTopology.vue', () => {
     expect(agentsTab.classes()).toContain('text-neon-cyan')
     expect(wrapper.find('[data-test="topology-scroll-container"]').exists()).toBe(true)
   })
+
+  it('activates supervisor card when activeTtsRole is Atenea or supervisor', async () => {
+    const { useDebateStore } = await import('../../stores/debate')
+    const store = useDebateStore()
+    store.activeTtsRole = 'Atenea'
+
+    const wrapper = mount(AgentTopology, {
+      props: {
+        agents: [
+          { role: 'supervisor', name: 'Atenea', state: 'STANDBY', color_hex: '#f59e0b' },
+          { role: 'senior_architect', name: 'Senior Architect', state: 'STANDBY', color_hex: '#00ff9d' }
+        ]
+      }
+    })
+
+    const cards = wrapper.findAllComponents({ name: 'AgentCard' })
+    expect(cards.length).toBe(2)
+    // Supervisor card is the first card and should be ACTIVE
+    expect(cards[0]?.props('state')).toBe('ACTIVE')
+    expect(cards[1]?.props('state')).toBe('STANDBY')
+
+    // Test with 'supervisor'
+    store.activeTtsRole = 'supervisor'
+    await flushPromises()
+    expect(cards[0]?.props('state')).toBe('ACTIVE')
+  })
 })
 
 

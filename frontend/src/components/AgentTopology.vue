@@ -40,9 +40,10 @@ const displayedAgents = computed(() => {
 
 const isAgentActive = (agentRole: string, agentState: string) => {
   if (store.activeTtsRole) {
-    const normTts = store.normalizeAgentRole ? store.normalizeAgentRole(store.activeTtsRole) : store.activeTtsRole
-    const normAgent = store.normalizeAgentRole ? store.normalizeAgentRole(agentRole) : agentRole
+    const normTts = (store.normalizeAgentRole ? store.normalizeAgentRole(store.activeTtsRole) : store.activeTtsRole).toLowerCase()
+    const normAgent = (store.normalizeAgentRole ? store.normalizeAgentRole(agentRole) : agentRole).toLowerCase()
     if (normTts === normAgent) return true
+    if ((normTts === 'supervisor' || normTts === 'atenea') && (normAgent === 'supervisor' || normAgent === 'atenea')) return true
   }
   return agentState === 'ACTIVE'
 }

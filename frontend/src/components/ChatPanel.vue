@@ -246,7 +246,7 @@ watch(() => props.messages.length, (newLen, oldLen) => {
     if (newLen === oldLen + 1 && lastMsg && lastMsg.role === 'assistant' && !store.streamingMessageId && !lastMsg.isStreaming) {
       // Determine the agent role for TTS voice synthesis (from agentRole or agentName)
       const match = lastMsg.content.match(/^\[(.*?)\]\s/)
-      const role = lastMsg.agentRole || lastMsg.agentName || (match ? match[1] : undefined)
+      const role = lastMsg.agentRole || lastMsg.agentName || (match ? match[1] : undefined) || 'supervisor'
       playVoiceResponse(lastMsg.content, role)
     }
   }

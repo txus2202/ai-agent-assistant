@@ -32,10 +32,7 @@ const toggleAutoListen = () => {
   <header class="h-14 border-b border-cyan-900/40 bg-space-900/90 backdrop-blur-md flex items-center justify-between z-30 shrink-0 w-full">
     <!-- Left branding & Status tag (centered relative to chat column on desktop) -->
     <div class="flex items-center justify-start lg:justify-center px-3 sm:px-4 lg:w-[380px] xl:w-[400px] lg:shrink-0 shrink-0">
-      <div class="flex flex-col">
-        <span class="text-xs font-bold tracking-widest uppercase text-cyan-100 leading-tight">A.T.E.N.E.A.</span>
-        <span class="text-[9px] sm:text-[10px] md:text-xs text-slate-400 font-mono tracking-widest uppercase">System Core v{{ version }}</span>
-      </div>
+      <span class="text-xs sm:text-sm font-mono font-bold tracking-widest uppercase text-slate-300 dark:text-cyan-100">SYSTEM CORE V{{ version }}</span>
     </div>
 
     <!-- Center App Title Banner -->

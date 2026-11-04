@@ -117,8 +117,9 @@ export async function uploadFile(file: File): Promise<string> {
 
 export function normalizeAgentRole(r?: string | null): string {
   if (!r) return ''
-  const lower = r.toLowerCase().replaceAll('-', '_')
+  const lower = r.toLowerCase().replaceAll('-', '_').trim()
   if (lower === 'innovator') return 'innovator_architect'
+  if (lower === 'atenea') return 'supervisor'
   return lower
 }
 
@@ -623,8 +624,13 @@ export const useDebateStore = defineStore('debate', () => {
   }
 
   function handleAgentStarted(event: SupervisorEvent) {
-    const agent = findAgent(event.role)
+    const agent = findAgent(event.role) || (normalizeAgentRole(event.role) === 'supervisor' ? findAgent('supervisor') : undefined)
     if (!agent) return
+    agents.value.forEach(a => {
+      if (a.role !== agent.role && a.state === 'ACTIVE') {
+        a.state = 'STANDBY'
+      }
+    })
     agent.state = 'ACTIVE'
     agent.turns = (agent.turns || 0) + 1
     agent.startedAt = Date.now()
@@ -775,6 +781,18 @@ export const useDebateStore = defineStore('debate', () => {
       messages.value.push(targetMsg)
     } else {
       targetMsg.content += chunk
+    }
+
+    // Ensure the streaming agent's card is marked active
+    const targetRole = agentRole || event.role || 'supervisor'
+    const streamingAgent = findAgent(targetRole)
+    if (streamingAgent) {
+      agents.value.forEach(a => {
+        if (a.role !== streamingAgent.role && a.state === 'ACTIVE') {
+          a.state = 'STANDBY'
+        }
+      })
+      streamingAgent.state = 'ACTIVE'
     }
 
     feedTtsStreamingChunk(chunk, agentRole || event.role || undefined)

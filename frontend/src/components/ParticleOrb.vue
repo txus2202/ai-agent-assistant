@@ -447,10 +447,12 @@ const animateWaveform = () => {
   const centerY = height / 2
 
   let activeAnalyser: AnalyserNode | null = null
-  let waveColor = '#ffffff'
+  const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
+  let waveColor = isLight ? '#334155' : '#ffffff'
 
   if (isRecording.value && analyser) {
     activeAnalyser = analyser
+    waveColor = isLight ? '#1e293b' : '#ffffff'
   } else if (store.isTtsPlaying && store.globalAnalyser) {
     activeAnalyser = store.globalAnalyser
     waveColor = props.activeAgentColor
@@ -581,6 +583,16 @@ const voiceDotStyle = computed(() => {
   }
   return { backgroundColor: '#475569' } // slate-600
 })
+
+const coreGlowStyle1 = computed(() => {
+  if (!props.isDebating) return {}
+  return { backgroundColor: `${props.activeAgentColor}26` }
+})
+
+const coreGlowStyle2 = computed(() => {
+  if (!props.isDebating) return {}
+  return { backgroundColor: `${props.activeAgentColor}40` }
+})
 </script>
 
 <template>
@@ -610,12 +622,12 @@ const voiceDotStyle = computed(() => {
       <div 
         id="orbGlowCore1"
         class="absolute w-[260px] h-[260px] sm:w-[380px] sm:h-[380px] rounded-full blur-3xl pointer-events-none transition-colors duration-700"
-        :style="isDebating ? `background-color: ${activeAgentColor}1A` : ''"
+        :style="coreGlowStyle1"
       ></div>
       <div 
         id="orbGlowCore2"
         class="absolute w-[200px] h-[200px] sm:w-[280px] sm:h-[280px] rounded-full blur-2xl pointer-events-none transition-colors duration-700"
-        :style="isDebating ? `background-color: ${activeAgentColor}33` : ''"
+        :style="coreGlowStyle2"
       ></div>
 
       <canvas ref="orbCanvasRef" class="w-full h-full absolute inset-0 z-10"></canvas>

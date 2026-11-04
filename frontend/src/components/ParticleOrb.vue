@@ -1,24 +1,46 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { useDebateStore } from '../stores/debate'
+import SoundBar from './SoundBar.vue'
 
 const store = useDebateStore()
 
-const props = defineProps<{
+export interface ActiveAgentItem {
+  role: string
+  name?: string
+  color: string
+}
+
+const props = withDefaults(defineProps<{
   activeAgentColor: string // e.g. '#00e5ff'
   isDebating: boolean
   activeAgentIndex?: number // Optional index (0 to 5) to identify the agent
-}>()
+  activeAgents?: ActiveAgentItem[]
+}>(), {
+  activeAgents: () => []
+})
+
+const resolvedActiveAgents = computed<ActiveAgentItem[]>(() => {
+  if (!props.isDebating) {
+    return []
+  }
+  if (props.activeAgents && props.activeAgents.length > 0) {
+    return props.activeAgents
+  }
+  if (props.activeAgentColor) {
+    return [{ role: 'active', color: props.activeAgentColor }]
+  }
+  return []
+})
 
 const emit = defineEmits<{
   (e: 'submit-draft'): void
 }>()
 
 const orbCanvasRef = ref<HTMLCanvasElement | null>(null)
-const waveformCanvasRef = ref<HTMLCanvasElement | null>(null)
+const soundBarRef = ref<InstanceType<typeof SoundBar> | null>(null)
 let ctx: CanvasRenderingContext2D | null = null
 let animationFrameId: number
-let waveAnimationFrameId: number
 let isComponentUnmounted = false
 
 // Cosmic Neural Orb Web Particle logic
@@ -120,18 +142,80 @@ const getIdleParticleRgb = (groupId?: number) => {
   return '255, 255, 255'
 }
 
+interface AgentRgbItem {
+  role: string
+  hex: string
+  rgb: string
+}
+
 interface FrameState {
   cx: number
   cy: number
   speedMultiplier: number
   activeColorRGB: string
   currentAgentIndex: number
+  activeAgentsRgb: AgentRgbItem[]
 }
 
 const project = (z: number) => 800 / (800 + z)
 
-const isActiveGroup = (p: Particle3D, frame: FrameState) =>
-  props.isDebating && p.groupId === frame.currentAgentIndex
+const getParticleActiveAgent = (
+  p: Particle3D,
+  frame: FrameState
+): { isActive: boolean; rgb: string; hex: string } => {
+  const agents = frame.activeAgentsRgb
+  if (!props.isDebating || agents.length === 0) {
+    return { isActive: false, rgb: getIdleParticleRgb(p.groupId), hex: '' }
+  }
+
+  // Case 1: Single agent active (alternating plexus or index)
+  if (agents.length === 1) {
+    const a = agents[0]!
+    const isActive = p.groupId % 2 === 0 || p.groupId === (props.activeAgentIndex ?? 0)
+    return {
+      isActive,
+      rgb: isActive ? a.rgb : getIdleParticleRgb(p.groupId),
+      hex: a.hex
+    }
+  }
+
+  // Case 2: 2 agents in parallel (Bipolar hemispheres: Left vs Right + equator data crossover)
+  if (agents.length === 2) {
+    const a1 = agents[0]!
+    const a2 = agents[1]!
+    let chosen = a1
+    if (p.ox < -0.04) {
+      chosen = a1
+    } else if (p.ox > 0.04) {
+      chosen = a2
+    } else {
+      chosen = (p.oz > 0) ? a1 : a2
+    }
+    return { isActive: true, rgb: chosen.rgb, hex: chosen.hex }
+  }
+
+  // Case 3: 3 agents in parallel (120-degree angular sectors)
+  if (agents.length === 3) {
+    const angle = Math.atan2(p.oz, p.ox)
+    let idx = 0
+    if (angle < -Math.PI / 3) idx = 0
+    else if (angle < Math.PI / 3) idx = 1
+    else idx = 2
+    const chosen = agents[idx]!
+    return { isActive: true, rgb: chosen.rgb, hex: chosen.hex }
+  }
+
+  // Case 4+: 4 or more agents in parallel (Radial quadrants)
+  const isTop = p.oy < 0
+  const isLeft = p.ox < 0
+  let sector = 0
+  if (isTop && isLeft) sector = 0
+  else if (isTop && !isLeft) sector = 1
+  else if (!isTop && isLeft) sector = 2
+  else sector = 3
+  const chosen = agents[sector % agents.length]!
+  return { isActive: true, rgb: chosen.rgb, hex: chosen.hex }
+}
 
 const updateParticlePositions = (speedMultiplier: number) => {
   const cosY = Math.cos(globalRotationY)
@@ -155,15 +239,32 @@ const updateParticlePositions = (speedMultiplier: number) => {
 }
 
 const drawLink = (
-  c: CanvasRenderingContext2D, p1: Particle3D, p2: Particle3D,
-  distSq: number, color: string, isActive: boolean, frame: FrameState
+  c: CanvasRenderingContext2D,
+  p1: Particle3D,
+  p2: Particle3D,
+  distSq: number,
+  rgb1: string,
+  rgb2: string,
+  isActive1: boolean,
+  isActive2: boolean,
+  frame: FrameState
 ) => {
   const persp1 = project(p1.z)
   const persp2 = project(p2.z)
   const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
   const alphaMultiplier = isLight ? 0.35 : 0.3
-  const strokeColor = isLight && !isActive ? '15, 23, 42' : color
-  const alpha = (1 - Math.sqrt(distSq) / 50) * alphaMultiplier * (isActive ? 0.8 : (isLight ? 0.45 : 0.3))
+  const isBothActive = isActive1 && isActive2
+  const isSameAgent = rgb1 === rgb2
+
+  let strokeColor = rgb1
+  if (!isActive1 && !isActive2) {
+    strokeColor = isLight ? '15, 23, 42' : '255, 255, 255'
+  } else if (isBothActive && !isSameAgent) {
+    // Inter-agent crossover confluence link
+    strokeColor = isLight ? '15, 23, 42' : '255, 255, 255'
+  }
+
+  const alpha = (1 - Math.sqrt(distSq) / 50) * alphaMultiplier * (isBothActive ? 0.85 : (isLight ? 0.45 : 0.3))
   c.beginPath()
   c.moveTo(frame.cx + p1.x * persp1, frame.cy + p1.y * persp1)
   c.lineTo(frame.cx + p2.x * persp2, frame.cy + p2.y * persp2)
@@ -175,8 +276,7 @@ const drawConnectionsFor = (
   c: CanvasRenderingContext2D, i: number, frame: FrameState
 ) => {
   const p1 = particles[i]!
-  const isActive = isActiveGroup(p1, frame)
-  const color = isActive ? frame.activeColorRGB : getIdleParticleRgb(p1.groupId)
+  const a1 = getParticleActiveAgent(p1, frame)
 
   // Only check connections for a subset to save performance
   for (let j = i + 1; j < particles.length; j += 2) {
@@ -186,7 +286,10 @@ const drawConnectionsFor = (
     const dy = p1.y - p2.y
     const dz = p1.z - p2.z
     const distSq = dx * dx + dy * dy + dz * dz
-    if (distSq < 2500) drawLink(c, p1, p2, distSq, color, isActive, frame)
+    if (distSq < 2500) {
+      const a2 = getParticleActiveAgent(p2, frame)
+      drawLink(c, p1, p2, distSq, a1.rgb, a2.rgb, a1.isActive, a2.isActive, frame)
+    }
   }
 }
 
@@ -202,14 +305,15 @@ const drawParticle = (c: CanvasRenderingContext2D, p: Particle3D, frame: FrameSt
   const perspective = project(p.z)
   const px = frame.cx + p.x * perspective
   const py = frame.cy + p.y * perspective
-  const isActive = isActiveGroup(p, frame)
-  const baseColor = isActive ? frame.activeColorRGB : getIdleParticleRgb(p.groupId)
+  const agentInfo = getParticleActiveAgent(p, frame)
+  const isActive = agentInfo.isActive
+  const baseColor = agentInfo.rgb
 
   const projSize = (isActive ? p.size * 1.5 : p.size) * perspective
   const depthAlpha = Math.max(0.08, Math.min(1, (p.z + BASE_RADIUS) / (BASE_RADIUS * 2.5)))
   const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
   const finalAlpha = isActive 
-    ? Math.min(1, p.alpha * depthAlpha * 2) 
+    ? Math.min(1, p.alpha * depthAlpha * 2.2) 
     : (isLight ? Math.min(0.95, p.alpha * depthAlpha * 1.6 + 0.35) : p.alpha * depthAlpha)
 
   c.beginPath()
@@ -221,7 +325,7 @@ const drawParticle = (c: CanvasRenderingContext2D, p: Particle3D, frame: FrameSt
   // Subtle glow for active particles
   c.beginPath()
   c.arc(px, py, projSize * 3, 0, Math.PI * 2)
-  c.fillStyle = `rgba(${baseColor}, ${finalAlpha * 0.2})`
+  c.fillStyle = `rgba(${baseColor}, ${finalAlpha * 0.22})`
   c.fill()
 }
 
@@ -238,7 +342,9 @@ const wrap = (value: number, limit: number) => {
 }
 
 const drawAmbientDust = (c: CanvasRenderingContext2D, frame: FrameState) => {
-  const color = props.isDebating ? frame.activeColorRGB : getIdleParticleRgb()
+  const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
+  const primaryColor = frame.activeAgentsRgb.length > 0 ? frame.activeAgentsRgb[0]!.rgb : frame.activeColorRGB
+  const color = props.isDebating ? primaryColor : (isLight ? '15, 23, 42' : '255, 255, 255')
   for (const d of ambientDust) {
     d.x = wrap(d.x + d.vx * frame.speedMultiplier, orbWidth)
     d.y = wrap(d.y + d.vy * frame.speedMultiplier, orbHeight)
@@ -267,12 +373,20 @@ const animateOrb = () => {
   globalRotationY += 0.002 * speedMultiplier
   globalRotationX += 0.0005 * speedMultiplier
 
+  const agents = resolvedActiveAgents.value
+  const activeAgentsRgb: AgentRgbItem[] = agents.map(a => ({
+    role: a.role,
+    hex: a.color,
+    rgb: getRgbFromHex(a.color)
+  }))
+
   const frame: FrameState = {
     cx: orbWidth / 2,
     cy: orbHeight / 2,
     speedMultiplier,
     activeColorRGB: getRgbFromHex(props.activeAgentColor),
-    currentAgentIndex: props.activeAgentIndex ?? 0
+    currentAgentIndex: props.activeAgentIndex ?? 0,
+    activeAgentsRgb
   }
 
   updateParticlePositions(speedMultiplier)
@@ -281,226 +395,6 @@ const animateOrb = () => {
   drawAmbientDust(ctx, frame)
 
   animationFrameId = requestAnimationFrame(animateOrb)
-}
-
-// --- STT Logic ---
-const isRecording = ref(false)
-const mediaRecorder = ref<MediaRecorder | null>(null)
-const audioChunks = ref<Blob[]>([])
-
-const toggleRecording = async () => {
-  if (isRecording.value) {
-    mediaRecorder.value?.stop()
-    isRecording.value = false
-    store.isRecording = false
-    stopSilenceDetection()
-    return
-  }
-
-  try {
-    store.stopTts() // Stop TTS when user wants to speak
-    store.unlockAudioContext() // Unlock audio context and instantiate analyser during user click
-    
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    const recorder = new MediaRecorder(stream)
-    audioChunks.value = []
-
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) audioChunks.value.push(e.data)
-    }
-
-    recorder.onstop = async () => {
-      isRecording.value = false
-      store.isRecording = false
-      stopSilenceDetection()
-      const audioBlob = new Blob(audioChunks.value, { type: 'audio/webm' })
-      stream.getTracks().forEach(t => t.stop())
-      if (!isComponentUnmounted) {
-        await uploadAudioForTranscription(audioBlob)
-      }
-    }
-
-    recorder.start()
-    mediaRecorder.value = recorder
-    isRecording.value = true
-    store.isRecording = true
-    
-    startSilenceDetection(stream)
-  } catch (err) {
-    console.error("Error accessing microphone:", err)
-    alert("No se pudo acceder al micrófono para dictado de voz.")
-  }
-}
-
-const uploadAudioForTranscription = async (blob: Blob) => {
-  const formData = new FormData()
-  formData.append('file', blob, 'recording.webm')
-  
-  try {
-    const response = await fetch('/api/audio/transcribe', {
-      method: 'POST',
-      body: formData
-    })
-    
-    if (response.ok) {
-      const data = await response.json()
-      if (data.text) {
-        store.draftMessage += (store.draftMessage ? ' ' : '') + data.text
-        emit('submit-draft')
-      }
-    } else {
-      console.error("Transcription failed")
-    }
-  } catch (e) {
-    console.error("Transcription error:", e)
-  }
-}
-
-// --- Silence Detection ---
-let silenceTimeout: ReturnType<typeof setTimeout> | null = null
-let initialDelayTimeout: ReturnType<typeof setTimeout> | null = null
-let audioContext: AudioContext | null = null
-let analyser: AnalyserNode | null = null
-let microphone: MediaStreamAudioSourceNode | null = null
-let silenceCheckInterval: ReturnType<typeof setInterval> | null = null
-
-const startSilenceDetection = (stream: MediaStream) => {
-  // Use a small delay before starting to avoid triggering on initial silence
-  initialDelayTimeout = setTimeout(() => {
-    if (!isRecording.value) return
-    
-    audioContext = new AudioContext()
-    analyser = audioContext.createAnalyser()
-    analyser.minDecibels = -70 // Sensitive threshold for voice
-    analyser.smoothingTimeConstant = 0.2
-    analyser.fftSize = 256 // good for time-domain waveform
-    
-    microphone = audioContext.createMediaStreamSource(stream)
-    microphone.connect(analyser)
-    
-    const dataArray = new Uint8Array(analyser.frequencyBinCount)
-    
-    const checkSilence = () => {
-      if (!isRecording.value || !analyser) return
-      
-      analyser.getByteFrequencyData(dataArray)
-      let sum = 0
-      for (const value of dataArray) {
-        sum += value
-      }
-      const average = sum / dataArray.length
-      
-      if (average > 3) { // User is talking
-        if (silenceTimeout) {
-          clearTimeout(silenceTimeout)
-          silenceTimeout = null
-        }
-      } else if (!silenceTimeout) { // Silent
-        silenceTimeout = setTimeout(() => {
-          if (isRecording.value) {
-            console.log("Silence detected, auto-submitting...")
-            toggleRecording()
-          }
-        }, 2000)
-      }
-    }
-    
-    silenceCheckInterval = setInterval(checkSilence, 100)
-  }, 1000)
-}
-
-const stopSilenceDetection = () => {
-  if (initialDelayTimeout) {
-    clearTimeout(initialDelayTimeout)
-    initialDelayTimeout = null
-  }
-  if (silenceTimeout) {
-    clearTimeout(silenceTimeout)
-    silenceTimeout = null
-  }
-  if (silenceCheckInterval) {
-    clearInterval(silenceCheckInterval)
-    silenceCheckInterval = null
-  }
-  if (microphone) {
-    microphone.disconnect()
-    microphone = null
-  }
-  if (audioContext && audioContext.state !== 'closed') {
-    audioContext.close().catch(() => {})
-    audioContext = null
-  }
-  analyser = null
-}
-
-// --- Audio Waveform Visualizer ---
-let waveOffset = 0
-const animateWaveform = () => {
-  if (!waveformCanvasRef.value) return
-  const wCanvas = waveformCanvasRef.value
-  const wCtx = wCanvas.getContext('2d')
-  if (!wCtx) return
-
-  wCtx.clearRect(0, 0, wCanvas.width, wCanvas.height)
-  const width = wCanvas.width
-  const height = wCanvas.height
-  const centerY = height / 2
-
-  let activeAnalyser: AnalyserNode | null = null
-  const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
-  let waveColor = isLight ? '#334155' : '#ffffff'
-
-  if (isRecording.value && analyser) {
-    activeAnalyser = analyser
-    waveColor = isLight ? '#1e293b' : '#ffffff'
-  } else if (store.isTtsPlaying && store.globalAnalyser) {
-    activeAnalyser = store.globalAnalyser
-    waveColor = props.activeAgentColor
-  }
-
-  if (activeAnalyser) {
-    const dataArray = new Uint8Array(activeAnalyser.frequencyBinCount)
-    activeAnalyser.getByteTimeDomainData(dataArray)
-    
-    wCtx.strokeStyle = waveColor
-    wCtx.lineWidth = 2
-    wCtx.beginPath()
-    
-    const sliceWidth = width * 1.0 / activeAnalyser.frequencyBinCount
-    let x = 0
-    
-    for (let i = 0; i < activeAnalyser.frequencyBinCount; i++) {
-      const v = dataArray[i]! / 128.0 // 0.0 to 2.0
-      const y = (v * height) / 2
-      
-      if (i === 0) {
-        wCtx.moveTo(x, y)
-      } else {
-        wCtx.lineTo(x, y)
-      }
-      x += sliceWidth
-    }
-    wCtx.stroke()
-  } else {
-    // Idle flat line / fake pulse
-    const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
-    wCtx.strokeStyle = isLight ? 'rgba(100, 116, 139, 0.45)' : 'rgba(255, 255, 255, 0.25)'
-    wCtx.lineWidth = 1.2
-    wCtx.beginPath()
-    wCtx.moveTo(0, centerY)
-    wCtx.lineTo(width, centerY)
-    wCtx.stroke()
-
-    const pulseX = (waveOffset * 30) % width
-    wCtx.beginPath()
-    wCtx.arc(pulseX, centerY, 2.5, 0, Math.PI * 2)
-    wCtx.fillStyle = isLight ? '#0f172a' : '#ffffff'
-    wCtx.fill()
-
-    waveOffset += 0.08
-  }
-  
-  waveAnimationFrameId = requestAnimationFrame(animateWaveform)
 }
 
 let resizeObserver: ResizeObserver | null = null
@@ -516,7 +410,6 @@ onMounted(() => {
     resizeObserver.observe(orbCanvasRef.value.parentElement)
   }
   animateOrb()
-  animateWaveform()
 })
 
 onUnmounted(() => {
@@ -527,12 +420,11 @@ onUnmounted(() => {
     resizeObserver = null
   }
   cancelAnimationFrame(animationFrameId)
-  cancelAnimationFrame(waveAnimationFrameId)
-  stopSilenceDetection()
-  if (mediaRecorder.value && isRecording.value) {
-    mediaRecorder.value.stop()
-  }
 })
+
+const toggleRecording = () => {
+  return soundBarRef.value?.toggleRecording()
+}
 
 defineExpose({
   toggleRecording,
@@ -543,55 +435,64 @@ watch(() => props.isDebating, () => {
   // Speed or parameters can be reset here if needed
 })
 
-watch(() => store.isWakeWordTriggered, (triggered) => {
-  if (triggered && !isRecording.value) {
-    toggleRecording()
-  }
-})
-
-watch(() => store.isRecording, (recording) => {
-  if (!recording && isRecording.value) {
-    if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
-      mediaRecorder.value.stop()
-    }
-    isRecording.value = false
-    stopSilenceDetection()
-  }
-})
-
-const voiceStateText = computed(() => {
-  if (isRecording.value) {
-    return 'ESTADO VOZ: ESCUCHANDO ORDEN'
-  }
-  if (store.isTtsPlaying) {
-    return 'ESTADO VOZ: ACTIVO'
-  }
-  if (store.isAutoListenEnabled) {
-    return 'ESTADO VOZ: ESPERANDO WAKE WORD'
-  }
-  return 'ESTADO VOZ: EN REPOSO'
-})
-
-const voiceDotStyle = computed(() => {
-  if (isRecording.value) {
-    return { backgroundColor: '#ffffff', boxShadow: '0 0 8px #ffffff' }
-  } else if (store.isTtsPlaying) {
-    return { 
-      backgroundColor: props.activeAgentColor, 
-      boxShadow: `0 0 8px ${props.activeAgentColor}` 
-    }
-  }
-  return { backgroundColor: '#475569' } // slate-600
-})
-
 const coreGlowStyle1 = computed(() => {
   if (!props.isDebating) return {}
-  return { backgroundColor: `${props.activeAgentColor}26` }
+  const agents = resolvedActiveAgents.value
+  if (agents.length === 0) return {}
+  if (agents.length === 1) {
+    return { backgroundColor: `${agents[0]!.color}26` }
+  }
+  if (agents.length === 2) {
+    return { 
+      background: `radial-gradient(circle at center, ${agents[0]!.color}26 0%, ${agents[1]!.color}26 60%, transparent 75%)` 
+    }
+  }
+  const c1 = agents[0]!.color
+  const c2 = agents[1]!.color
+  const c3 = agents[2] ? agents[2].color : c1
+  return {
+    background: `radial-gradient(circle at center, ${c1}26 0%, ${c2}26 40%, ${c3}26 70%, transparent 80%)`
+  }
 })
 
 const coreGlowStyle2 = computed(() => {
   if (!props.isDebating) return {}
-  return { backgroundColor: `${props.activeAgentColor}40` }
+  const agents = resolvedActiveAgents.value
+  if (agents.length === 0) return {}
+  if (agents.length === 1) {
+    return { backgroundColor: `${agents[0]!.color}40` }
+  }
+  if (agents.length === 2) {
+    return { 
+      background: `radial-gradient(circle at center, ${agents[1]!.color}33 0%, ${agents[0]!.color}33 60%, transparent 75%)` 
+    }
+  }
+  const c1 = agents[0]!.color
+  const c2 = agents[1]!.color
+  return {
+    background: `radial-gradient(circle at center, ${c2}33 0%, ${c1}33 70%, transparent 80%)`
+  }
+})
+
+const ring1Style = computed(() => {
+  if (!props.isDebating) return ''
+  const agents = resolvedActiveAgents.value
+  const color = agents.length > 0 ? agents[0]!.color : props.activeAgentColor
+  return `border-color: ${color}40`
+})
+
+const ring2Style = computed(() => {
+  if (!props.isDebating) return ''
+  const agents = resolvedActiveAgents.value
+  const color = agents.length > 1 ? agents[1]!.color : (agents.length > 0 ? agents[0]!.color : props.activeAgentColor)
+  return `border-color: ${color}60`
+})
+
+const ring3Style = computed(() => {
+  if (!props.isDebating) return ''
+  const agents = resolvedActiveAgents.value
+  const color = agents.length > 2 ? agents[2]!.color : (agents.length > 0 ? agents[0]!.color : props.activeAgentColor)
+  return `border-color: ${color}20`
 })
 </script>
 
@@ -599,23 +500,34 @@ const coreGlowStyle2 = computed(() => {
   <!-- CenterOrbCanvasCore -->
   <section class="flex flex-col relative w-full h-full border-x border-slate-800/80 overflow-hidden" data-purpose="neural-orb-centerpiece">
     
+    <!-- Waveform Audio Visualizer, Voice State Controller & Microphone HUD Deck via SoundBar (Top on Mobile, Bottom on Desktop) -->
+    <div class="order-1 md:order-2 w-full bg-space-900/85 border-b md:border-b-0 md:border-t border-slate-800/90 px-4 sm:px-6 py-2.5 z-20 backdrop-blur-md shrink-0">
+      <SoundBar
+        ref="soundBarRef"
+        :active-agent-color="activeAgentColor"
+        :is-debating="isDebating"
+        :listen-wake-word="true"
+        @submit-draft="emit('submit-draft')"
+      />
+    </div>
+
     <!-- Interactive Cosmic Neural Orb Web Canvas (Flex 1 ensures it takes remaining space, centering its content) -->
-    <div class="relative w-full flex-1 flex items-center justify-center min-h-[240px] sm:min-h-[300px] overflow-hidden" id="orbContainer">
+    <div class="order-2 md:order-1 relative w-full flex-1 flex items-center justify-center min-h-[240px] sm:min-h-[300px] overflow-hidden" id="orbContainer">
       <!-- Sci-Fi Telemetry Orbit Rings & Coordinate Markings -->
       <div 
         id="orbRing1"
         class="absolute w-[280px] h-[280px] sm:w-[440px] sm:h-[440px] lg:w-[580px] lg:h-[580px] rounded-full border border-cyan-500/20 pointer-events-none animate-[spin_120s_linear_infinite]"
-        :style="isDebating ? `border-color: ${activeAgentColor}40` : ''"
+        :style="ring1Style"
       ></div>
       <div 
         id="orbRing2"
         class="absolute w-[240px] h-[240px] sm:w-[380px] sm:h-[380px] lg:w-[500px] lg:h-[500px] rounded-full border border-dashed border-slate-700/40 pointer-events-none animate-[spin_80s_linear_infinite_reverse]"
-        :style="isDebating ? `border-color: ${activeAgentColor}60` : ''"
+        :style="ring2Style"
       ></div>
       <div 
         id="orbRing3"
         class="absolute w-[310px] h-[310px] sm:w-[470px] sm:h-[470px] lg:w-[620px] lg:h-[620px] rounded-full border border-cyan-400/15 pointer-events-none"
-        :style="isDebating ? `border-color: ${activeAgentColor}20` : ''"
+        :style="ring3Style"
       ></div>
       
       <!-- Central ambient luminous glow cores -->
@@ -631,41 +543,6 @@ const coreGlowStyle2 = computed(() => {
       ></div>
 
       <canvas ref="orbCanvasRef" class="w-full h-full absolute inset-0 z-10"></canvas>
-    </div>
-
-    <!-- Waveform Audio Visualizer, Voice State Controller & Microphone HUD Deck (Static/Mock for Phase 5) -->
-    <div class="w-full bg-space-900/85 border-t border-slate-800/90 px-4 sm:px-6 py-2.5 z-20 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3 backdrop-blur-md shrink-0">
-      <!-- Audio Deck Left: Microphone Button & Status Selector -->
-      <div class="flex items-center space-x-3 w-full sm:w-auto justify-between sm:justify-start pl-1 sm:pl-2">
-        <button id="micButton" 
-          @click="toggleRecording"
-          :class="isRecording ? 'border-red-500 bg-red-900/30' : 'border-slate-700 hover:border-cyan-400 bg-space-850 hover:bg-space-800'"
-          class="relative group px-3 py-1.5 min-h-[44px] rounded-lg text-slate-300 hover:text-cyan-200 transition-all flex items-center space-x-2 shadow-md shrink-0 active:scale-95" 
-          title="Activar micrófono para hablar (Pulsa para hablar)"
-        >
-          <div v-if="isRecording" class="absolute w-2 h-2 rounded-full bg-red-500 -top-1 -right-1 animate-pulse"></div>
-          <div class="w-7 h-7 rounded-full bg-space-900 flex items-center justify-center border border-slate-700 group-hover:border-cyan-400" id="micIconRing">
-            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-mic w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition"><path d="M12 19v3"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><rect x="9" y="2" width="6" height="13" rx="3"></rect></svg>
-          </div>
-          <div class="text-left font-mono">
-            <div class="text-[10px] font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1">
-              <span>MIC VOZ</span>
-            </div>
-            <div class="text-[8px] text-slate-400" id="micStatusSub">{{ isRecording ? 'ESCUCHANDO...' : 'LISTO PARA ESCUCHAR' }}</div>
-          </div>
-        </button>
-      </div>
-
-      <!-- Audio Spectrum Canvas Center -->
-      <div class="flex items-center space-x-2 flex-1 max-w-sm w-full">
-        <canvas ref="waveformCanvasRef" id="waveformCanvas" class="w-full h-8 rounded bg-space-950/70 border border-slate-800/80" width="280" height="32"></canvas>
-      </div>
-
-      <!-- Audio Status Caption Right -->
-      <div class="w-full md:w-auto text-[10px] text-slate-400 font-mono flex items-center space-x-2 justify-end shrink-0 pr-1 sm:pr-2">
-        <span class="w-2 h-2 rounded-full transition-colors duration-300" id="voiceIndicatorDot" :style="voiceDotStyle"></span>
-        <span class="text-slate-400 font-mono" id="voiceStateCaption">{{ voiceStateText }}</span>
-      </div>
     </div>
     
   </section>

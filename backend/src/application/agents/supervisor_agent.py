@@ -153,8 +153,9 @@ Eres {supervisor_name}. Analiza la petición del usuario y clasifica la intenci�
 1. "direct_chat": Saludos, preguntas directas a {supervisor_name} sobre quién es o su consejo, dudas conceptuales rápidas o reflexiones donde NO se requiere un trabajo técnico ni un debate.
 2. "single_agent": El usuario solicita expresamente una tarea acotada a un único especialista:
 {specialists_lines}
-3. "adaptive_debate": Problemas o requerimientos que necesitan deliberación del consejo. Opcionalmente puedes definir un plan dinámico de etapas en "execution_plan" seleccionando entre: "interpreters", "proposers", "evaluators", "implementers".
-   - Si no especificas plan, se seguirá el flujo natural del consejo.
+3. "adaptive_debate": Problemas o requerimientos que necesitan deliberación colegiada del consejo. Opcionalmente puedes definir un plan dinámico de etapas en "execution_plan" seleccionando entre: "interpreters", "proposers", "evaluators", "implementers".
+   - Si no especificas plan (dejas "execution_plan": null), se seguirá el flujo natural y completo del consejo (intérprete -> debate de proponentes en paralelo -> evaluador -> implementadores).
+   - En "adaptive_debate", el plan recomendado es null para deliberar con las propuestas en paralelo de los agentes proponentes, a menos que el usuario pida expresamente saltarse dicha fase.
    - skip_interpreter=false: La petición es vaga, coloquial o requiere desambiguación y formalización de requisitos por parte de {interpreter_name}.
    - skip_interpreter=true: La petición ya incluye requisitos estrictos, métricas, componentes y restricciones bien definidas.
 
@@ -163,7 +164,7 @@ Responde ÚNICAMENTE un objeto JSON válido con este formato:
   "mode": "direct_chat" | "single_agent" | "adaptive_debate",
   "target_agent": {specialist_names_union},
   "skip_interpreter": true | false,
-  "execution_plan": ["interpreters", "implementers"] | null,
+  "execution_plan": null | ["interpreters", "proposers", "evaluators", "implementers"],
   "reasoning": "Breve justificación de 1 frase"
 }}
 
@@ -521,7 +522,9 @@ def _should_halt_phases(state: DebateState) -> bool:
 def _build_planned_stages(triage: Any, active_topology: DebateTopology) -> list[str]:
     if triage and getattr(triage, "execution_plan", None):
         valid_slots = {"interpreters", "proposers", "evaluators", "implementers"}
-        return [s for s in triage.execution_plan if s in valid_slots]
+        stages = [s for s in triage.execution_plan if s in valid_slots]
+        if stages:
+            return stages
 
     plan: list[str] = []
     skip_interp = bool(triage and getattr(triage, "skip_interpreter", False))

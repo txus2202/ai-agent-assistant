@@ -350,10 +350,15 @@ Responde directamente al usuario como {sup_agent_name} en español, manteniendo 
 
     resp_text = "".join(resp_pieces)
     latency = round(time.perf_counter() - start_time, 2)
+    in_tkn = max(15, len(direct_prompt) // 4)
+    out_tkn = max(10, len(resp_text) // 4)
     meta = {
         "model": sup_model_name,
         "latency_seconds": str(latency),
-        "tokens": str(max(1, len(resp_text) // 4)),
+        "prompt_tokens": str(in_tkn),
+        "completion_tokens": str(out_tkn),
+        "total_tokens": str(in_tkn + out_tkn),
+        "tokens": str(in_tkn + out_tkn),
     }
     yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=sup_agent_name, content=resp_text, metadata=meta)
     yield SupervisorEvent(type=EventType.DONE, role=sup_agent_name, content=resp_text, metadata=meta)

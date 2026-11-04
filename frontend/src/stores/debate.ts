@@ -644,27 +644,40 @@ export const useDebateStore = defineStore('debate', () => {
     let cTokens = 0
     if (event.metadata?.prompt_tokens) {
       pTokens = Number.parseInt(String(event.metadata.prompt_tokens), 10) || 0
-      agent.promptTokens = (agent.promptTokens || 0) + pTokens
+      if (pTokens > 0) {
+        agent.promptTokens = (agent.promptTokens || 0) + pTokens
+      }
     }
     if (event.metadata?.completion_tokens) {
       cTokens = Number.parseInt(String(event.metadata.completion_tokens), 10) || 0
-      agent.completionTokens = (agent.completionTokens || 0) + cTokens
+      if (cTokens > 0) {
+        agent.completionTokens = (agent.completionTokens || 0) + cTokens
+      }
     }
 
     if (event.metadata?.tokens || event.metadata?.total_tokens) {
       const tokens = Number.parseInt(String(event.metadata.total_tokens || event.metadata.tokens), 10)
       agent.tokens = (agent.tokens || 0) + tokens
       if (!pTokens && !cTokens) {
-        agent.completionTokens = (agent.completionTokens || 0) + tokens
+        const estIn = Math.max(15, Math.round(tokens * 0.6))
+        const estOut = Math.max(10, tokens - estIn)
+        agent.promptTokens = (agent.promptTokens || 0) + estIn
+        agent.completionTokens = (agent.completionTokens || 0) + estOut
+      } else if (!pTokens && cTokens > 0) {
+        const estIn = Math.max(15, Math.round(cTokens * 1.2))
+        agent.promptTokens = (agent.promptTokens || 0) + estIn
+        agent.tokens = (agent.tokens || 0) + estIn
       }
       return tokens
     }
     if (event.content) {
       const words = event.content.trim().split(/\s+/).filter(Boolean).length
-      const tokens = Math.max(12, Math.round(words * 1.35))
-      agent.tokens = (agent.tokens || 0) + tokens
-      agent.completionTokens = (agent.completionTokens || 0) + tokens
-      return tokens
+      const outTokens = Math.max(12, Math.round(words * 1.35))
+      const inTokens = Math.max(25, Math.round(outTokens * 1.4))
+      agent.tokens = (agent.tokens || 0) + outTokens + inTokens
+      agent.promptTokens = (agent.promptTokens || 0) + inTokens
+      agent.completionTokens = (agent.completionTokens || 0) + outTokens
+      return outTokens + inTokens
     }
     return 0
   }

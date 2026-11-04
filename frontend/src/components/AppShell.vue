@@ -90,7 +90,7 @@ const handleToggleMic = () => {
       <div
         data-test="shell-left-column"
         :class="(mobileTab === 'chat' || mobileTab === 'telemetry') ? 'flex' : 'hidden'"
-        class="w-full md:flex md:w-[58%] lg:w-[30%] xl:w-1/4 flex-1 md:flex-none md:h-full z-10 flex-col overflow-hidden min-h-0"
+        class="w-full md:flex md:w-[58%] lg:w-[380px] xl:w-[400px] lg:shrink-0 flex-1 md:flex-none md:h-full z-10 flex-col overflow-hidden min-h-0"
       >
         <!-- Mobile Contextual Mini-Orb Status Bar (Visible on mobile in Chat view) -->
         <button
@@ -218,7 +218,7 @@ const handleToggleMic = () => {
               tabletRightTab === 'agents' ? 'md:flex' : 'md:hidden',
               'lg:flex'
             ]"
-            class="w-full lg:w-[360px] xl:w-[400px] flex-1 lg:flex-none h-full z-10 bg-space-900/50 backdrop-blur-md flex-col min-h-0"
+            class="w-full lg:w-[380px] xl:w-[400px] lg:shrink-0 flex-1 lg:flex-none h-full z-10 bg-space-900/50 backdrop-blur-md flex-col min-h-0"
           >
             <AgentTopology class="flex-1" :agents="store.agents">
               <template #orchestration>

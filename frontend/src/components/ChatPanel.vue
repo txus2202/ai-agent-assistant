@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
-import { SendHorizontal, Paperclip, Activity, MessageSquare, Check, User, Bot, ChevronDown, Copy, Eye, Brain, X } from '@lucide/vue'
+import { SendHorizontal, Paperclip, Activity, MessageSquare, Check, User, Bot, ChevronDown, Copy, Eye, Brain, X, Edit3, GitFork, Flag } from '@lucide/vue'
 import { useDebateStore, type ChatMessage } from '../stores/debate'
 import ObservabilityPanel from './ObservabilityPanel.vue'
 import DiagramModal from './DiagramModal.vue'
@@ -430,26 +430,31 @@ defineExpose({
     
     <!-- Top Tabs (hidden on mobile <md since mobile uses the bottom navigation bar) -->
     <div class="hidden md:flex items-center justify-between p-3.5 md:p-4 border-b border-space-800">
-      <div class="flex space-x-4 lg:space-x-6">
-        <button 
-          @click="activeTab = 'observability'"
-          data-test="tab-observability"
-          :class="activeTab === 'observability' ? 'text-neon-cyan border border-neon-cyan/30 bg-[#002b36] px-3 py-1.5 rounded' : 'text-space-500 hover:text-slate-400'"
-          class="flex items-center space-x-2 font-mono text-[10px] tracking-widest uppercase transition-colors"
-        >
-          <Activity class="w-3.5 h-3.5" />
-          <span>Observabilidad</span>
-          <span v-if="activeTab === 'observability'" class="bg-neon-cyan/20 text-neon-cyan px-1.5 py-0.5 rounded-sm text-[8px] ml-2">ACTIVO</span>
-        </button>
+      <div class="flex items-center gap-2">
         <button 
           @click="activeTab = 'chat'"
           data-test="tab-chat"
-          :class="activeTab === 'chat' ? 'text-neon-cyan border border-neon-cyan/30 bg-[#002b36] px-3 py-1.5 rounded' : 'text-space-500 hover:text-slate-400'"
-          class="flex items-center space-x-2 font-mono text-[10px] tracking-widest uppercase transition-colors"
+          :class="activeTab === 'chat' ? 'text-neon-cyan border border-neon-cyan/40 bg-[#002b36]' : 'text-space-500 hover:text-slate-400 border-transparent hover:bg-space-900/60'"
+          class="w-[155px] h-8 flex items-center justify-between px-2.5 font-mono text-[10px] tracking-widest uppercase transition-colors rounded border cursor-pointer"
         >
-          <MessageSquare class="w-3.5 h-3.5" />
-          <span>Chat</span>
-          <span v-if="activeTab === 'chat'" class="bg-neon-cyan/20 text-neon-cyan px-1.5 py-0.5 rounded-sm text-[8px] ml-2">ACTIVO</span>
+          <div class="flex items-center space-x-2 min-w-0">
+            <MessageSquare class="w-3.5 h-3.5 shrink-0" />
+            <span class="truncate">Chat</span>
+          </div>
+          <span class="bg-neon-cyan/20 text-neon-cyan px-1.5 py-0.5 rounded-sm text-[8px] font-bold" :class="{ 'invisible': activeTab !== 'chat' }">ACTIVO</span>
+        </button>
+
+        <button 
+          @click="activeTab = 'observability'"
+          data-test="tab-observability"
+          :class="activeTab === 'observability' ? 'text-neon-cyan border border-neon-cyan/40 bg-[#002b36]' : 'text-space-500 hover:text-slate-400 border-transparent hover:bg-space-900/60'"
+          class="w-[155px] h-8 flex items-center justify-between px-2.5 font-mono text-[10px] tracking-widest uppercase transition-colors rounded border cursor-pointer"
+        >
+          <div class="flex items-center space-x-2 min-w-0">
+            <Activity class="w-3.5 h-3.5 shrink-0" />
+            <span class="truncate">Observabilidad</span>
+          </div>
+          <span class="bg-neon-cyan/20 text-neon-cyan px-1.5 py-0.5 rounded-sm text-[8px] font-bold" :class="{ 'invisible': activeTab !== 'observability' }">ACTIVO</span>
         </button>
       </div>
     </div>
@@ -553,20 +558,20 @@ defineExpose({
     </div>
 
     <!-- Messages -->
-    <div ref="chatScroll" class="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-6">
+    <div ref="chatScroll" class="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-3.5 sm:p-5 space-y-6 min-w-0 max-w-full">
       <div 
         v-for="(msg, i) in messages" 
         :key="i"
-        class="flex flex-col w-full message-block"
+        class="flex flex-col w-full message-block min-w-0 max-w-full"
       >
         <!-- User Bubble -->
         <template v-if="msg.role === 'user'">
-          <div class="flex flex-col items-end max-w-[85%] self-end">
+          <div class="flex flex-col items-end max-w-[85%] self-end min-w-0">
             <div class="flex items-center space-x-2 mb-2 text-neon-cyan">
               <span class="text-[10px] font-mono tracking-wider uppercase font-bold">USUARIO (TÚ)</span>
               <User class="w-3.5 h-3.5" />
             </div>
-            <div class="bg-[#0a192f] border border-neon-cyan/50 rounded-xl rounded-tr-none px-5 py-4 text-sm text-cyan-50 shadow-[0_0_15px_-3px_rgba(0,229,255,0.15)] leading-relaxed">
+            <div class="bg-[#0a192f] border border-neon-cyan/50 rounded-xl rounded-tr-none px-4 py-3 sm:px-5 sm:py-4 text-sm text-cyan-50 shadow-[0_0_15px_-3px_rgba(0,229,255,0.15)] leading-relaxed break-words break-all [overflow-wrap:anywhere] min-w-0 max-w-full overflow-hidden">
               {{ msg.content }}
             </div>
           </div>
@@ -574,7 +579,7 @@ defineExpose({
         
         <!-- Assistant Bubble -->
         <template v-else>
-          <div class="flex flex-col items-start max-w-[95%]">
+          <div class="flex flex-col items-start max-w-[95%] min-w-0 w-full">
             <div class="flex items-center space-x-2 mb-2">
               <div 
                 class="w-5 h-5 rounded-full border flex items-center justify-center transition-colors"
@@ -596,7 +601,7 @@ defineExpose({
               <button 
                 v-if="store.isTtsPlaying && i === messages.length - 1"
                 @click="store.stopTts()"
-                class="ml-2 px-2 py-0.5 bg-red-900/40 hover:bg-red-900/80 border border-red-500/50 text-red-400 text-[9px] font-mono uppercase tracking-widest rounded shadow-sm flex items-center space-x-1 transition-colors"
+                class="ml-2 px-2 py-0.5 bg-red-900/40 hover:bg-red-900/80 border border-red-500/50 text-red-400 text-[9px] font-mono uppercase tracking-widest rounded shadow-sm flex items-center space-x-1 transition-colors cursor-pointer"
                 title="Detener lectura de este mensaje"
               >
                 <div class="w-1.5 h-1.5 bg-red-500 rounded-sm"></div>
@@ -604,13 +609,13 @@ defineExpose({
               </button>
             </div>
             <div 
-              class="w-full bg-[#030509] border rounded-xl rounded-tl-none px-5 py-4 text-[13px] text-slate-300 leading-relaxed transition-colors flex flex-col gap-3"
+              class="w-full bg-[#030509] border rounded-xl rounded-tl-none px-4 py-3 sm:px-5 sm:py-4 text-[13px] text-slate-300 leading-relaxed transition-colors flex flex-col gap-3 min-w-0 max-w-full overflow-hidden"
               :style="msg.colorHex ? { borderColor: `${msg.colorHex}4d`, boxShadow: `0 0 15px -3px ${msg.colorHex}1a` } : {}"
               :class="!msg.colorHex ? 'border-neon-green/40 shadow-[0_0_15px_-3px_rgba(0,255,157,0.1)]' : ''"
             >
               <template v-for="(block, blockIdx) in parseMessageContent(msg.content)" :key="blockIdx">
                 <!-- Text block -->
-                <div v-if="block.type === 'text'" class="whitespace-pre-wrap leading-relaxed">
+                <div v-if="block.type === 'text'" class="whitespace-pre-wrap leading-relaxed break-words break-all [overflow-wrap:anywhere] min-w-0 max-w-full">
                   {{ block.content }}
                 </div>
 
@@ -717,48 +722,56 @@ defineExpose({
         </div>
 
         <!-- Quick Action Buttons -->
-        <div class="flex flex-wrap items-center gap-1.5 pt-1">
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-1.5 pt-1 w-full">
           <button
             type="button"
             @click="handleHitlApprove"
             data-test="hitl-approve-btn"
-            class="flex-1 min-w-[75px] min-h-[38px] md:min-h-0 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/60 text-emerald-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+            class="h-8.5 w-full bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/60 text-emerald-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+            title="Aceptar dictamen y consolidar"
           >
-            <span>✓ Aceptar</span>
+            <Check class="w-3.5 h-3.5 shrink-0" />
+            <span>Aceptar</span>
           </button>
           <button
             type="button"
             @click="focusRefineInput"
             data-test="hitl-refine-btn"
-            class="flex-1 min-w-[75px] min-h-[38px] md:min-h-0 py-1.5 bg-neon-amber/15 hover:bg-neon-amber/30 border border-neon-amber/60 text-neon-amber font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+            class="h-8.5 w-full bg-neon-amber/15 hover:bg-neon-amber/30 border border-neon-amber/60 text-neon-amber font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+            title="Refinar con nuevas instrucciones"
           >
-            <span>✏ Refinar</span>
+            <Edit3 class="w-3.5 h-3.5 shrink-0" />
+            <span>Refinar</span>
           </button>
           <button
             type="button"
             @click="handleHitlDivert"
             data-test="hitl-divert-btn"
-            class="flex-1 min-w-[75px] min-h-[38px] md:min-h-0 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/60 text-cyan-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+            class="h-8.5 w-full bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/60 text-cyan-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
             title="Desviar deliberación a los agentes seleccionados arriba"
           >
-            <span>🔀 Desviar</span>
+            <GitFork class="w-3.5 h-3.5 shrink-0" />
+            <span>Desviar</span>
           </button>
           <button
             type="button"
             @click="handleHitlFinish"
             data-test="hitl-finish-btn"
-            class="flex-1 min-w-[75px] min-h-[38px] md:min-h-0 py-1.5 bg-purple-500/15 hover:bg-purple-500/30 border border-purple-500/60 text-purple-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+            class="h-8.5 w-full bg-purple-500/15 hover:bg-purple-500/30 border border-purple-500/60 text-purple-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
             title="Concluir el debate anticipadamente y consolidar dictamen final"
           >
-            <span>🏁 Finalizar</span>
+            <Flag class="w-3.5 h-3.5 shrink-0" />
+            <span>Finalizar</span>
           </button>
           <button
             type="button"
             @click="handleHitlReject"
             data-test="hitl-reject-btn"
-            class="flex-1 min-w-[75px] min-h-[38px] md:min-h-0 py-1.5 bg-red-500/15 hover:bg-red-500/30 border border-red-500/60 text-red-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+            class="h-8.5 w-full bg-red-500/15 hover:bg-red-500/30 border border-red-500/60 text-red-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer col-span-2 sm:col-span-1"
+            title="Rechazar y abortar deliberación"
           >
-            <span>✗ Rechazar</span>
+            <X class="w-3.5 h-3.5 shrink-0" />
+            <span>Rechazar</span>
           </button>
         </div>
       </div>
@@ -835,7 +848,7 @@ defineExpose({
               id="chat-message-input"
               ref="chatInputRef"
               v-model="store.draftMessage"
-              :placeholder="store.isHitlRequired ? 'Introduce tus instrucciones de refinamiento...' : 'Escribe tu consulta o pulsa el micrófono...'"
+              :placeholder="store.isHitlRequired ? 'Introduce tus instrucciones de refinamiento...' : 'Escribe tu consulta...'"
               rows="3"
               class="w-full bg-[#030509] border rounded-xl pl-3.5 md:pl-4 pr-12 py-3 text-sm text-slate-200 focus:outline-none transition-all placeholder:text-[11px] placeholder-space-600 font-mono shadow-inner resize-none custom-scrollbar min-h-[76px] sm:min-h-[88px]"
               :class="store.isHitlRequired ? 'border-neon-amber/60 focus:border-neon-amber focus:ring-1 focus:ring-neon-amber/50' : 'border-space-700 focus:border-neon-cyan'"
@@ -852,20 +865,6 @@ defineExpose({
               <SendHorizontal class="w-4 h-4 md:w-5 md:h-5" />
             </button>
           </div>
-
-          <!-- Tactile Direct Microphone Button (44x44px touch target) -->
-          <button
-            type="button"
-            data-test="chat-mic-btn"
-            @click="emit('toggle-mic')"
-            :class="store.isRecording
-              ? 'bg-red-900/40 border-red-500 text-red-300 shadow-[0_0_14px_rgba(239,68,68,0.45)] animate-pulse'
-              : 'bg-[#030509] hover:bg-space-800 border-cyan-500/40 hover:border-neon-cyan text-neon-cyan shadow-[0_0_12px_rgba(0,229,255,0.15)]'"
-            class="w-11 h-11 mb-1 shrink-0 rounded-xl border flex items-center justify-center transition-all active:scale-95 cursor-pointer"
-            :title="store.isRecording ? 'Detener grabación de voz' : 'Hablar con Atenea por micrófono'"
-          >
-            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19v3"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><rect x="9" y="2" width="6" height="13" rx="3"></rect></svg>
-          </button>
         </div>
       </form>
     </div>

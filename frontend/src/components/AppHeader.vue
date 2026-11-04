@@ -94,14 +94,42 @@ const selectModel = async (providerName: string, modelName: string) => {
 
 <template>
   <header class="h-14 border-b border-cyan-900/40 bg-space-900/90 backdrop-blur-md flex items-center justify-between px-3 md:px-4 z-30 shrink-0 w-full gap-2">
-    <!-- Left branding & Status tag -->
-    <div class="flex items-center gap-2.5 md:w-1/3 lg:w-1/4 shrink-0">
+    <!-- Left branding & Status tag + Action Controls moved to left -->
+    <div class="flex items-center gap-2 sm:gap-3 shrink-0">
       <div class="sm:hidden w-7 h-7 rounded-lg bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center text-cyan-400 font-bold text-xs shadow-[0_0_8px_rgba(0,229,255,0.25)]">
         <Cpu class="w-3.5 h-3.5 text-cyan-400" />
       </div>
       <div class="flex flex-col">
         <span class="sm:hidden text-xs font-bold tracking-widest uppercase text-cyan-100 leading-tight">A.T.E.N.E.A.</span>
         <span class="text-[9px] sm:text-[10px] md:text-xs text-slate-400 font-mono tracking-widest uppercase">System Core v{{ version }}</span>
+      </div>
+
+      <!-- Action Icons (moved to left behind System Core to gain space) -->
+      <div class="flex items-center space-x-1 sm:space-x-1.5 text-slate-400 ml-1 sm:ml-2 pl-2 border-l border-space-800">
+        <button 
+          @click="toggleAudio"
+          class="min-w-[34px] min-h-[34px] sm:min-w-0 sm:min-h-0 p-1.5 flex items-center justify-center hover:text-cyan-300 hover:bg-space-800 rounded transition border border-transparent hover:border-cyan-800/60 cursor-pointer" 
+          title="Toggle System Audio"
+        >
+          <VolumeX v-if="!debateStore.isVoiceOutputEnabled" class="w-4 h-4 text-rose-400" />
+          <Volume2 v-else class="w-4 h-4" />
+        </button>
+        <button 
+          @click="toggleAutoListen"
+          class="min-w-[34px] min-h-[34px] sm:min-w-0 sm:min-h-0 p-1.5 flex items-center justify-center rounded transition border border-transparent cursor-pointer"
+          :class="debateStore.isAutoListenEnabled ? 'text-amber-400 bg-amber-900/30 border-amber-500/50' : 'hover:text-amber-200 hover:bg-space-800 hover:border-amber-800/60'"
+          title="Toggle Auto-Listen (Wake Word)"
+        >
+          <Ear v-if="debateStore.isAutoListenEnabled" class="w-4 h-4" />
+          <EarOff v-else class="w-4 h-4" />
+        </button>
+        <button 
+          @click="router.push('/history')"
+          class="min-w-[34px] min-h-[34px] sm:min-w-0 sm:min-h-0 p-1.5 flex items-center justify-center hover:text-amber-400 hover:bg-space-800 rounded transition border border-transparent hover:border-amber-800/60 relative cursor-pointer" 
+          title="Debate History"
+        >
+          <History class="w-4 h-4" />
+        </button>
       </div>
     </div>
 
@@ -119,17 +147,19 @@ const selectModel = async (providerName: string, modelName: string) => {
       </div>
     </div>
 
-    <!-- Right System Controls -->
-    <div class="flex items-center justify-end md:w-1/3 lg:w-[400px] space-x-1.5 sm:space-x-3 shrink-0">
+    <!-- Right System Controls (Supervisor single-line info) -->
+    <div class="flex items-center justify-end shrink-0">
       <!-- Supervisor Model Selector -->
       <div class="relative" ref="dropdownRef">
         <button 
           @click="toggleDropdown"
-          class="flex items-center space-x-1.5 sm:space-x-2 font-mono text-[9px] sm:text-[10px] md:text-[11px] text-emerald-300 bg-emerald-950/30 border border-emerald-500/30 px-2 sm:px-2.5 py-1.5 sm:py-1 min-h-[36px] sm:min-h-0 rounded hover:bg-emerald-950/50 hover:border-emerald-500/60 transition-colors"
+          class="flex items-center space-x-1.5 sm:space-x-2 font-mono text-[9px] sm:text-[10px] md:text-[11px] text-emerald-300 bg-emerald-950/30 border border-emerald-500/30 px-2 sm:px-2.5 py-1.5 sm:py-1 min-h-[36px] sm:min-h-0 rounded hover:bg-emerald-950/50 hover:border-emerald-500/60 transition-colors whitespace-nowrap cursor-pointer"
           title="Supervisor Model Configuration"
         >
           <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
-          <span class="leading-none pt-[1px] flex items-center min-w-0">SUPERVISOR: {{ supervisorProvider }} - <span class="truncate inline-block max-w-[70px] sm:max-w-[100px] md:max-w-[120px] ml-1" :title="supervisorModel">{{ supervisorModel }}</span></span>
+          <span class="leading-none pt-[1px] flex items-center min-w-0 whitespace-nowrap">
+            SUPERVISOR: {{ supervisorProvider }} - <span class="truncate inline-block max-w-[80px] sm:max-w-[120px] md:max-w-[180px] ml-1" :title="supervisorModel">{{ supervisorModel }}</span>
+          </span>
           <ChevronDown class="w-3 h-3 text-emerald-500 ml-0.5 shrink-0" />
         </button>
 
@@ -172,34 +202,6 @@ const selectModel = async (providerName: string, modelName: string) => {
             </div>
           </div>
         </div>
-      </div>
-
-      <!-- Action Icons -->
-      <div class="flex items-center space-x-1 sm:space-x-2 text-slate-400">
-        <button 
-          @click="toggleAudio"
-          class="min-w-[38px] min-h-[38px] sm:min-w-0 sm:min-h-0 p-2 sm:p-1.5 flex items-center justify-center hover:text-cyan-300 hover:bg-space-800 rounded transition border border-transparent hover:border-cyan-800/60" 
-          title="Toggle System Audio"
-        >
-          <VolumeX v-if="!debateStore.isVoiceOutputEnabled" class="w-4 h-4 text-rose-400" />
-          <Volume2 v-else class="w-4 h-4" />
-        </button>
-        <button 
-          @click="toggleAutoListen"
-          class="min-w-[38px] min-h-[38px] sm:min-w-0 sm:min-h-0 p-2 sm:p-1.5 flex items-center justify-center rounded transition border border-transparent"
-          :class="debateStore.isAutoListenEnabled ? 'text-amber-400 bg-amber-900/30 border-amber-500/50' : 'hover:text-amber-200 hover:bg-space-800 hover:border-amber-800/60'"
-          title="Toggle Auto-Listen (Wake Word)"
-        >
-          <Ear v-if="debateStore.isAutoListenEnabled" class="w-4 h-4" />
-          <EarOff v-else class="w-4 h-4" />
-        </button>
-        <button 
-          @click="router.push('/history')"
-          class="min-w-[38px] min-h-[38px] sm:min-w-0 sm:min-h-0 p-2 sm:p-1.5 flex items-center justify-center hover:text-amber-400 hover:bg-space-800 rounded transition border border-transparent hover:border-amber-800/60 relative" 
-          title="Debate History"
-        >
-          <History class="w-4 h-4" />
-        </button>
       </div>
     </div>
   </header>

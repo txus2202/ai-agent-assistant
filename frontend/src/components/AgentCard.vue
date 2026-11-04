@@ -92,7 +92,7 @@ const isDocs = computed(() => {
 <template>
   <div 
     data-test="card-container"
-    class="relative h-[210px] min-h-[210px] flex flex-col justify-between overflow-hidden rounded-xl bg-space-850/80 border border-space-700/80 p-3.5 transition-all duration-300"
+    class="relative h-[230px] min-h-[230px] flex flex-col justify-between overflow-hidden rounded-xl bg-space-850/80 border border-space-700/80 p-3.5 transition-all duration-300"
     :class="[isGlowActive ? (glowClass || '') : '']"
     :style="isGlowActive ? { borderColor: agentColor, boxShadow: `0 0 20px ${agentColor}40, inset 0 0 15px ${agentColor}1a` } : {}"
   >
@@ -156,10 +156,10 @@ const isDocs = computed(() => {
         </span>
       </div>
 
-      <!-- Agent Mission Description (Clamped to 2 lines) -->
+      <!-- Agent Mission Description (Clamped to max 4 lines) -->
       <p 
         data-test="agent-description" 
-        class="text-[11px] text-slate-400 font-sans leading-relaxed line-clamp-2 mt-1.5"
+        class="text-[11px] text-slate-400 font-sans leading-relaxed line-clamp-4 mt-1.5"
         :title="agentDescription"
       >
         {{ agentDescription }}
@@ -205,9 +205,9 @@ const isDocs = computed(() => {
       </div>
 
       <!-- Observability Metrics Badges (Tokens In/Out, Latency, Turns) -->
-      <div class="pt-1.5 mt-1 border-t border-space-800/80 flex items-center justify-between text-[10px] font-mono text-slate-400">
-        <span 
-          class="flex items-center space-x-1" 
+      <div class="pt-2 mt-1 border-t border-space-800/80 flex items-center justify-between text-[10px] font-mono text-slate-400 w-full">
+        <div 
+          class="flex items-center space-x-1 shrink-0" 
           :title="`Tokens: Entrada ${promptTokens || 0} (Prompt) / Salida ${completionTokens !== undefined ? completionTokens : (tokensConsumed || 0)} (Generación)`"
         >
           <span>🪙</span>
@@ -218,15 +218,15 @@ const isDocs = computed(() => {
           <span class="text-cyan-300 font-semibold" title="Tokens de salida (Generación)">
             <span class="text-[8px] text-slate-500 font-normal mr-0.5">Out:</span>{{ completionTokens !== undefined ? completionTokens : (tokensConsumed || 0) }}
           </span>
-        </span>
-        <span class="flex items-center space-x-1" title="Latencia">
+        </div>
+        <div class="flex items-center justify-center space-x-1 shrink-0" title="Latencia">
           <span>⚡</span>
           <span class="text-slate-300 font-semibold">{{ latencySeconds !== undefined ? latencySeconds.toFixed(2) + 's' : '--' }}</span>
-        </span>
-        <span class="flex items-center space-x-1" title="Turnos de intervención">
+        </div>
+        <div class="flex items-center justify-end space-x-1 shrink-0" title="Turnos de intervención">
           <span>🔄</span>
           <span class="text-slate-300 font-semibold">{{ turnsCount !== undefined ? turnsCount : 0 }}</span>
-        </span>
+        </div>
       </div>
     </div>
   </div>

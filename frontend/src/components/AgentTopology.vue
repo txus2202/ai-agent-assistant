@@ -67,8 +67,8 @@ watch(
 
 <template>
   <div class="h-full flex flex-col border-l border-space-800 bg-space-900/50 backdrop-blur-sm min-h-0">
-    <!-- Header: Tabs for Agentes & Observabilidad -->
-    <div class="p-3 sm:p-3.5 border-b border-space-800 flex items-center justify-between shrink-0">
+    <!-- Header: Tabs for Agentes & Observabilidad (Desktop/Tablet only, redundant on mobile with bottom nav) -->
+    <div class="hidden md:flex p-3 sm:p-3.5 border-b border-space-800 items-center justify-between shrink-0">
       <div class="flex items-center gap-2 w-full">
         <button 
           type="button"
@@ -132,8 +132,8 @@ watch(
         />
       </div>
 
-      <!-- Orchestration Panel (Bottom Fixed) -->
-      <div class="p-4 border-t border-space-800 bg-space-900 shrink-0">
+      <!-- Orchestration Panel (Bottom Fixed, Height matches ChatPanel input container on desktop) -->
+      <div class="p-4 border-t border-space-800 bg-space-900 shrink-0 md:h-[162px] flex flex-col justify-center">
         <slot name="orchestration"></slot>
       </div>
     </template>

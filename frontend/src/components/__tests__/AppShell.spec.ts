@@ -37,12 +37,18 @@ describe('AppShell.vue', () => {
           ParticleOrb: {
             name: 'ParticleOrb',
             template: '<div data-test="particle-orb" :data-color="activeAgentColor"></div>',
-            props: ['activeAgentColor', 'isDebating'],
+            props: ['activeAgentColor', 'isDebating', 'activeAgents'],
             methods: { resizeCanvas: resizeCanvasSpy, toggleRecording: toggleRecordingSpy }
           },
           ObservabilityPanel: {
             name: 'ObservabilityPanel',
             template: '<div data-test="observability-panel"></div>'
+          },
+          SoundBar: {
+            name: 'SoundBar',
+            template: '<div data-test="sound-bar" @click="$emit(\'open-voice\')"><button data-test="soundbar-view-switch" @click.stop="$emit(\'open-voice\')">3D &gt;</button></div>',
+            props: ['activeAgentColor', 'isDebating', 'showViewSwitch', 'listenWakeWord'],
+            methods: { toggleRecording: vi.fn() }
           }
         }
       }
@@ -58,7 +64,7 @@ describe('AppShell.vue', () => {
     expect(wrapper.text()).toContain('Consejo en espera')
   })
 
-  it('computes default agent color when no agent is active or playing TTS', () => {
+  it('computes default agent color when no agent is active or playing TTS (defaults to Atenea gold)', () => {
     const store = useDebateStore()
     store.agents = [
       { role: 'nl_interpreter', name: 'NL Interpreter', state: 'STANDBY' }
@@ -67,7 +73,42 @@ describe('AppShell.vue', () => {
 
     const wrapper = createWrapper()
     const orb = wrapper.findComponent({ name: 'ParticleOrb' })
-    expect(orb.props('activeAgentColor')).toBe('#00e5ff')
+    expect(orb.props('activeAgentColor')).toBe('#f59e0b')
+  })
+
+  it('keeps orb idle and active agents empty during HITL when TTS is silent', () => {
+    const store = useDebateStore()
+    store.isDebating = true
+    store.isHitlRequired = true
+    store.isTtsPlaying = false
+    store.agents = [
+      { role: 'nl_interpreter', name: 'Hermes', color_hex: '#00e5ff', state: 'COMPLETED' }
+    ]
+
+    const wrapper = createWrapper()
+    const orb = wrapper.findComponent({ name: 'ParticleOrb' })
+    expect(orb.props('isDebating')).toBe(false)
+    expect(orb.props('activeAgents')).toEqual([])
+  })
+
+  it('always includes Atenea in activeAgents during an Atenea debate flow alongside delegated agents', () => {
+    const store = useDebateStore()
+    store.selectedAgent = 'supervisor'
+    store.isDebating = true
+    store.isHitlRequired = false
+    store.agents = [
+      { role: 'supervisor', name: 'Atenea', color_hex: '#f59e0b', state: 'STANDBY' },
+      { role: 'nl_interpreter', name: 'Hermes', color_hex: '#00e5ff', state: 'ACTIVE' }
+    ]
+
+    const wrapper = createWrapper()
+    const orb = wrapper.findComponent({ name: 'ParticleOrb' })
+    const activeAgents = orb.props('activeAgents')
+    expect(activeAgents).toHaveLength(2)
+    expect(activeAgents[0].name).toBe('Atenea')
+    expect(activeAgents[0].color).toBe('#f59e0b')
+    expect(activeAgents[1].name).toBe('Hermes')
+    expect(activeAgents[1].color).toBe('#00e5ff')
   })
 
   it('computes active agent color based on currently active agent color_hex', () => {
@@ -139,7 +180,7 @@ describe('AppShell.vue', () => {
 
     // Default mobile tab is 'chat'
     expect(wrapper.find('[data-test="shell-left-column"]').classes()).toContain('flex')
-    expect(wrapper.find('[data-test="mobile-mini-orb-bar"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="mobile-sound-bar"]').exists()).toBe(true)
 
     // Switch to 'voice' (Voz 3D)
     await wrapper.find('[data-test="mobile-nav-voice"]').trigger('click')
@@ -161,18 +202,11 @@ describe('AppShell.vue', () => {
     expect(setActiveTabSpy).toHaveBeenCalledWith('chat')
   })
 
-  it('switches to 3D voice view when tapping the mobile contextual mini-orb bar and shows active agent summary', async () => {
-    const store = useDebateStore()
-    store.agents = [
-      { role: 'diagrammer', name: 'Aracne', color_hex: '#ec4899', state: 'ACTIVE' }
-    ]
-
+  it('renders mobile sound bar without 3D switch button in mobile chat view', () => {
     const wrapper = createWrapper()
-    const miniOrbBar = wrapper.find('[data-test="mobile-mini-orb-bar"]')
-    expect(miniOrbBar.text()).toContain('Aracne sintetizando...')
-
-    await miniOrbBar.trigger('click')
-    expect(wrapper.find('[data-test="shell-orb-column"]').classes()).toContain('flex')
+    const soundBar = wrapper.findComponent({ name: 'SoundBar' })
+    expect(soundBar.exists()).toBe(true)
+    expect(soundBar.props('showViewSwitch')).toBe(false)
   })
 
   it('switches tablet right column tabs between Orbe 3D, Agentes, and Telemetría', async () => {

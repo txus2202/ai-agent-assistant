@@ -434,4 +434,23 @@ describe('ParticleOrb.vue', () => {
     window.dispatchEvent(new Event('resize'))
     expect(wrapper.exists()).toBe(true)
   })
+
+  it('renders correctly with multiple parallel active agents and custom ring colors', () => {
+    const wrapper = mount(ParticleOrb, {
+      props: {
+        isDebating: true,
+        activeAgentColor: '#00e5ff',
+        activeAgents: [
+          { role: 'investigador', name: 'Hermes', color: '#10b981' },
+          { role: 'disruptor', name: 'Ícaro', color: '#f59e0b' }
+        ]
+      }
+    })
+
+    expect(wrapper.exists()).toBe(true)
+    const ring1 = wrapper.find('#orbRing1')
+    const ring2 = wrapper.find('#orbRing2')
+    expect(ring1.attributes('style')).toMatch(/16,\s*185,\s*129|10b981/)
+    expect(ring2.attributes('style')).toMatch(/245,\s*158,\s*11|f59e0b/)
+  })
 })

@@ -6,6 +6,7 @@ import ParticleOrb from './ParticleOrb.vue'
 import AgentTopology from './AgentTopology.vue'
 import AppHeader from './AppHeader.vue'
 import ObservabilityPanel from './ObservabilityPanel.vue'
+import SoundBar from './SoundBar.vue'
 
 type MobileTab = 'chat' | 'voice' | 'agents' | 'telemetry'
 type TabletRightTab = 'orb' | 'agents' | 'telemetry'
@@ -18,7 +19,90 @@ const agentTopologyRef = ref<InstanceType<typeof AgentTopology> | null>(null)
 const mobileTab = ref<MobileTab>('chat')
 const tabletRightTab = ref<TabletRightTab>('orb')
 
-const DEFAULT_COLOR = '#00e5ff'
+const DEFAULT_COLOR = '#f59e0b'
+
+export interface ActiveAgentItem {
+  role: string
+  name: string
+  color: string
+}
+
+const isAteneaDebateFlow = computed(() => {
+  return !store.selectedAgent || store.selectedAgent === 'supervisor' || store.selectedAgent === 'atenea'
+})
+
+const isOrbDebating = computed(() => {
+  if (store.isHitlRequired && !store.isTtsPlaying) {
+    return false
+  }
+  return store.isDebating || store.isTtsPlaying
+})
+
+const activeAgentsList = computed<ActiveAgentItem[]>(() => {
+  // If waiting at HITL and no one is speaking TTS, orb is in idle mode
+  if (store.isHitlRequired && !store.isTtsPlaying) {
+    return []
+  }
+
+  const result: ActiveAgentItem[] = []
+  const supervisorAgent = store.findAgent ? store.findAgent('supervisor') : store.agents.find(a => a.role === 'supervisor')
+  const ateneaColor = supervisorAgent?.color_hex || '#f59e0b'
+
+  const isDebatingOrTts = store.isDebating || store.isTtsPlaying
+
+  // In an Atenea debate flow, Atenea is the overarching supervisor delegating to council agents,
+  // so she is ALWAYS present in the active orb deliberation alongside delegated specialists.
+  if (isAteneaDebateFlow.value && isDebatingOrTts) {
+    result.push({
+      role: 'supervisor',
+      name: 'Atenea',
+      color: ateneaColor
+    })
+  }
+  
+  if (store.activeTtsRole) {
+    const ttsAgent = store.findAgent ? store.findAgent(store.activeTtsRole) : store.agents.find(a => a.role === store.activeTtsRole)
+    const normTts = store.normalizeAgentRole ? store.normalizeAgentRole(store.activeTtsRole) : store.activeTtsRole
+    const isAteneaSpeaking = normTts === 'supervisor' || normTts.toLowerCase() === 'atenea'
+    const color = ttsAgent?.color_hex || (isAteneaSpeaking ? ateneaColor : DEFAULT_COLOR)
+    const name = ttsAgent?.name || (isAteneaSpeaking ? 'Atenea' : store.activeTtsRole)
+
+    const alreadyInList = result.some(r => {
+      const normR = store.normalizeAgentRole ? store.normalizeAgentRole(r.role) : r.role
+      return normR === normTts
+    })
+    if (!alreadyInList) {
+      result.push({ role: store.activeTtsRole, name, color })
+    }
+  }
+
+  for (const agent of store.agents) {
+    if (agent.state === 'ACTIVE') {
+      const normA = store.normalizeAgentRole ? store.normalizeAgentRole(agent.role) : agent.role
+      const isAlreadyAdded = result.some(r => {
+        const normR = store.normalizeAgentRole ? store.normalizeAgentRole(r.role) : r.role
+        return normR === normA
+      })
+      if (!isAlreadyAdded) {
+        result.push({
+          role: agent.role,
+          name: agent.name || agent.role,
+          color: agent.color_hex || DEFAULT_COLOR
+        })
+      }
+    }
+  }
+
+  if (result.length === 0 && isDebatingOrTts) {
+    result.push({
+      role: 'supervisor',
+      name: 'Atenea',
+      color: ateneaColor
+    })
+  }
+
+  return result
+})
 
 const activeAgentColor = computed(() => {
   if (store.activeTtsRole) {
@@ -28,27 +112,41 @@ const activeAgentColor = computed(() => {
     return DEFAULT_COLOR
   }
   
+  const delegatedAgent = store.agents.find(a => a.state === 'ACTIVE' && a.role !== 'supervisor')
+  if (delegatedAgent?.color_hex) {
+    return delegatedAgent.color_hex
+  }
+
   const activeAgent = store.agents.find(a => a.state === 'ACTIVE')
-  if (!activeAgent) return DEFAULT_COLOR
-  
-  return activeAgent.color_hex || DEFAULT_COLOR
+  if (activeAgent?.color_hex) return activeAgent.color_hex
+
+  return DEFAULT_COLOR
 })
 
 const activeAgentStatusTitle = computed(() => {
   if (store.isRecording) {
     return 'Escuchando orden por voz...'
   }
+  if (store.isHitlRequired) {
+    return 'Esperando aprobación humana (HITL)...'
+  }
   if (store.activeTtsRole) {
     const ttsAgent = store.findAgent ? store.findAgent(store.activeTtsRole) : store.agents.find(a => a.role === store.activeTtsRole)
     const speakerName = ttsAgent?.name || ((store.activeTtsRole === 'supervisor' || store.activeTtsRole.toLowerCase() === 'atenea') ? 'Atenea' : store.activeTtsRole)
     return `${speakerName} hablando...`
   }
-  const activeAgent = store.agents.find(a => a.state === 'ACTIVE')
-  if (activeAgent) {
-    return `${activeAgent.name} sintetizando...`
+  
+  // Delegated active agents (excluding supervisor to describe the specific specialist in action)
+  const delegatedActive = store.agents.filter(a => a.state === 'ACTIVE' && a.role !== 'supervisor')
+  if (delegatedActive.length > 1) {
+    const names = delegatedActive.map(a => a.name).join(' & ')
+    return `${names} deliberando en paralelo...`
+  }
+  if (delegatedActive.length === 1) {
+    return `${delegatedActive[0]!.name} sintetizando...`
   }
   if (store.isDebating) {
-    return 'Debate adaptativo en curso...'
+    return 'Atenea coordinando el debate...'
   }
   return 'Atenea en línea y a la espera'
 })
@@ -96,44 +194,19 @@ const handleToggleMic = () => {
         :class="mobileTab === 'chat' ? 'flex' : 'hidden'"
         class="w-full md:flex md:w-[58%] lg:w-[380px] xl:w-[400px] lg:shrink-0 flex-1 md:flex-none md:h-full z-10 flex-col overflow-hidden min-h-0"
       >
-        <!-- Mobile Contextual Mini-Orb Status Bar (Visible on mobile in Chat view) -->
-        <button
+        <!-- Mobile SoundBar (Visible on mobile in Chat view) -->
+        <div
           v-if="mobileTab === 'chat'"
-          type="button"
-          data-test="mobile-mini-orb-bar"
-          @click="selectMobileTab('voice')"
-          class="md:hidden w-full px-3.5 py-2 bg-[#09101d]/95 border-b border-space-800 flex items-center justify-between text-left transition-colors hover:bg-space-900 shrink-0"
+          data-test="mobile-sound-bar"
+          class="md:hidden w-full bg-space-900/85 border-b border-slate-800/90 px-4 sm:px-6 py-2.5 shrink-0 backdrop-blur-md"
         >
-          <div class="flex items-center gap-2.5 min-w-0">
-            <span
-              class="w-5 h-5 rounded-full shrink-0 transition-all duration-500"
-              :class="(store.isDebating || store.isTtsPlaying || store.isRecording) ? 'animate-pulse scale-110' : ''"
-              :style="{
-                backgroundColor: activeAgentColor,
-                boxShadow: `0 0 12px ${activeAgentColor}`
-              }"
-            ></span>
-            <div class="min-w-0">
-              <div class="text-[11px] font-bold text-slate-200 truncate">
-                {{ activeAgentStatusTitle }}
-              </div>
-              <div class="text-[9px] text-cyan-400/70 font-mono truncate">
-                {{ store.isDebating ? 'Debate adaptativo activo • Pulsa para Orbe 3D' : 'Pulsa para abrir Orbe de Voz 3D' }}
-              </div>
-            </div>
-          </div>
-          <div class="flex items-center gap-1.5 shrink-0 ml-2">
-            <span
-              v-if="store.isHitlRequired"
-              class="text-[9px] px-2 py-0.5 rounded bg-amber-950 text-neon-amber border border-neon-amber/50 font-mono font-bold uppercase animate-pulse"
-            >
-              HITL
-            </span>
-            <span class="text-[10px] font-mono text-cyan-400/80 bg-cyan-950/50 border border-cyan-500/30 px-2 py-0.5 rounded">
-              3D &gt;
-            </span>
-          </div>
-        </button>
+          <SoundBar
+            :active-agent-color="activeAgentColor"
+            :is-debating="isOrbDebating"
+            :show-view-switch="false"
+            @submit-draft="chatPanelRef?.onSubmit()"
+          />
+        </div>
 
         <ChatPanel 
           ref="chatPanelRef"
@@ -208,7 +281,8 @@ const handleToggleMic = () => {
             <ParticleOrb 
               ref="particleOrbRef"
               :active-agent-color="activeAgentColor"
-              :is-debating="store.isDebating || store.isTtsPlaying"
+              :active-agents="activeAgentsList"
+              :is-debating="isOrbDebating"
               @submit-draft="chatPanelRef?.onSubmit()"
               class="flex-1"
             />
@@ -231,8 +305,8 @@ const handleToggleMic = () => {
               :initial-tab="mobileTab === 'telemetry' ? 'observability' : 'agents'"
             >
               <template #orchestration>
-                <div class="flex flex-col space-y-2">
-                  <h3 class="text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-1">
+                <div class="flex flex-col justify-center space-y-2 h-full">
+                  <h3 class="text-[10px] font-mono text-slate-500 uppercase tracking-widest">
                     Consejo Técnico
                   </h3>
                   <div class="p-3 bg-space-950/60 border border-space-800 rounded text-slate-400 font-mono text-xs flex items-center justify-between">

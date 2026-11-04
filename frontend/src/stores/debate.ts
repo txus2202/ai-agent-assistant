@@ -535,6 +535,12 @@ export const useDebateStore = defineStore('debate', () => {
 
     // Reset agent states to STANDBY for the new turn
     agents.value.forEach(a => a.state = 'STANDBY')
+    const startRole = targetAgent || 'supervisor'
+    const startingAgent = findAgent(startRole) || (normalizeAgentRole(startRole) === 'supervisor' ? findAgent('supervisor') : undefined)
+    if (startingAgent) {
+      startingAgent.state = 'ACTIVE'
+      startingAgent.startedAt = Date.now()
+    }
     executionTrail.value = ['Atenea']
     
     // Capture session chat history before adding the new user message
@@ -626,11 +632,15 @@ export const useDebateStore = defineStore('debate', () => {
   function handleAgentStarted(event: SupervisorEvent) {
     const agent = findAgent(event.role) || (normalizeAgentRole(event.role) === 'supervisor' ? findAgent('supervisor') : undefined)
     if (!agent) return
-    agents.value.forEach(a => {
-      if (a.role !== agent.role && a.state === 'ACTIVE') {
-        a.state = 'STANDBY'
+
+    // If a delegated agent starts, transition supervisor to standby (her presence remains in the orb)
+    if (agent.role !== 'supervisor') {
+      const sup = findAgent('supervisor')
+      if (sup && sup.state === 'ACTIVE') {
+        sup.state = 'STANDBY'
       }
-    })
+    }
+
     agent.state = 'ACTIVE'
     agent.turns = (agent.turns || 0) + 1
     agent.startedAt = Date.now()
@@ -702,7 +712,7 @@ export const useDebateStore = defineStore('debate', () => {
   }
 
   function handleAgentCompleted(event: SupervisorEvent) {
-    const agent = findAgent(event.role)
+    const agent = findAgent(event.role) || (normalizeAgentRole(event.role) === 'supervisor' ? findAgent('supervisor') : undefined)
     if (!agent) return
 
     agent.state = 'COMPLETED'
@@ -783,15 +793,10 @@ export const useDebateStore = defineStore('debate', () => {
       targetMsg.content += chunk
     }
 
-    // Ensure the streaming agent's card is marked active
+    // Ensure the streaming agent's card is marked active without demoting other parallel agents
     const targetRole = agentRole || event.role || 'supervisor'
     const streamingAgent = findAgent(targetRole)
-    if (streamingAgent) {
-      agents.value.forEach(a => {
-        if (a.role !== streamingAgent.role && a.state === 'ACTIVE') {
-          a.state = 'STANDBY'
-        }
-      })
+    if (streamingAgent && streamingAgent.state !== 'ACTIVE') {
       streamingAgent.state = 'ACTIVE'
     }
 
@@ -801,6 +806,13 @@ export const useDebateStore = defineStore('debate', () => {
   function handleDone(event: SupervisorEvent) {
     isDebating.value = false
     resetWakeWordSession()
+    
+    // Mark any remaining active agents as COMPLETED
+    agents.value.forEach(a => {
+      if (a.state === 'ACTIVE') {
+        a.state = 'COMPLETED'
+      }
+    })
     
     if (streamingMessageId.value) {
       const targetMsg = messages.value.find(m => m.id === streamingMessageId.value)

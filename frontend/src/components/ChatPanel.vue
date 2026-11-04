@@ -643,7 +643,7 @@ defineExpose({
     </div>
 
     <!-- Input -->
-    <div class="p-4 border-t border-space-800 bg-[#060a11]">
+    <div class="p-4 border-t border-space-800 bg-[#060a11] shrink-0 md:min-h-[162px] flex flex-col justify-center">
       <!-- Integrated HITL Control Card in Chat -->
       <div 
         v-if="store.isHitlRequired" 
@@ -829,7 +829,7 @@ defineExpose({
               type="submit"
               data-test="chat-send-btn"
               :disabled="!store.draftMessage.trim() || (isDebating && !store.isHitlRequired)"
-              class="absolute right-2.5 bottom-2.5 p-2 min-w-[36px] min-h-[36px] flex items-center justify-center bg-[#00e5ff] text-[#060a11] hover:bg-cyan-400 disabled:opacity-50 disabled:hover:bg-[#00e5ff] transition-all rounded-lg shadow-[0_0_10px_rgba(0,229,255,0.3)] cursor-pointer"
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 p-2 min-w-[36px] min-h-[36px] flex items-center justify-center bg-[#00e5ff] text-[#060a11] hover:bg-cyan-400 disabled:opacity-50 disabled:hover:bg-[#00e5ff] transition-all rounded-lg shadow-[0_0_10px_rgba(0,229,255,0.3)] cursor-pointer"
               :title="store.isHitlRequired ? 'Enviar refinamiento' : 'Enviar mensaje'"
             >
               <SendHorizontal class="w-4 h-4 md:w-5 md:h-5" />

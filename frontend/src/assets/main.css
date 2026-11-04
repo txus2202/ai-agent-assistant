@@ -152,13 +152,6 @@ html.light header {
   border-bottom-color: #d1dfe6 !important;
 }
 
-html.light header .bg-cyan-950\/80 {
-  background-color: #ccfbf1 !important;
-  border-color: #5eead4 !important;
-}
-html.light header .bg-cyan-950\/80 svg {
-  color: #0f766e !important;
-}
 html.light header .text-cyan-100 {
   color: #0f172a !important;
 }

@@ -61,33 +61,31 @@
    A.T.E.N.E.A - High-Contrast Cyber Light Theme Design
    ========================================================================== */
 html.light {
-  --color-space-950: #f8fafc; /* Crisp cool background */
-  --color-space-900: #f1f5f9; /* Soft tech surfaces */
-  --color-space-850: #ffffff; /* Elevated cards and panels */
-  --color-space-800: #cbd5e1; /* Crisp defined borders */
-  --color-space-750: #94a3b8; /* Secondary borders */
-  --color-space-700: #64748b; /* Interactive borders */
-  --color-space-600: #475569;
-  --color-space-500: #334155;
-  --color-space-400: #1e293b;
-  --color-space-300: #0f172a;
-  --color-space-200: #020617;
+  --color-space-950: #edf3f6; /* Soft tech workspace background */
+  --color-space-900: #f4f8fa; /* Sidebar / panel background */
+  --color-space-850: #ffffff; /* Card / input elevated surfaces */
+  --color-space-800: #d1dfe6; /* Crisp delicate borders */
+  --color-space-750: #b8cbd5; /* Secondary borders */
+  --color-space-700: #94a3b8; /* Interactive borders */
+  --color-space-600: #64748b;
+  --color-space-500: #475569;
+  --color-space-400: #334155;
+  --color-space-300: #1e293b;
+  --color-space-200: #0f172a;
   
-  --color-neon-cyan: #0284c7;  /* Sky-600 */
-  --color-neon-green: #15803d; /* Emerald-700 */
+  --color-neon-cyan: #0d9488;  /* Teal-600 */
+  --color-neon-green: #0f766e; /* Deep spruce/teal */
   --color-neon-amber: #b45309; /* Amber-700 */
   --color-neon-purple: #7e22ce;
   --color-neon-red: #b91c1c;
   --color-neon-orange: #c2410c;
-  --color-neon-blue: #1d4ed8;
+  --color-neon-blue: #0284c7;
 }
 
 html.light body {
-  background-color: #f8fafc;
+  background-color: #edf3f6;
   color: #0f172a;
-  background-image:
-    linear-gradient(to right, rgba(15, 23, 42, 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(15, 23, 42, 0.05) 1px, transparent 1px);
+  background-image: none;
 }
 
 /* Force high contrast on all text utilities in Light Mode */
@@ -120,13 +118,13 @@ html.light .text-cyan-200 {
 html.light .text-cyan-300,
 html.light .text-cyan-400,
 html.light .text-neon-cyan {
-  color: #0284c7 !important;
+  color: #0d9488 !important;
 }
 
 html.light .text-emerald-300,
 html.light .text-emerald-400,
 html.light .text-neon-green {
-  color: #15803d !important;
+  color: #0f766e !important;
 }
 
 html.light .text-amber-400,
@@ -139,39 +137,104 @@ html.light .border-space-800,
 html.light .border-space-700,
 html.light .border-slate-800,
 html.light .border-slate-700 {
-  border-color: #cbd5e1 !important;
+  border-color: #d1dfe6 !important;
 }
 
 html.light .border-space-800\/50,
 html.light .border-space-800\/80,
 html.light .border-space-700\/50 {
-  border-color: #e2e8f0 !important;
+  border-color: #d1dfe6 !important;
+}
+
+/* App Header in Light Mode */
+html.light header {
+  background-color: #f8fafc !important;
+  border-bottom-color: #d1dfe6 !important;
+}
+
+html.light header .bg-cyan-950\/80 {
+  background-color: #ccfbf1 !important;
+  border-color: #5eead4 !important;
+}
+html.light header .bg-cyan-950\/80 svg {
+  color: #0f766e !important;
+}
+html.light header .text-cyan-100 {
+  color: #0f172a !important;
+}
+
+/* Center Pill in AppHeader */
+html.light header .bg-space-850 {
+  background-color: #eef6f8 !important;
+  border-color: #cde0e8 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+}
+html.light header .bg-space-850 h1 {
+  color: #0f4c5c !important;
+}
+html.light header .bg-space-850 .text-cyan-300\/70 {
+  color: #475569 !important;
+}
+html.light header .bg-cyan-400 {
+  background-color: #0d9488 !important;
+}
+
+/* Header theme toggle */
+html.light [data-test="theme-toggle-btn"] {
+  background-color: #e2e8f0 !important;
+  border-color: #cbd5e1 !important;
 }
 
 /* Backgrounds & Panels */
 html.light .bg-\[\#060a11\],
 html.light .bg-\[\#05070c\],
 html.light .bg-\[\#020408\] {
-  background-color: #f8fafc !important;
+  background-color: #f4f8fa !important;
 }
 
 /* Particle Orb Chamber Backdrop in Light Mode */
-html.light .bg-\[\#04070d\] {
-  background: radial-gradient(circle at center, #ffffff 0%, #f1f5f9 100%) !important;
+html.light .bg-\[\#04070d\],
+html.light [data-purpose="neural-orb-centerpiece"] {
+  background-color: #edf3f6 !important;
+  border-color: #d1dfe6 !important;
 }
 
 /* Orbit rings in light mode */
 html.light #orbRing1,
 html.light #orbRing2,
 html.light #orbRing3 {
-  border-color: rgba(2, 132, 199, 0.35) !important;
+  border-color: rgba(148, 163, 184, 0.45) !important;
 }
 
-html.light #orbGlowCore1 {
-  background-color: rgba(2, 132, 199, 0.16) !important;
-}
+html.light #orbGlowCore1,
 html.light #orbGlowCore2 {
-  background-color: rgba(2, 132, 199, 0.12) !important;
+  display: none !important;
+}
+
+/* Tabs: Agentes & Observabilidad in Light Mode */
+html.light .tab-active-btn,
+html.light [data-test="tab-agents"].tab-active-btn,
+html.light [data-test="tab-observability"].tab-active-btn {
+  background-color: #9eccca !important;
+  color: #064e3b !important;
+  border-color: #7ac1bf !important;
+  font-weight: 700 !important;
+}
+html.light .tab-active-btn svg,
+html.light [data-test="tab-agents"].tab-active-btn svg,
+html.light [data-test="tab-observability"].tab-active-btn svg {
+  color: #064e3b !important;
+}
+
+html.light [data-test="tab-agents"]:not(.tab-active-btn),
+html.light [data-test="tab-observability"]:not(.tab-active-btn) {
+  background-color: transparent !important;
+  color: #475569 !important;
+  border-color: #d1dfe6 !important;
+}
+html.light [data-test="tab-agents"]:not(.tab-active-btn) svg,
+html.light [data-test="tab-observability"]:not(.tab-active-btn) svg {
+  color: #475569 !important;
 }
 
 /* Secondary Panels, Cards & Boxes */
@@ -185,13 +248,62 @@ html.light .bg-\[\#081120\],
 html.light .bg-space-850,
 html.light .bg-space-900 {
   background-color: #ffffff !important;
-  border-color: #cbd5e1 !important;
+  border-color: #d1dfe6 !important;
 }
 
 html.light .bg-\[\#030509\],
 html.light .bg-\[\#050a14\] {
   background-color: #ffffff !important;
+  border-color: #d1dfe6 !important;
+}
+
+/* Learn button & Clear chat button */
+html.light [data-test="learn-session-btn"],
+html.light .bg-\[\#040e1a\] {
+  background-color: #ffffff !important;
   border-color: #cbd5e1 !important;
+  color: #334155 !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+}
+html.light [data-test="learn-session-btn"] svg {
+  color: #0d9488 !important;
+}
+
+/* Code blocks and pre in Light Mode */
+html.light pre,
+html.light code:not(.hljs) {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* Agent Cards in Light Mode */
+html.light [data-test="card-container"] {
+  background-color: #ffffff !important;
+  border-color: #d1dfe6 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+}
+html.light [data-test="card-container"] h3 {
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+
+/* Standby badge */
+html.light [data-test="card-container"] .bg-slate-100 {
+  background-color: #e2e8f0 !important;
+  color: #475569 !important;
+  border-color: #cbd5e1 !important;
+  font-weight: 600 !important;
+}
+
+/* Capability Badges: HITL & RAG in solid teal matching screenshot */
+html.light [data-test="card-container"] .bg-amber-500\/10,
+html.light [data-test="card-container"] .bg-cyan-500\/10,
+html.light [data-test="card-container"] .bg-indigo-500\/10 {
+  background-color: #0d9488 !important;
+  color: #ffffff !important;
+  border-color: #0f766e !important;
+  font-weight: 700 !important;
 }
 
 /* User Message Bubble in Light Mode */
@@ -205,7 +317,7 @@ html.light .bg-\[\#0a192f\] {
 /* Assistant Bubble */
 html.light .bg-\[\#030509\] {
   background-color: #ffffff !important;
-  border-color: #cbd5e1 !important;
+  border-color: #d1dfe6 !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
 }
 
@@ -237,10 +349,13 @@ html.light .bg-space-800\/90 {
   border-color: #cbd5e1 !important;
   color: #1e293b !important;
 }
-html.light select {
+html.light select,
+html.light [data-test="provider-select"],
+html.light [data-test="model-select"] {
   background-color: #ffffff !important;
   border-color: #cbd5e1 !important;
-  color: #0284c7 !important;
+  color: #0f172a !important;
+  font-weight: 600 !important;
 }
 html.light select option {
   background-color: #ffffff;
@@ -264,23 +379,43 @@ html.light textarea,
 html.light input[type="text"] {
   background-color: #ffffff !important;
   color: #0f172a !important;
-  border-color: #94a3b8 !important;
+  border-color: #cbd5e1 !important;
 }
 html.light textarea::placeholder,
 html.light input[type="text"]::placeholder {
   color: #64748b !important;
 }
 
-/* Active tab highlight */
-html.light .bg-\[\#002b36\] {
-  background-color: #e0f2fe !important;
-  color: #0284c7 !important;
-  border-color: #38bdf8 !important;
+/* Chat Submit Button in Light Mode */
+html.light button[type="submit"]:has(svg) {
+  background-color: #0d9488 !important;
+  color: #ffffff !important;
+}
+html.light button[type="submit"]:has(svg) svg {
+  color: #ffffff !important;
 }
 
-/* Audio Dock Canvas Waveform */
-html.light #waveformCanvas {
+/* Agent Dropdown in ChatPanel */
+html.light [data-test="agent-dropdown-btn"] {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html.light [data-test="agent-dropdown-btn"] span {
+  color: #0f172a !important;
+}
+
+/* Audio Dock Canvas Waveform & Button */
+html.light #micButton {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+}
+html.light #micIconRing {
   background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}
+html.light #waveformCanvas {
+  background-color: #ffffff !important;
   border-color: #cbd5e1 !important;
 }
 
@@ -302,8 +437,8 @@ html.light .custom-scrollbar::-webkit-scrollbar-thumb:hover {
 }
 
 /* Glow adjustments for light theme */
-html.light .glow-green  { box-shadow: 0 2px 10px -2px rgba(21,128,61,0.3); }
-html.light .glow-cyan   { box-shadow: 0 2px 10px -2px rgba(2,132,199,0.3); }
+html.light .glow-green  { box-shadow: 0 2px 10px -2px rgba(15,118,110,0.3); }
+html.light .glow-cyan   { box-shadow: 0 2px 10px -2px rgba(13,148,136,0.3); }
 html.light .glow-red    { box-shadow: 0 2px 10px -2px rgba(185,28,28,0.3); }
 html.light .glow-purple { box-shadow: 0 2px 10px -2px rgba(126,34,206,0.3); }
 html.light .glow-orange { box-shadow: 0 2px 10px -2px rgba(194,65,12,0.3); }

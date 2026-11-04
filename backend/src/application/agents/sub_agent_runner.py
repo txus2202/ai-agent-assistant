@@ -135,10 +135,13 @@ class SubAgentRunner:
         if hasattr(llm_provider, "get_last_usage"):
             usage = llm_provider.get_last_usage() or {}
 
-        if not usage or usage.get("total", 0) == 0:
-            in_tkn = max(1, len(prompt) // 4)
-            out_tkn = max(1, len(content) // 4)
-            usage = {"input": in_tkn, "output": out_tkn, "total": in_tkn + out_tkn}
+        in_tkn = usage.get("input", 0)
+        out_tkn = usage.get("output", 0)
+        if not in_tkn or in_tkn == 0:
+            in_tkn = max(15, len(prompt) // 4)
+        if not out_tkn or out_tkn == 0:
+            out_tkn = max(10, len(content) // 4)
+        usage = {"input": in_tkn, "output": out_tkn, "total": in_tkn + out_tkn}
 
         return SubAgentResponse(
             role=role,

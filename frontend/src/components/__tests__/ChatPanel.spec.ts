@@ -637,15 +637,13 @@ describe('ChatPanel.vue', () => {
     expect(banner.text()).toContain('Metis ha aprendido la solución')
   })
 
-  it('emits toggle-mic when direct microphone button is clicked and supports programmatic setActiveTab', async () => {
+  it('supports programmatic setActiveTab and omits duplicate chat mic button', async () => {
     const wrapper = mount(ChatPanel, {
       props: { messages: [], isDebating: false }
     })
 
     const micBtn = wrapper.find('[data-test="chat-mic-btn"]')
-    expect(micBtn.exists()).toBe(true)
-    await micBtn.trigger('click')
-    expect(wrapper.emitted('toggle-mic')).toBeTruthy()
+    expect(micBtn.exists()).toBe(false)
 
     // Programmatic tab switch via exposed method
     ;(wrapper.vm as unknown as { setActiveTab: (tab: 'chat' | 'observability') => void }).setActiveTab('observability')

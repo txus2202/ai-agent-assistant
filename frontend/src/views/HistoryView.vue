@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDebateStore, type SupervisorEvent, type DebateSession } from '../stores/debate'
 import { ArrowLeft, Trash2, Search, ArrowRight, Clock } from '@lucide/vue'
@@ -18,6 +18,8 @@ const isLoading = ref(true)
 
 const searchQuery = ref('')
 const activeFilter = ref<'all' | 'hitl' | 'today' | 'week'>('all')
+const pageSize = 10
+const displayedCount = ref(10)
 
 const fetchDebates = async () => {
   try {
@@ -140,6 +142,24 @@ const filteredDebates = computed(() => {
   })
 })
 
+const paginatedDebates = computed(() => {
+  return filteredDebates.value.slice(0, displayedCount.value)
+})
+
+watch([searchQuery, activeFilter], () => {
+  displayedCount.value = pageSize
+})
+
+const handleScroll = (event: Event) => {
+  const target = event.target as HTMLElement
+  if (!target) return
+  if (target.scrollHeight - target.scrollTop - target.clientHeight < 250) {
+    if (displayedCount.value < filteredDebates.value.length) {
+      displayedCount.value += pageSize
+    }
+  }
+}
+
 const formatDate = (dateString: string) => {
   try {
     return new Date(dateString).toLocaleString()
@@ -169,9 +189,9 @@ const restoreDebate = (debate: DebateRecord) => {
 </script>
 
 <template>
-  <div class="min-h-screen w-full bg-space-950 text-slate-300 font-sans flex flex-col">
+  <div class="h-screen max-h-screen w-full bg-space-950 text-slate-300 font-sans flex flex-col overflow-hidden">
     <!-- Header -->
-    <header class="p-4 sm:p-6 border-b border-space-800/80 bg-space-900/60 backdrop-blur-md sticky top-0 z-20">
+    <header class="p-4 sm:p-5 border-b border-space-800/80 bg-space-900/90 backdrop-blur-md shrink-0 z-20">
       <div class="max-w-6xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <!-- Back and Title -->
         <div class="flex items-center space-x-3 sm:space-x-4">
@@ -183,11 +203,11 @@ const restoreDebate = (debate: DebateRecord) => {
             <ArrowLeft class="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
           <div>
-            <h1 class="text-xl sm:text-2xl font-mono font-bold tracking-wider text-white flex items-center gap-2">
-              SESSION HISTORY
+            <h1 class="text-lg sm:text-xl font-mono font-bold tracking-wider text-white flex items-center gap-2">
+              HISTORIAL DE CONVERSACIONES
             </h1>
             <p class="text-[11px] font-mono text-cyan-400 tracking-[0.15em] uppercase mt-0.5">
-              Archived A.T.E.N.E.A Debates
+              DEBATES ARCHIVADOS
             </p>
           </div>
         </div>
@@ -210,59 +230,61 @@ const restoreDebate = (debate: DebateRecord) => {
       </div>
     </header>
 
-    <!-- Main Content -->
-    <main class="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto custom-scrollbar">
-      <div class="max-w-6xl mx-auto space-y-5">
-        
-        <!-- Search & Filter Controls -->
-        <div class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-space-900/40 border border-space-800 rounded-xl p-3">
-          <!-- Search Bar -->
-          <div class="relative flex-1 min-w-0">
-            <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-            <input 
-              v-model="searchQuery" 
-              type="text" 
-              placeholder="Buscar por objetivo, agente o ID de sesión..." 
-              class="w-full bg-space-850/90 border border-space-700/80 focus:border-cyan-500/50 rounded-lg pl-10 pr-4 py-2 text-xs font-mono text-slate-200 placeholder-slate-500 outline-none transition-colors"
-            />
-          </div>
-
-          <!-- Filter Pills -->
-          <div class="flex items-center gap-1.5 shrink-0 overflow-x-auto pb-1 md:pb-0">
-            <button 
-              type="button"
-              @click="activeFilter = 'all'"
-              class="px-3 py-1.5 rounded-lg text-xs font-mono border transition-all cursor-pointer whitespace-nowrap"
-              :class="activeFilter === 'all' ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 font-bold' : 'bg-space-850/60 text-slate-400 border-space-700 hover:border-slate-600'"
-            >
-              Todas ({{ debates.length }})
-            </button>
-            <button 
-              type="button"
-              @click="activeFilter = 'hitl'"
-              class="px-3 py-1.5 rounded-lg text-xs font-mono border transition-all cursor-pointer whitespace-nowrap"
-              :class="activeFilter === 'hitl' ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 font-bold' : 'bg-space-850/60 text-slate-400 border-space-700 hover:border-slate-600'"
-            >
-              Con HITL
-            </button>
-            <button 
-              type="button"
-              @click="activeFilter = 'today'"
-              class="px-3 py-1.5 rounded-lg text-xs font-mono border transition-all cursor-pointer whitespace-nowrap"
-              :class="activeFilter === 'today' ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 font-bold' : 'bg-space-850/60 text-slate-400 border-space-700 hover:border-slate-600'"
-            >
-              Hoy
-            </button>
-            <button 
-              type="button"
-              @click="activeFilter = 'week'"
-              class="px-3 py-1.5 rounded-lg text-xs font-mono border transition-all cursor-pointer whitespace-nowrap"
-              :class="activeFilter === 'week' ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 font-bold' : 'bg-space-850/60 text-slate-400 border-space-700 hover:border-slate-600'"
-            >
-              Esta semana
-            </button>
-          </div>
+    <!-- Fixed Search & Filter Controls Bar -->
+    <div class="shrink-0 p-3 sm:p-4 border-b border-space-800/80 bg-space-900/40">
+      <div class="max-w-6xl mx-auto flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        <!-- Search Bar -->
+        <div class="relative flex-1 min-w-0">
+          <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <input 
+            v-model="searchQuery" 
+            type="text" 
+            placeholder="Buscar por objetivo, agente o ID de sesión..." 
+            class="w-full bg-space-850/90 border border-space-700/80 focus:border-cyan-500/50 rounded-lg pl-10 pr-4 py-2 text-xs font-mono text-slate-200 placeholder-slate-500 outline-none transition-colors"
+          />
         </div>
+
+        <!-- Filter Pills -->
+        <div class="flex items-center gap-1.5 shrink-0 overflow-x-auto pb-1 md:pb-0">
+          <button 
+            type="button"
+            @click="activeFilter = 'all'"
+            class="px-3 py-1.5 rounded-lg text-xs font-mono border transition-all cursor-pointer whitespace-nowrap"
+            :class="activeFilter === 'all' ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 font-bold' : 'bg-space-850/60 text-slate-400 border-space-700 hover:border-slate-600'"
+          >
+            Todas ({{ debates.length }})
+          </button>
+          <button 
+            type="button"
+            @click="activeFilter = 'hitl'"
+            class="px-3 py-1.5 rounded-lg text-xs font-mono border transition-all cursor-pointer whitespace-nowrap"
+            :class="activeFilter === 'hitl' ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 font-bold' : 'bg-space-850/60 text-slate-400 border-space-700 hover:border-slate-600'"
+          >
+            Con HITL
+          </button>
+          <button 
+            type="button"
+            @click="activeFilter = 'today'"
+            class="px-3 py-1.5 rounded-lg text-xs font-mono border transition-all cursor-pointer whitespace-nowrap"
+            :class="activeFilter === 'today' ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 font-bold' : 'bg-space-850/60 text-slate-400 border-space-700 hover:border-slate-600'"
+          >
+            Hoy
+          </button>
+          <button 
+            type="button"
+            @click="activeFilter = 'week'"
+            class="px-3 py-1.5 rounded-lg text-xs font-mono border transition-all cursor-pointer whitespace-nowrap"
+            :class="activeFilter === 'week' ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 font-bold' : 'bg-space-850/60 text-slate-400 border-space-700 hover:border-slate-600'"
+          >
+            Esta semana
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scrollable Cards Main Container -->
+    <main @scroll="handleScroll" class="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6 lg:p-8 min-h-0">
+      <div class="max-w-6xl mx-auto space-y-5">
 
         <!-- Loading State -->
         <div v-if="isLoading" class="flex flex-col justify-center items-center py-20 text-slate-500 font-mono gap-3">
@@ -283,88 +305,95 @@ const restoreDebate = (debate: DebateRecord) => {
         </div>
 
         <!-- Sessions Grid (Responsive: 1 col on mobile, 2 col on tablet/desktop) -->
-        <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div 
-            v-for="debate in filteredDebates" 
-            :key="debate.id"
-            class="group relative bg-space-900/80 hover:bg-space-850/90 border border-space-700/80 hover:border-cyan-500/50 rounded-xl p-4 sm:p-5 transition-all duration-200 flex flex-col justify-between shadow-sm hover:shadow-cyan-500/5"
-          >
-            <!-- Card Header: ID, date, tag & delete button -->
-            <div class="flex items-center justify-between gap-2 pb-2.5 border-b border-space-800">
-              <div class="flex items-center gap-2 min-w-0">
-                <span class="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-space-800 text-slate-400 border border-space-700/80 uppercase">
-                  ID: {{ debate.id.slice(0, 8) }}
-                </span>
-                <span class="text-[11px] font-mono text-slate-400 flex items-center gap-1 truncate" :title="formatDate(debate.created_at)">
-                  <Clock class="w-3 h-3 text-slate-500 shrink-0" />
-                  <span>{{ formatRelativeTime(debate.created_at) }}</span>
-                </span>
-              </div>
-
-              <div class="flex items-center gap-2 shrink-0">
-                <span 
-                  v-if="hasHitl(debate)"
-                  class="text-[9px] font-mono px-2 py-0.5 rounded border bg-amber-500/10 text-amber-400 border-amber-500/30 font-semibold"
-                >
-                  HITL
-                </span>
-                <button 
-                  type="button"
-                  @click="deleteDebate(debate.id, $event)"
-                  class="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
-                  title="Delete Session"
-                  aria-label="Delete Session"
-                >
-                  <Trash2 class="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            <!-- Card Body Button (Restores session on click) -->
-            <button 
-              type="button"
-              @click="restoreDebate(debate)"
-              class="session-card w-full text-left pt-3 flex flex-col flex-1 focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500/50 rounded-lg cursor-pointer"
+        <div v-else class="space-y-4">
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div 
+              v-for="debate in paginatedDebates" 
+              :key="debate.id"
+              class="group relative bg-space-900/80 hover:bg-space-850/90 border border-space-700/80 hover:border-cyan-500/50 rounded-xl p-4 sm:p-5 transition-all duration-200 flex flex-col justify-between shadow-sm hover:shadow-cyan-500/5"
             >
-              <!-- User prompt -->
-              <h2 class="text-sm font-mono text-white mb-2 tracking-wide line-clamp-2 leading-relaxed italic group-hover:text-cyan-200 transition-colors">
-                "{{ getDebatePrompt(debate) }}"
-              </h2>
-
-              <!-- Conclusion snippet if available -->
-              <p v-if="getDebateConclusion(debate)" class="text-xs text-slate-400 font-sans line-clamp-2 leading-relaxed mb-3 bg-space-850/50 border border-space-800/80 rounded-lg p-2.5">
-                <span class="text-[10px] font-mono text-cyan-400/80 uppercase font-semibold block mb-0.5">Conclusión:</span>
-                {{ getDebateConclusion(debate) }}
-              </p>
-
-              <!-- Participating agent badges -->
-              <div v-if="getDebateAgents(debate).length > 0" class="flex flex-wrap gap-1 mb-3">
-                <span 
-                  v-for="ag in getDebateAgents(debate)" 
-                  :key="ag"
-                  class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-space-800/80 border border-space-700/60 text-slate-300 uppercase"
-                >
-                  {{ ag.replaceAll('_', ' ') }}
-                </span>
-              </div>
-
-              <!-- Footer row: events, tokens and resume action -->
-              <div class="mt-auto pt-2.5 border-t border-space-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
-                <div class="flex items-center gap-3">
-                  <span class="px-2 py-0.5 bg-space-800 rounded text-cyan-300 text-[10px]">
-                    {{ debate.events ? debate.events.length : 0 }} events
+              <!-- Card Header: ID, date, tag & delete button -->
+              <div class="flex items-center justify-between gap-2 pb-2.5 border-b border-space-800">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-space-800 text-slate-400 border border-space-700/80 uppercase">
+                    ID: {{ debate.id.slice(0, 8) }}
                   </span>
-                  <span class="flex items-center gap-1 text-slate-300 text-[10px]">
-                    🪙 {{ getDebateTokens(debate).toLocaleString() }}
+                  <span class="text-[11px] font-mono text-slate-400 flex items-center gap-1 truncate" :title="formatDate(debate.created_at)">
+                    <Clock class="w-3 h-3 text-slate-500 shrink-0" />
+                    <span>{{ formatRelativeTime(debate.created_at) }}</span>
                   </span>
                 </div>
 
-                <span class="text-cyan-400 flex items-center gap-1 text-xs font-semibold group-hover:translate-x-0.5 transition-transform">
-                  Reanudar debate
-                  <ArrowRight class="w-3.5 h-3.5" />
-                </span>
+                <div class="flex items-center gap-2 shrink-0">
+                  <span 
+                    v-if="hasHitl(debate)"
+                    class="text-[9px] font-mono px-2 py-0.5 rounded border bg-amber-500/10 text-amber-400 border-amber-500/30 font-semibold"
+                  >
+                    HITL
+                  </span>
+                  <button 
+                    type="button"
+                    @click="deleteDebate(debate.id, $event)"
+                    class="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                    title="Delete Session"
+                    aria-label="Delete Session"
+                  >
+                    <Trash2 class="w-4 h-4" />
+                  </button>
+                </div>
               </div>
-            </button>
+
+              <!-- Card Body Button (Restores session on click) -->
+              <button 
+                type="button"
+                @click="restoreDebate(debate)"
+                class="session-card w-full text-left pt-3 flex flex-col flex-1 focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500/50 rounded-lg cursor-pointer"
+              >
+                <!-- User prompt -->
+                <h2 class="text-sm font-mono text-white mb-2 tracking-wide line-clamp-2 leading-relaxed italic group-hover:text-cyan-200 transition-colors">
+                  "{{ getDebatePrompt(debate) }}"
+                </h2>
+
+                <!-- Conclusion snippet if available -->
+                <p v-if="getDebateConclusion(debate)" class="text-xs text-slate-400 font-sans line-clamp-2 leading-relaxed mb-3 bg-space-850/50 border border-space-800/80 rounded-lg p-2.5">
+                  <span class="text-[10px] font-mono text-cyan-400/80 uppercase font-semibold block mb-0.5">Conclusión:</span>
+                  {{ getDebateConclusion(debate) }}
+                </p>
+
+                <!-- Participating agent badges -->
+                <div v-if="getDebateAgents(debate).length > 0" class="flex flex-wrap gap-1 mb-3">
+                  <span 
+                    v-for="ag in getDebateAgents(debate)" 
+                    :key="ag"
+                    class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-space-800/80 border border-space-700/60 text-slate-300 uppercase"
+                  >
+                    {{ ag.replaceAll('_', ' ') }}
+                  </span>
+                </div>
+
+                <!-- Footer row: events, tokens and resume action -->
+                <div class="mt-auto pt-2.5 border-t border-space-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
+                  <div class="flex items-center gap-3">
+                    <span class="px-2 py-0.5 bg-space-800 rounded text-cyan-300 text-[10px]">
+                      {{ debate.events ? debate.events.length : 0 }} events
+                    </span>
+                    <span class="flex items-center gap-1 text-slate-300 text-[10px]">
+                      🪙 {{ getDebateTokens(debate).toLocaleString() }}
+                    </span>
+                  </div>
+
+                  <span class="text-cyan-400 flex items-center gap-1 text-xs font-semibold group-hover:translate-x-0.5 transition-transform">
+                    Reanudar debate
+                    <ArrowRight class="w-3.5 h-3.5" />
+                  </span>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Pagination Indicator / Footer -->
+          <div v-if="displayedCount < filteredDebates.length" class="text-center py-4 text-xs font-mono text-slate-500">
+            Mostrando {{ displayedCount }} de {{ filteredDebates.length }} sesiones (haz scroll para cargar más)
           </div>
         </div>
       </div>

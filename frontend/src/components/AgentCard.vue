@@ -204,26 +204,31 @@ const isDocs = computed(() => {
         </select>
       </div>
 
-      <!-- Observability Metrics Badges (Tokens In/Out, Latency, Turns) -->
-      <div class="pt-2 mt-1 border-t border-space-800/80 flex items-center justify-between text-[10px] font-mono text-slate-400 w-full">
+      <!-- Observability Metrics Badges (Tokens Left, Latency Center, Turns Right) -->
+      <div class="pt-2 mt-1 border-t border-space-800/80 grid grid-cols-3 items-center text-[10px] font-mono text-slate-400 w-full">
+        <!-- Col 1: Left-aligned Tokens -->
         <div 
-          class="flex items-center space-x-1 shrink-0" 
+          class="flex items-center space-x-1 justify-start min-w-0" 
           :title="`Tokens: Entrada ${promptTokens || 0} (Prompt) / Salida ${completionTokens !== undefined ? completionTokens : (tokensConsumed || 0)} (Generación)`"
         >
-          <span>🪙</span>
-          <span class="text-emerald-400 font-semibold" title="Tokens de entrada (Prompt)">
+          <span class="shrink-0">🪙</span>
+          <span class="text-emerald-400 font-semibold truncate" title="Tokens de entrada (Prompt)">
             <span class="text-[8px] text-slate-500 font-normal mr-0.5">In:</span>{{ promptTokens !== undefined ? promptTokens : 0 }}
           </span>
-          <span class="text-slate-600">/</span>
-          <span class="text-cyan-300 font-semibold" title="Tokens de salida (Generación)">
+          <span class="text-slate-600 shrink-0">/</span>
+          <span class="text-cyan-300 font-semibold truncate" title="Tokens de salida (Generación)">
             <span class="text-[8px] text-slate-500 font-normal mr-0.5">Out:</span>{{ completionTokens !== undefined ? completionTokens : (tokensConsumed || 0) }}
           </span>
         </div>
-        <div class="flex items-center justify-center space-x-1 shrink-0" title="Latencia">
+
+        <!-- Col 2: Center-aligned Latency -->
+        <div class="flex items-center justify-center space-x-1 text-center" title="Latencia">
           <span>⚡</span>
           <span class="text-slate-300 font-semibold">{{ latencySeconds !== undefined ? latencySeconds.toFixed(2) + 's' : '--' }}</span>
         </div>
-        <div class="flex items-center justify-end space-x-1 shrink-0" title="Turnos de intervención">
+
+        <!-- Col 3: Right-aligned Turns -->
+        <div class="flex items-center justify-end space-x-1 text-right" title="Turnos de intervención">
           <span>🔄</span>
           <span class="text-slate-300 font-semibold">{{ turnsCount !== undefined ? turnsCount : 0 }}</span>
         </div>

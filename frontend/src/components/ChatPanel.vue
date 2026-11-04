@@ -430,16 +430,16 @@ defineExpose({
     
     <!-- Top Tabs (hidden on mobile <md since mobile uses the bottom navigation bar) -->
     <div class="hidden md:flex items-center justify-between p-3.5 md:p-4 border-b border-space-800">
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2 w-full max-w-[420px]">
         <button 
           @click="activeTab = 'chat'"
           data-test="tab-chat"
           :class="activeTab === 'chat' ? 'text-neon-cyan border border-neon-cyan/40 bg-[#002b36]' : 'text-space-500 hover:text-slate-400 border-transparent hover:bg-space-900/60'"
-          class="w-[155px] h-8 flex items-center justify-between px-2.5 font-mono text-[10px] tracking-widest uppercase transition-colors rounded border cursor-pointer"
+          class="flex-1 max-w-[195px] h-8 flex items-center justify-between px-2.5 font-mono text-[10px] tracking-wider uppercase transition-colors rounded border cursor-pointer"
         >
-          <div class="flex items-center space-x-2 min-w-0">
+          <div class="flex items-center space-x-1.5 min-w-0">
             <MessageSquare class="w-3.5 h-3.5 shrink-0" />
-            <span class="truncate">Chat</span>
+            <span>Chat</span>
           </div>
           <span class="bg-neon-cyan/20 text-neon-cyan px-1.5 py-0.5 rounded-sm text-[8px] font-bold" :class="{ 'invisible': activeTab !== 'chat' }">ACTIVO</span>
         </button>
@@ -448,11 +448,11 @@ defineExpose({
           @click="activeTab = 'observability'"
           data-test="tab-observability"
           :class="activeTab === 'observability' ? 'text-neon-cyan border border-neon-cyan/40 bg-[#002b36]' : 'text-space-500 hover:text-slate-400 border-transparent hover:bg-space-900/60'"
-          class="w-[155px] h-8 flex items-center justify-between px-2.5 font-mono text-[10px] tracking-widest uppercase transition-colors rounded border cursor-pointer"
+          class="flex-1 max-w-[195px] h-8 flex items-center justify-between px-2.5 font-mono text-[10px] tracking-wider uppercase transition-colors rounded border cursor-pointer"
         >
-          <div class="flex items-center space-x-2 min-w-0">
+          <div class="flex items-center space-x-1.5 min-w-0">
             <Activity class="w-3.5 h-3.5 shrink-0" />
-            <span class="truncate">Observabilidad</span>
+            <span>Observabilidad</span>
           </div>
           <span class="bg-neon-cyan/20 text-neon-cyan px-1.5 py-0.5 rounded-sm text-[8px] font-bold" :class="{ 'invisible': activeTab !== 'observability' }">ACTIVO</span>
         </button>
@@ -721,58 +721,65 @@ defineExpose({
           </div>
         </div>
 
-        <!-- Quick Action Buttons -->
-        <div class="grid grid-cols-2 sm:grid-cols-5 gap-1.5 pt-1 w-full">
-          <button
-            type="button"
-            @click="handleHitlApprove"
-            data-test="hitl-approve-btn"
-            class="h-8.5 w-full bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/60 text-emerald-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-            title="Aceptar dictamen y consolidar"
-          >
-            <Check class="w-3.5 h-3.5 shrink-0" />
-            <span>Aceptar</span>
-          </button>
-          <button
-            type="button"
-            @click="focusRefineInput"
-            data-test="hitl-refine-btn"
-            class="h-8.5 w-full bg-neon-amber/15 hover:bg-neon-amber/30 border border-neon-amber/60 text-neon-amber font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-            title="Refinar con nuevas instrucciones"
-          >
-            <Edit3 class="w-3.5 h-3.5 shrink-0" />
-            <span>Refinar</span>
-          </button>
-          <button
-            type="button"
-            @click="handleHitlDivert"
-            data-test="hitl-divert-btn"
-            class="h-8.5 w-full bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/60 text-cyan-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-            title="Desviar deliberación a los agentes seleccionados arriba"
-          >
-            <GitFork class="w-3.5 h-3.5 shrink-0" />
-            <span>Desviar</span>
-          </button>
-          <button
-            type="button"
-            @click="handleHitlFinish"
-            data-test="hitl-finish-btn"
-            class="h-8.5 w-full bg-purple-500/15 hover:bg-purple-500/30 border border-purple-500/60 text-purple-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-            title="Concluir el debate anticipadamente y consolidar dictamen final"
-          >
-            <Flag class="w-3.5 h-3.5 shrink-0" />
-            <span>Finalizar</span>
-          </button>
-          <button
-            type="button"
-            @click="handleHitlReject"
-            data-test="hitl-reject-btn"
-            class="h-8.5 w-full bg-red-500/15 hover:bg-red-500/30 border border-red-500/60 text-red-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer col-span-2 sm:col-span-1"
-            title="Rechazar y abortar deliberación"
-          >
-            <X class="w-3.5 h-3.5 shrink-0" />
-            <span>Rechazar</span>
-          </button>
+        <!-- Quick Action Buttons (2 Rows: Row 1 = Aceptar, Rechazar, Finalizar | Row 2 = Refinar, Desviar) -->
+        <div class="flex flex-col gap-1.5 pt-1 w-full">
+          <!-- Row 1: Aceptar, Rechazar y Finalizar -->
+          <div class="grid grid-cols-3 gap-1.5 w-full">
+            <button
+              type="button"
+              @click="handleHitlApprove"
+              data-test="hitl-approve-btn"
+              class="h-8.5 w-full bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/60 text-emerald-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              title="Aceptar dictamen y consolidar"
+            >
+              <Check class="w-3.5 h-3.5 shrink-0" />
+              <span>Aceptar</span>
+            </button>
+            <button
+              type="button"
+              @click="handleHitlReject"
+              data-test="hitl-reject-btn"
+              class="h-8.5 w-full bg-red-500/15 hover:bg-red-500/30 border border-red-500/60 text-red-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              title="Rechazar y abortar deliberación"
+            >
+              <X class="w-3.5 h-3.5 shrink-0" />
+              <span>Rechazar</span>
+            </button>
+            <button
+              type="button"
+              @click="handleHitlFinish"
+              data-test="hitl-finish-btn"
+              class="h-8.5 w-full bg-purple-500/15 hover:bg-purple-500/30 border border-purple-500/60 text-purple-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              title="Concluir el debate anticipadamente y consolidar dictamen final"
+            >
+              <Flag class="w-3.5 h-3.5 shrink-0" />
+              <span>Finalizar</span>
+            </button>
+          </div>
+
+          <!-- Row 2: Refinar y Desviar -->
+          <div class="grid grid-cols-2 gap-1.5 w-full">
+            <button
+              type="button"
+              @click="focusRefineInput"
+              data-test="hitl-refine-btn"
+              class="h-8.5 w-full bg-neon-amber/15 hover:bg-neon-amber/30 border border-neon-amber/60 text-neon-amber font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              title="Refinar con nuevas instrucciones"
+            >
+              <Edit3 class="w-3.5 h-3.5 shrink-0" />
+              <span>Refinar</span>
+            </button>
+            <button
+              type="button"
+              @click="handleHitlDivert"
+              data-test="hitl-divert-btn"
+              class="h-8.5 w-full bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/60 text-cyan-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              title="Desviar deliberación a los agentes seleccionados arriba"
+            >
+              <GitFork class="w-3.5 h-3.5 shrink-0" />
+              <span>Desviar</span>
+            </button>
+          </div>
         </div>
       </div>
 

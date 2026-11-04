@@ -298,15 +298,18 @@ async def _stream_llm_completion(
         finally:
             loop.call_soon_threadsafe(queue.put_nowait, None)
 
-    asyncio.create_task(asyncio.to_thread(_producer))
+    producer_task = asyncio.create_task(asyncio.to_thread(_producer))
 
-    while True:
-        item = await queue.get()
-        if item is None:
-            break
-        if isinstance(item, Exception):
-            raise item
-        yield item
+    try:
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            if isinstance(item, Exception):
+                raise item
+            yield item
+    finally:
+        await producer_task
 
 
 async def _run_direct_chat_mode(

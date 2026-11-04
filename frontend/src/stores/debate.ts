@@ -660,11 +660,22 @@ export const useDebateStore = defineStore('debate', () => {
     if (!isVoiceOutputEnabled.value) return
     ttsStreamBuffer += chunk
 
-    // Look for terminal punctuation (. ! ? \n) or clause delimiters (, ; :) with >= 20 characters
-    const match = ttsStreamBuffer.match(/^([\s\S]*?[.!?\n]|[\s\S]{20,}?[,:;])\s*([\s\S]*)$/)
-    if (match && match[1]) {
-      const sentence = match[1].trim()
-      ttsStreamBuffer = match[2] || ''
+    // Look for terminal punctuation (. ! ? \n) or clause delimiters (, ; :) after >= 20 characters
+    const terminalMatch = /[.!?\n]/.exec(ttsStreamBuffer)
+    let splitIdx = -1
+
+    if (terminalMatch) {
+      splitIdx = terminalMatch.index
+    } else if (ttsStreamBuffer.length >= 20) {
+      const clauseMatch = /[,:;]/.exec(ttsStreamBuffer.slice(20))
+      if (clauseMatch) {
+        splitIdx = 20 + clauseMatch.index
+      }
+    }
+
+    if (splitIdx !== -1) {
+      const sentence = ttsStreamBuffer.slice(0, splitIdx + 1).trim()
+      ttsStreamBuffer = ttsStreamBuffer.slice(splitIdx + 1)
       if (sentence) {
         for (const cb of ttsChunkCallbacks) {
           cb(sentence, role)

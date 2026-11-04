@@ -50,7 +50,7 @@ export function cleanTextForTts(text: string): string {
  * Ensures the first chunk is short and actionable so Time-To-First-Audio is < 300-400ms.
  */
 export function splitTextIntoTtsChunks(text: string): string[] {
-  if (!text || !text.trim()) return []
+  if (!text?.trim()) return []
 
   const clean = text.trim()
   // Split matching sequences of characters ending with terminal (. ! ? \n) or clause (, ; :) punctuation
@@ -65,14 +65,12 @@ export function splitTextIntoTtsChunks(text: string): string[] {
 
     if (!current) {
       current = trimmed
-    } else {
+    } else if (current.length < 20) {
       // If current chunk is still very short (under 20 characters), combine to avoid tiny unnatural fragments (e.g., "Sí,")
-      if (current.length < 20) {
-        current += ' ' + trimmed
-      } else {
-        chunks.push(current)
-        current = trimmed
-      }
+      current += ' ' + trimmed
+    } else {
+      chunks.push(current)
+      current = trimmed
     }
 
     // If current ends with a terminal punctuation mark (. ! ? \n) or is a decent length clause ending in comma/semicolon/colon, push it

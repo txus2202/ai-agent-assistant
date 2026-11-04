@@ -7,6 +7,10 @@ export interface AgentConfig {
   color_hex?: string
   provider: string
   model_name: string
+  uses_rag?: boolean
+  supports_hitl?: boolean
+  can_ingest_documents?: boolean
+  topology_roles?: string[]
 }
 
 export interface ModelConfig {

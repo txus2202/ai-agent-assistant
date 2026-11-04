@@ -93,38 +93,44 @@ const selectModel = async (providerName: string, modelName: string) => {
 </script>
 
 <template>
-  <header class="h-14 border-b border-cyan-900/40 bg-space-900/90 backdrop-blur-md flex items-center z-30 shrink-0 w-full">
+  <header class="h-14 border-b border-cyan-900/40 bg-space-900/90 backdrop-blur-md flex items-center justify-between px-3 md:px-4 z-30 shrink-0 w-full gap-2">
     <!-- Left branding & Status tag -->
-    <div class="w-full md:w-1/3 lg:w-1/4 flex items-center pl-4">
-      <span class="text-[10px] md:text-xs text-slate-400 font-mono tracking-widest uppercase">System Core v{{ version }}</span>
+    <div class="flex items-center gap-2.5 md:w-1/3 lg:w-1/4 shrink-0">
+      <div class="sm:hidden w-7 h-7 rounded-lg bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center text-cyan-400 font-bold text-xs shadow-[0_0_8px_rgba(0,229,255,0.25)]">
+        <Cpu class="w-3.5 h-3.5 text-cyan-400" />
+      </div>
+      <div class="flex flex-col">
+        <span class="sm:hidden text-xs font-bold tracking-widest uppercase text-cyan-100 leading-tight">A.T.E.N.E.A.</span>
+        <span class="text-[9px] sm:text-[10px] md:text-xs text-slate-400 font-mono tracking-widest uppercase">System Core v{{ version }}</span>
+      </div>
     </div>
 
     <!-- Center App Title Banner -->
-    <div class="w-full md:flex-1 flex justify-center items-center h-full">
-      <div class="hidden sm:block relative px-8 pt-[5px] pb-[6px] bg-space-850 border border-cyan-500/30 rounded-t-sm shadow-[0_0_20px_rgba(0,229,255,0.08)]">
+    <div class="hidden sm:flex flex-1 justify-center items-center h-full min-w-0">
+      <div class="relative px-4 lg:px-8 pt-[5px] pb-[6px] bg-space-850 border border-cyan-500/30 rounded-t-sm shadow-[0_0_20px_rgba(0,229,255,0.08)] truncate">
         <div class="absolute -top-[1px] left-1/2 -translate-x-1/2 w-16 h-[2px] bg-cyan-400 shadow-[0_0_10px_#00e5ff]"></div>
         <h1 class="text-xs sm:text-sm font-semibold tracking-widest uppercase text-cyan-100 flex items-center justify-center space-x-2">
-          <Cpu class="w-4 h-4 text-cyan-400" />
+          <Cpu class="w-4 h-4 text-cyan-400 shrink-0" />
           <span class="font-bold tracking-widest">A.T.E.N.E.A.</span>
         </h1>
-        <div class="text-center">
+        <div class="text-center hidden lg:block">
           <span class="text-[9px] text-cyan-300/70 font-mono font-normal tracking-normal lowercase">(Asistente Técnica y Evaluadora de Nuevas Estructuras y Arquitecturas)</span>
         </div>
       </div>
     </div>
 
     <!-- Right System Controls -->
-    <div class="w-full md:w-1/3 lg:w-[400px] flex items-center justify-end pr-4 space-x-4">
+    <div class="flex items-center justify-end md:w-1/3 lg:w-[400px] space-x-1.5 sm:space-x-3 shrink-0">
       <!-- Supervisor Model Selector -->
       <div class="relative" ref="dropdownRef">
         <button 
           @click="toggleDropdown"
-          class="hidden md:flex items-center space-x-2 font-mono text-[10px] md:text-[11px] text-emerald-300 bg-emerald-950/30 border border-emerald-500/30 px-2.5 py-1 rounded hover:bg-emerald-950/50 hover:border-emerald-500/60 transition-colors"
+          class="flex items-center space-x-1.5 sm:space-x-2 font-mono text-[9px] sm:text-[10px] md:text-[11px] text-emerald-300 bg-emerald-950/30 border border-emerald-500/30 px-2 sm:px-2.5 py-1.5 sm:py-1 min-h-[36px] sm:min-h-0 rounded hover:bg-emerald-950/50 hover:border-emerald-500/60 transition-colors"
           title="Supervisor Model Configuration"
         >
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span class="leading-none pt-[2px]">SUPERVISOR: {{ supervisorProvider }} - {{ supervisorModel }}</span>
-          <ChevronDown class="w-3 h-3 text-emerald-500 ml-1" />
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+          <span class="leading-none pt-[1px] flex items-center min-w-0">SUPERVISOR: {{ supervisorProvider }} - <span class="truncate inline-block max-w-[70px] sm:max-w-[100px] md:max-w-[120px] ml-1" :title="supervisorModel">{{ supervisorModel }}</span></span>
+          <ChevronDown class="w-3 h-3 text-emerald-500 ml-0.5 shrink-0" />
         </button>
 
         <!-- Dropdown Menu -->
@@ -141,7 +147,7 @@ const selectModel = async (providerName: string, modelName: string) => {
               v-for="provider in providers" 
               :key="provider.id"
               @click="selectedProviderForDropdown = provider"
-              class="w-full text-left px-3 py-2 text-slate-300 hover:bg-space-800 hover:text-emerald-300 transition-colors flex items-center justify-between"
+              class="w-full text-left px-3 py-2.5 sm:py-2 text-slate-300 hover:bg-space-800 hover:text-emerald-300 transition-colors flex items-center justify-between"
             >
               <span class="font-bold text-[10px] md:text-[11px]">{{ provider.name }}</span>
               <span class="text-[10px] text-slate-500">&gt;</span>
@@ -159,7 +165,7 @@ const selectModel = async (providerName: string, modelName: string) => {
                 v-for="model in selectedProviderForDropdown.models" 
                 :key="model.id"
                 @click="selectModel(selectedProviderForDropdown.name, model.name)"
-                class="w-full text-left px-3 py-2 text-slate-300 hover:bg-space-800 hover:text-emerald-300 transition-colors flex flex-col"
+                class="w-full text-left px-3 py-2.5 sm:py-2 text-slate-300 hover:bg-space-800 hover:text-emerald-300 transition-colors flex flex-col"
               >
                 <span class="font-bold text-[10px] md:text-[11px]">{{ model.name }}</span>
               </button>
@@ -169,10 +175,10 @@ const selectModel = async (providerName: string, modelName: string) => {
       </div>
 
       <!-- Action Icons -->
-      <div class="flex items-center space-x-2 text-slate-400">
+      <div class="flex items-center space-x-1 sm:space-x-2 text-slate-400">
         <button 
           @click="toggleAudio"
-          class="p-1.5 hover:text-cyan-300 hover:bg-space-800 rounded transition border border-transparent hover:border-cyan-800/60" 
+          class="min-w-[38px] min-h-[38px] sm:min-w-0 sm:min-h-0 p-2 sm:p-1.5 flex items-center justify-center hover:text-cyan-300 hover:bg-space-800 rounded transition border border-transparent hover:border-cyan-800/60" 
           title="Toggle System Audio"
         >
           <VolumeX v-if="!debateStore.isVoiceOutputEnabled" class="w-4 h-4 text-rose-400" />
@@ -180,7 +186,7 @@ const selectModel = async (providerName: string, modelName: string) => {
         </button>
         <button 
           @click="toggleAutoListen"
-          class="p-1.5 rounded transition border border-transparent"
+          class="min-w-[38px] min-h-[38px] sm:min-w-0 sm:min-h-0 p-2 sm:p-1.5 flex items-center justify-center rounded transition border border-transparent"
           :class="debateStore.isAutoListenEnabled ? 'text-amber-400 bg-amber-900/30 border-amber-500/50' : 'hover:text-amber-200 hover:bg-space-800 hover:border-amber-800/60'"
           title="Toggle Auto-Listen (Wake Word)"
         >
@@ -189,7 +195,7 @@ const selectModel = async (providerName: string, modelName: string) => {
         </button>
         <button 
           @click="router.push('/history')"
-          class="p-1.5 hover:text-amber-400 hover:bg-space-800 rounded transition border border-transparent hover:border-amber-800/60 relative" 
+          class="min-w-[38px] min-h-[38px] sm:min-w-0 sm:min-h-0 p-2 sm:p-1.5 flex items-center justify-center hover:text-amber-400 hover:bg-space-800 rounded transition border border-transparent hover:border-amber-800/60 relative" 
           title="Debate History"
         >
           <History class="w-4 h-4" />

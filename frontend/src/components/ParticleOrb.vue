@@ -92,7 +92,10 @@ const resizeCanvas = () => {
   const rect = parent.getBoundingClientRect()
   orbWidth = canvas.width = (rect && rect.width > 200) ? Math.floor(rect.width) : 800
   orbHeight = canvas.height = (rect && rect.height > 200) ? Math.floor(rect.height) : 560
-  BASE_RADIUS = Math.max(180, Math.min(235, Math.min(orbWidth, orbHeight) * 0.38))
+  const minDimension = Math.min(orbWidth, orbHeight)
+  BASE_RADIUS = minDimension < 460
+    ? Math.max(105, minDimension * 0.36)
+    : Math.max(180, Math.min(235, minDimension * 0.38))
   ctx = canvas.getContext('2d')
 }
 
@@ -485,10 +488,18 @@ const animateWaveform = () => {
   waveAnimationFrameId = requestAnimationFrame(animateWaveform)
 }
 
+let resizeObserver: ResizeObserver | null = null
+
 onMounted(() => {
   resizeCanvas()
   initParticles()
   window.addEventListener('resize', resizeCanvas)
+  if (typeof ResizeObserver !== 'undefined' && orbCanvasRef.value?.parentElement) {
+    resizeObserver = new ResizeObserver(() => {
+      resizeCanvas()
+    })
+    resizeObserver.observe(orbCanvasRef.value.parentElement)
+  }
   animateOrb()
   animateWaveform()
 })
@@ -496,12 +507,21 @@ onMounted(() => {
 onUnmounted(() => {
   isComponentUnmounted = true
   window.removeEventListener('resize', resizeCanvas)
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
   cancelAnimationFrame(animationFrameId)
   cancelAnimationFrame(waveAnimationFrameId)
   stopSilenceDetection()
   if (mediaRecorder.value && isRecording.value) {
     mediaRecorder.value.stop()
   }
+})
+
+defineExpose({
+  toggleRecording,
+  resizeCanvas
 })
 
 watch(() => props.isDebating, () => {
@@ -555,28 +575,28 @@ const voiceDotStyle = computed(() => {
   <section class="flex flex-col relative w-full h-full border-x border-slate-800/80 overflow-hidden" data-purpose="neural-orb-centerpiece">
     
     <!-- Interactive Cosmic Neural Orb Web Canvas (Flex 1 ensures it takes remaining space, centering its content) -->
-    <div class="relative w-full flex-1 flex items-center justify-center min-h-[300px] overflow-hidden" id="orbContainer">
+    <div class="relative w-full flex-1 flex items-center justify-center min-h-[240px] sm:min-h-[300px] overflow-hidden" id="orbContainer">
       <!-- Sci-Fi Telemetry Orbit Rings & Coordinate Markings -->
       <div 
-        class="absolute w-[440px] h-[440px] md:w-[580px] md:h-[580px] rounded-full border border-cyan-500/20 pointer-events-none animate-[spin_120s_linear_infinite]"
+        class="absolute w-[280px] h-[280px] sm:w-[440px] sm:h-[440px] lg:w-[580px] lg:h-[580px] rounded-full border border-cyan-500/20 pointer-events-none animate-[spin_120s_linear_infinite]"
         :style="isDebating ? `border-color: ${activeAgentColor}40` : ''"
       ></div>
       <div 
-        class="absolute w-[380px] h-[380px] md:w-[500px] md:h-[500px] rounded-full border border-dashed border-slate-700/40 pointer-events-none animate-[spin_80s_linear_infinite_reverse]"
+        class="absolute w-[240px] h-[240px] sm:w-[380px] sm:h-[380px] lg:w-[500px] lg:h-[500px] rounded-full border border-dashed border-slate-700/40 pointer-events-none animate-[spin_80s_linear_infinite_reverse]"
         :style="isDebating ? `border-color: ${activeAgentColor}60` : ''"
       ></div>
       <div 
-        class="absolute w-[470px] h-[470px] md:w-[620px] md:h-[620px] rounded-full border border-cyan-400/15 pointer-events-none"
+        class="absolute w-[310px] h-[310px] sm:w-[470px] sm:h-[470px] lg:w-[620px] lg:h-[620px] rounded-full border border-cyan-400/15 pointer-events-none"
         :style="isDebating ? `border-color: ${activeAgentColor}20` : ''"
       ></div>
       
       <!-- Central ambient luminous glow cores -->
       <div 
-        class="absolute w-[380px] h-[380px] rounded-full blur-3xl pointer-events-none transition-colors duration-700"
+        class="absolute w-[260px] h-[260px] sm:w-[380px] sm:h-[380px] rounded-full blur-3xl pointer-events-none transition-colors duration-700"
         :style="isDebating ? `background-color: ${activeAgentColor}1A` : 'background-color: rgba(255, 255, 255, 0.05)'"
       ></div>
       <div 
-        class="absolute w-[280px] h-[280px] rounded-full blur-2xl pointer-events-none transition-colors duration-700"
+        class="absolute w-[200px] h-[200px] sm:w-[280px] sm:h-[280px] rounded-full blur-2xl pointer-events-none transition-colors duration-700"
         :style="isDebating ? `background-color: ${activeAgentColor}33` : 'background-color: rgba(255, 255, 255, 0.1)'"
       ></div>
 
@@ -584,13 +604,13 @@ const voiceDotStyle = computed(() => {
     </div>
 
     <!-- Waveform Audio Visualizer, Voice State Controller & Microphone HUD Deck (Static/Mock for Phase 5) -->
-    <div class="w-full bg-space-900/85 border-t border-slate-800/90 p-2.5 z-20 flex flex-col md:flex-row items-center justify-between gap-3 backdrop-blur-md shrink-0">
+    <div class="w-full bg-space-900/85 border-t border-slate-800/90 p-2.5 z-20 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3 backdrop-blur-md shrink-0">
       <!-- Audio Deck Left: Microphone Button & Status Selector -->
-      <div class="flex items-center space-x-3 w-full md:w-auto">
+      <div class="flex items-center space-x-3 w-full sm:w-auto justify-between sm:justify-start">
         <button id="micButton" 
           @click="toggleRecording"
           :class="isRecording ? 'border-red-500 bg-red-900/30' : 'border-slate-700 hover:border-cyan-400 bg-space-850 hover:bg-space-800'"
-          class="relative group px-3 py-1.5 rounded-lg text-slate-300 hover:text-cyan-200 transition-all flex items-center space-x-2 shadow-md shrink-0 active:scale-95" 
+          class="relative group px-3 py-1.5 min-h-[44px] rounded-lg text-slate-300 hover:text-cyan-200 transition-all flex items-center space-x-2 shadow-md shrink-0 active:scale-95" 
           title="Activar micrófono para hablar (Pulsa para hablar)"
         >
           <div v-if="isRecording" class="absolute w-2 h-2 rounded-full bg-red-500 -top-1 -right-1 animate-pulse"></div>

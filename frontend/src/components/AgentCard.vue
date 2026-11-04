@@ -12,6 +12,11 @@ const props = defineProps<{
   glowClass?: string
   tokensConsumed?: number
   latencySeconds?: number
+  turnsCount?: number
+  usesRag?: boolean
+  supportsHitl?: boolean
+  canIngestDocuments?: boolean
+  topologyRoles?: string[]
 }>()
 
 const store = useConfigStore()
@@ -63,77 +68,131 @@ const agentDescription = computed(() => {
 const agentColor = computed(() => {
   return props.colorHex || agentConfig.value.color_hex || '#00e5ff'
 })
+
+// Dynamic badges based on topology and capabilities
+const computedRoles = computed(() => {
+  return props.topologyRoles || agentConfig.value.topology_roles || []
+})
+
+const isRag = computed(() => {
+  return props.usesRag ?? agentConfig.value.uses_rag ?? false
+})
+
+const isHitl = computed(() => {
+  return props.supportsHitl ?? agentConfig.value.supports_hitl ?? false
+})
+
+const isDocs = computed(() => {
+  return props.canIngestDocuments ?? agentConfig.value.can_ingest_documents ?? false
+})
 </script>
 
 <template>
   <div 
     data-test="card-container"
-    class="relative overflow-hidden rounded-xl bg-space-850/80 border border-space-700 p-4 transition-all duration-300"
+    class="relative h-[210px] min-h-[210px] flex flex-col justify-between overflow-hidden rounded-xl bg-space-850/80 border border-space-700/80 p-3.5 transition-all duration-300"
     :class="[isGlowActive ? (glowClass || '') : '']"
     :style="isGlowActive ? { borderColor: agentColor, boxShadow: `0 0 20px ${agentColor}40, inset 0 0 15px ${agentColor}1a` } : {}"
   >
-    <div class="flex items-center space-x-3">
-      <!-- Status Dot -->
-      <div 
-        class="h-3 w-3 rounded-full"
-        :class="[
-          state === 'ACTIVE' ? 'animate-pulse' : '',
-          state === 'COMPLETED' ? 'bg-space-700' : '',
-          state === 'STANDBY' ? 'bg-space-700' : ''
-        ]"
-        :style="state === 'ACTIVE' ? { backgroundColor: agentColor, boxShadow: `0 0 8px ${agentColor}` } : {}"
-      ></div>
-      
-      <!-- Role and Status Text -->
-      <div>
-        <h3 
-          class="font-mono text-sm tracking-wider" 
-          :class="colorClass"
-          :style="{ color: agentColor }"
+    <!-- Top Section: Header & Badges -->
+    <div>
+      <div class="flex items-center justify-between gap-2">
+        <!-- Status dot and agent name -->
+        <div class="flex items-center space-x-2 min-w-0">
+          <div 
+            class="h-2.5 w-2.5 shrink-0 rounded-full transition-all duration-300"
+            :class="[
+              state === 'ACTIVE' ? 'animate-pulse' : 'bg-slate-700/80 border border-slate-600/50'
+            ]"
+            :style="state === 'ACTIVE' ? { backgroundColor: agentColor, boxShadow: `0 0 10px ${agentColor}` } : {}"
+          ></div>
+          <h3 
+            class="font-mono text-xs font-bold tracking-wider truncate" 
+            :class="colorClass"
+            :style="{ color: agentColor }"
+            :title="displayRole"
+          >
+            {{ displayRole }}
+          </h3>
+        </div>
+
+        <!-- Status Tag -->
+        <span 
+          class="shrink-0 text-[9px] font-mono px-2 py-0.5 rounded uppercase tracking-wider font-semibold border"
+          :class="state === 'ACTIVE' ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/40 animate-pulse' : 'bg-slate-800/80 text-slate-500 border-slate-700/60'"
         >
-          {{ displayRole }}
-        </h3>
-        <p class="text-xs text-slate-400 font-mono mt-1">
-          {{ state }} {{ state === 'ACTIVE' ? 'CO-EXEC' : '' }}
-        </p>
+          {{ state === 'ACTIVE' ? 'ACTIVE CO-EXEC' : state }}
+        </span>
       </div>
+
+      <!-- Capability and Topology Badges -->
+      <div class="flex flex-wrap gap-1 mt-1.5 items-center min-h-[18px]">
+        <span 
+          v-for="trole in computedRoles" 
+          :key="trole"
+          class="text-[9px] font-mono px-1.5 py-0.2 rounded border bg-space-800/90 text-slate-300 border-space-700 uppercase"
+        >
+          {{ trole }}
+        </span>
+        <span 
+          v-if="isRag"
+          class="text-[9px] font-mono px-1.5 py-0.2 rounded border bg-cyan-500/10 text-cyan-400 border-cyan-500/30 font-semibold"
+        >
+          RAG
+        </span>
+        <span 
+          v-if="isHitl"
+          class="text-[9px] font-mono px-1.5 py-0.2 rounded border bg-amber-500/10 text-amber-400 border-amber-500/30 font-semibold"
+        >
+          HITL
+        </span>
+        <span 
+          v-if="isDocs"
+          class="text-[9px] font-mono px-1.5 py-0.2 rounded border bg-indigo-500/10 text-indigo-400 border-indigo-500/30 font-semibold"
+        >
+          DOCS
+        </span>
+      </div>
+
+      <!-- Agent Mission Description (Clamped to 2 lines) -->
+      <p 
+        data-test="agent-description" 
+        class="text-[11px] text-slate-400 font-sans leading-relaxed line-clamp-2 mt-1.5"
+        :title="agentDescription"
+      >
+        {{ agentDescription }}
+      </p>
     </div>
 
-    <!-- Agent Mission / Responsibility Description (Always Visible) -->
-    <p data-test="agent-description" class="text-[11px] text-space-300 font-sans leading-relaxed mt-2.5">
-      {{ agentDescription }}
-    </p>
+    <!-- Middle / Bottom Controls & Metrics -->
+    <div>
+      <!-- Progress Bar (Visible only when ACTIVE) -->
+      <div v-if="state === 'ACTIVE'" data-test="progress-bar" class="h-1 w-full bg-space-800 rounded-full overflow-hidden mb-2">
+        <div 
+          class="h-full opacity-70 animate-[shimmer_2s_infinite]" 
+          :class="colorClass"
+          :style="{ backgroundColor: agentColor }"
+        ></div>
+      </div>
 
-    <!-- Progress Bar (Visible only when ACTIVE) -->
-    <div v-if="state === 'ACTIVE'" data-test="progress-bar" class="mt-4 h-1 w-full bg-space-800 rounded-full overflow-hidden">
-      <div 
-        class="h-full opacity-60 animate-[shimmer_2s_infinite]" 
-        :class="colorClass"
-        :style="{ backgroundColor: agentColor }"
-      ></div>
-    </div>
-
-    <!-- Config Selectors -->
-    <div class="mt-4 pt-3 border-t border-space-700/50 flex flex-col gap-2">
-      <div class="flex justify-between items-center">
-        <label :for="providerId" class="text-[10px] text-space-400 uppercase tracking-widest font-mono">Provider</label>
+      <!-- Config Selectors (Provider ~36%, Model flex-1) -->
+      <div class="pt-2 border-t border-space-700/50 flex items-center gap-1.5 w-full">
         <select 
           :id="providerId"
           v-model="provider" 
           data-test="provider-select"
-          class="bg-space-800/80 border border-space-600 rounded px-2 py-1 text-xs font-mono text-space-200 outline-none focus:border-cyan-500/50 transition-colors"
+          class="w-[36%] min-w-0 bg-space-800/90 border border-space-700 hover:border-cyan-500/40 rounded px-1.5 py-1 text-[10px] font-mono font-bold text-cyan-300 outline-none truncate cursor-pointer transition-colors"
+          title="Provider"
         >
           <option v-for="p in store.providers" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
-      </div>
 
-      <div class="flex justify-between items-center">
-        <label :for="modelId" class="text-[10px] text-space-400 uppercase tracking-widest font-mono">Model</label>
         <select 
           :id="modelId"
           v-model="modelName" 
           data-test="model-select"
-          class="bg-space-800/80 border border-space-600 rounded px-2 py-1 text-xs font-mono text-space-200 outline-none focus:border-cyan-500/50 transition-colors max-w-[120px] truncate"
+          class="flex-1 min-w-0 bg-space-800/90 border border-space-700 hover:border-cyan-500/40 rounded px-1.5 py-1 text-[10px] font-mono font-bold text-cyan-300 outline-none truncate cursor-pointer transition-colors"
+          title="Model"
         >
           <template v-for="p in store.providers" :key="p.id">
             <template v-if="provider === p.id">
@@ -143,15 +202,19 @@ const agentColor = computed(() => {
         </select>
       </div>
 
-      <!-- Observability Metrics Badges -->
-      <div v-if="tokensConsumed !== undefined || latencySeconds !== undefined" class="pt-2 border-t border-space-800/80 flex items-center justify-between text-[9px] font-mono">
-        <span v-if="tokensConsumed !== undefined" class="flex items-center space-x-1 text-space-400">
-          <span class="text-space-500 uppercase">Tokens:</span>
-          <span class="text-slate-300 font-semibold">{{ tokensConsumed }}</span>
+      <!-- Observability Metrics Badges (Tokens, Latency, Turns) -->
+      <div class="pt-1.5 mt-1 border-t border-space-800/80 flex items-center justify-between text-[10px] font-mono text-slate-400">
+        <span class="flex items-center space-x-1" title="Tokens consumidos">
+          <span>🪙</span>
+          <span class="text-slate-300 font-semibold">{{ tokensConsumed !== undefined ? tokensConsumed : 0 }}</span>
         </span>
-        <span v-if="latencySeconds !== undefined" class="flex items-center space-x-1 text-space-400">
-          <span class="text-space-500 uppercase">Lat:</span>
-          <span class="text-slate-300 font-semibold">{{ latencySeconds.toFixed(2) }}s</span>
+        <span class="flex items-center space-x-1" title="Latencia">
+          <span>⚡</span>
+          <span class="text-slate-300 font-semibold">{{ latencySeconds !== undefined ? latencySeconds.toFixed(2) + 's' : '--' }}</span>
+        </span>
+        <span class="flex items-center space-x-1" title="Turnos de intervención">
+          <span>🔄</span>
+          <span class="text-slate-300 font-semibold">{{ turnsCount !== undefined ? turnsCount : 0 }}</span>
         </span>
       </div>
     </div>

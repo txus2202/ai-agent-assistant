@@ -12,6 +12,10 @@ const props = defineProps<{
   isDebating: boolean
 }>()
 
+const emit = defineEmits<{
+  (e: 'toggle-mic'): void
+}>()
+
 const store = useDebateStore()
 const chatScroll = ref<HTMLElement | null>(null)
 const activeTab = ref<'chat' | 'observability'>('chat')
@@ -411,17 +415,22 @@ watch(() => props.messages.length, async (newLen) => {
   }
 })
 
+const setActiveTab = (tab: 'chat' | 'observability') => {
+  activeTab.value = tab
+}
+
 defineExpose({
-  onSubmit
+  onSubmit,
+  setActiveTab
 })
 </script>
 
 <template>
   <div class="flex flex-col h-full bg-[#060a11] border-r border-space-800 font-sans">
     
-    <!-- Top Tabs -->
-    <div class="flex items-center justify-between p-4 border-b border-space-800">
-      <div class="flex space-x-6">
+    <!-- Top Tabs (hidden on mobile <md since mobile uses the bottom navigation bar) -->
+    <div class="hidden md:flex items-center justify-between p-3.5 md:p-4 border-b border-space-800">
+      <div class="flex space-x-4 lg:space-x-6">
         <button 
           @click="activeTab = 'observability'"
           data-test="tab-observability"
@@ -439,7 +448,7 @@ defineExpose({
           class="flex items-center space-x-2 font-mono text-[10px] tracking-widest uppercase transition-colors"
         >
           <MessageSquare class="w-3.5 h-3.5" />
-          <span>Chat con IA</span>
+          <span>Chat</span>
           <span v-if="activeTab === 'chat'" class="bg-neon-cyan/20 text-neon-cyan px-1.5 py-0.5 rounded-sm text-[8px] ml-2">ACTIVO</span>
         </button>
       </div>
@@ -450,22 +459,22 @@ defineExpose({
     <div v-else class="flex flex-col flex-1 overflow-hidden">
 
     <!-- Context Header -->
-    <div class="p-5 border-b border-space-800/50 relative">
-      <div class="absolute left-4 top-6 w-2 h-2 rounded-full bg-neon-cyan glow-cyan"></div>
-      <div class="pl-5 flex justify-between items-start">
-        <div>
-          <h2 class="font-bold text-white text-[13px] tracking-wider font-mono">CONVERSACIÓN</h2>
+    <div class="p-3.5 md:p-5 border-b border-space-800/50 relative">
+      <div class="absolute left-3.5 md:left-4 top-5 md:top-6 w-2 h-2 rounded-full bg-neon-cyan glow-cyan"></div>
+      <div class="pl-5 flex justify-between items-start gap-2">
+        <div class="min-w-0">
+          <h2 class="font-bold text-white text-xs md:text-[13px] tracking-wider font-mono">CONVERSACIÓN</h2>
           <div class="flex items-center space-x-2 mt-1">
-            <span class="w-1.5 h-1.5 rounded-full bg-neon-green"></span>
-            <span class="text-[9px] text-neon-cyan/70 font-mono tracking-widest uppercase">MODO CONSULTA MULTI-AGENTE</span>
+            <span class="w-1.5 h-1.5 rounded-full bg-neon-green shrink-0"></span>
+            <span class="text-[9px] text-neon-cyan/70 font-mono tracking-widest uppercase truncate">MODO CONSULTA MULTI-AGENTE</span>
           </div>
         </div>
-        <div class="flex items-center space-x-2">
+        <div class="flex items-center space-x-1.5 md:space-x-2 shrink-0">
           <!-- Learn Button -->
           <button 
             @click="handleLearnSession"
             :disabled="store.isLearningSession || messages.length === 0 || props.isDebating"
-            class="text-[9px] border border-cyan-800/80 hover:border-neon-cyan text-neon-cyan font-mono px-3 py-1.5 rounded transition-all uppercase tracking-widest bg-[#040e1a] hover:bg-neon-cyan/15 flex items-center space-x-1.5 disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_0_10px_rgba(0,229,255,0.08)] cursor-pointer"
+            class="text-[9px] border border-cyan-800/80 hover:border-neon-cyan text-neon-cyan font-mono px-2.5 md:px-3 py-1.5 min-h-[34px] md:min-h-0 rounded transition-all uppercase tracking-widest bg-[#040e1a] hover:bg-neon-cyan/15 flex items-center space-x-1.5 disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_0_10px_rgba(0,229,255,0.08)] cursor-pointer"
             title="Pedir a Metis que sintetice y aprenda la sesión en Obsidian Vault"
             data-test="learn-session-btn"
           >
@@ -476,7 +485,7 @@ defineExpose({
           <!-- Clear Chat -->
           <button 
             @click="clearChat"
-            class="text-[9px] border border-space-700 hover:border-space-500 text-space-400 hover:text-slate-300 font-mono px-3 py-1.5 rounded transition-colors uppercase tracking-widest bg-space-900"
+            class="text-[9px] border border-space-700 hover:border-space-500 text-space-400 hover:text-slate-300 font-mono px-2.5 md:px-3 py-1.5 min-h-[34px] md:min-h-0 rounded transition-colors uppercase tracking-widest bg-space-900"
           >
             Limpiar
           </button>
@@ -713,7 +722,7 @@ defineExpose({
             type="button"
             @click="handleHitlApprove"
             data-test="hitl-approve-btn"
-            class="flex-1 min-w-[75px] py-1.5 bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/60 text-emerald-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+            class="flex-1 min-w-[75px] min-h-[38px] md:min-h-0 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/60 text-emerald-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
           >
             <span>✓ Aceptar</span>
           </button>
@@ -721,7 +730,7 @@ defineExpose({
             type="button"
             @click="focusRefineInput"
             data-test="hitl-refine-btn"
-            class="flex-1 min-w-[75px] py-1.5 bg-neon-amber/15 hover:bg-neon-amber/30 border border-neon-amber/60 text-neon-amber font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+            class="flex-1 min-w-[75px] min-h-[38px] md:min-h-0 py-1.5 bg-neon-amber/15 hover:bg-neon-amber/30 border border-neon-amber/60 text-neon-amber font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
           >
             <span>✏ Refinar</span>
           </button>
@@ -729,7 +738,7 @@ defineExpose({
             type="button"
             @click="handleHitlDivert"
             data-test="hitl-divert-btn"
-            class="flex-1 min-w-[75px] py-1.5 bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/60 text-cyan-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+            class="flex-1 min-w-[75px] min-h-[38px] md:min-h-0 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/60 text-cyan-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
             title="Desviar deliberación a los agentes seleccionados arriba"
           >
             <span>🔀 Desviar</span>
@@ -738,7 +747,7 @@ defineExpose({
             type="button"
             @click="handleHitlFinish"
             data-test="hitl-finish-btn"
-            class="flex-1 min-w-[75px] py-1.5 bg-purple-500/15 hover:bg-purple-500/30 border border-purple-500/60 text-purple-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+            class="flex-1 min-w-[75px] min-h-[38px] md:min-h-0 py-1.5 bg-purple-500/15 hover:bg-purple-500/30 border border-purple-500/60 text-purple-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
             title="Concluir el debate anticipadamente y consolidar dictamen final"
           >
             <span>🏁 Finalizar</span>
@@ -747,14 +756,14 @@ defineExpose({
             type="button"
             @click="handleHitlReject"
             data-test="hitl-reject-btn"
-            class="flex-1 min-w-[75px] py-1.5 bg-red-500/15 hover:bg-red-500/30 border border-red-500/60 text-red-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+            class="flex-1 min-w-[75px] min-h-[38px] md:min-h-0 py-1.5 bg-red-500/15 hover:bg-red-500/30 border border-red-500/60 text-red-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
           >
             <span>✗ Rechazar</span>
           </button>
         </div>
       </div>
 
-      <form @submit.prevent="onSubmit" class="flex flex-col gap-3 relative">
+      <form @submit.prevent="onSubmit" class="flex flex-col gap-2.5 md:gap-3 relative">
         <div class="flex items-center gap-2">
           <!-- Custom Agent Dropdown -->
           <div class="relative" ref="agentDropdownRef">
@@ -763,7 +772,7 @@ defineExpose({
               @click="toggleAgentDropdown"
               :disabled="isDebating && !store.isHitlRequired"
               data-test="agent-dropdown-btn"
-              class="flex items-center justify-between w-40 bg-[#030509] border border-cyan-900/50 hover:border-neon-cyan/80 rounded px-3 py-1.5 text-[11px] font-mono text-cyan-50 shadow-[0_0_10px_-2px_rgba(0,229,255,0.1)] transition-all disabled:opacity-50"
+              class="flex items-center justify-between w-40 min-h-[36px] md:min-h-0 bg-[#030509] border border-cyan-900/50 hover:border-neon-cyan/80 rounded px-3 py-1.5 text-[11px] font-mono text-cyan-50 shadow-[0_0_10px_-2px_rgba(0,229,255,0.1)] transition-all disabled:opacity-50"
             >
               <span class="truncate">{{ selectedAgentLabel }}</span>
               <ChevronDown class="w-3 h-3 text-neon-cyan ml-2 shrink-0" />
@@ -783,7 +792,7 @@ defineExpose({
                   type="button"
                   @click="selectAgent(agent.value)"
                   data-test="agent-option"
-                  class="w-full text-left px-3 py-2 transition-colors flex items-center justify-between"
+                  class="w-full text-left px-3 py-2.5 md:py-2 transition-colors flex items-center justify-between"
                   :class="selectedAgent === agent.value ? 'bg-neon-cyan/10 text-neon-cyan' : 'text-slate-300 hover:bg-space-800 hover:text-cyan-200'"
                 >
                   <span class="flex items-center space-x-2">
@@ -802,7 +811,7 @@ defineExpose({
           <label 
             v-if="selectedAgent === 'learning'" 
             for="chat-file-upload" 
-            class="cursor-pointer text-space-400 hover:text-neon-cyan transition-colors flex items-center justify-center px-3 py-1.5 border border-cyan-900/50 rounded bg-[#030509] hover:bg-space-800 shadow-[0_0_10px_-2px_rgba(0,229,255,0.05)] hover:border-neon-cyan/50" 
+            class="cursor-pointer text-space-400 hover:text-neon-cyan transition-colors flex items-center justify-center px-3 py-1.5 min-h-[36px] md:min-h-0 border border-cyan-900/50 rounded bg-[#030509] hover:bg-space-800 shadow-[0_0_10px_-2px_rgba(0,229,255,0.05)] hover:border-neon-cyan/50" 
             title="Adjuntar PDF, Markdown o Imagen para Metis"
           >
             <span class="sr-only">Adjuntar archivo</span>
@@ -819,27 +828,43 @@ defineExpose({
           </label>
         </div>
         
-        <div class="relative flex items-center w-full">
-          <label for="chat-message-input" class="sr-only">Mensaje</label>
-          <textarea 
-            id="chat-message-input"
-            ref="chatInputRef"
-            v-model="store.draftMessage"
-            :placeholder="store.isHitlRequired ? 'Introduce tus instrucciones de refinamiento...' : 'Escribe tu consulta o pulsa el micrófono del orbe...'"
-            rows="1"
-            class="w-full bg-[#030509] border rounded-lg pl-4 pr-12 py-[3px] text-sm text-slate-200 focus:outline-none transition-all placeholder:text-[11px] placeholder-space-600 font-mono shadow-inner resize-none custom-scrollbar min-h-[44px]"
-            :class="store.isHitlRequired ? 'border-neon-amber/60 focus:border-neon-amber focus:ring-1 focus:ring-neon-amber/50' : 'border-space-700 focus:border-neon-cyan'"
-            :disabled="isDebating && !store.isHitlRequired"
-            @keydown.enter.prevent="onSubmit"
-          ></textarea>
-          
-          <button 
-            type="submit"
-            :disabled="!store.draftMessage.trim() || (isDebating && !store.isHitlRequired)"
-            class="absolute right-2 p-1.5 bg-[#00e5ff] text-[#060a11] hover:bg-cyan-400 disabled:opacity-50 disabled:hover:bg-[#00e5ff] transition-colors rounded shadow-[0_0_10px_rgba(0,229,255,0.3)] cursor-pointer"
-            :title="store.isHitlRequired ? 'Enviar refinamiento' : 'Enviar mensaje'"
+        <div class="flex items-end gap-2 w-full">
+          <div class="relative flex items-center flex-1">
+            <label for="chat-message-input" class="sr-only">Mensaje</label>
+            <textarea 
+              id="chat-message-input"
+              ref="chatInputRef"
+              v-model="store.draftMessage"
+              :placeholder="store.isHitlRequired ? 'Introduce tus instrucciones de refinamiento...' : 'Escribe tu consulta o pulsa el micrófono...'"
+              rows="3"
+              class="w-full bg-[#030509] border rounded-xl pl-3.5 md:pl-4 pr-12 py-3 text-sm text-slate-200 focus:outline-none transition-all placeholder:text-[11px] placeholder-space-600 font-mono shadow-inner resize-none custom-scrollbar min-h-[76px] sm:min-h-[88px]"
+              :class="store.isHitlRequired ? 'border-neon-amber/60 focus:border-neon-amber focus:ring-1 focus:ring-neon-amber/50' : 'border-space-700 focus:border-neon-cyan'"
+              :disabled="isDebating && !store.isHitlRequired"
+              @keydown.enter.prevent="onSubmit"
+            ></textarea>
+            
+            <button 
+              type="submit"
+              :disabled="!store.draftMessage.trim() || (isDebating && !store.isHitlRequired)"
+              class="absolute right-2.5 bottom-2.5 p-2 min-w-[36px] min-h-[36px] flex items-center justify-center bg-[#00e5ff] text-[#060a11] hover:bg-cyan-400 disabled:opacity-50 disabled:hover:bg-[#00e5ff] transition-all rounded-lg shadow-[0_0_10px_rgba(0,229,255,0.3)] cursor-pointer"
+              :title="store.isHitlRequired ? 'Enviar refinamiento' : 'Enviar mensaje'"
+            >
+              <SendHorizontal class="w-4 h-4 md:w-5 md:h-5" />
+            </button>
+          </div>
+
+          <!-- Tactile Direct Microphone Button (44x44px touch target) -->
+          <button
+            type="button"
+            data-test="chat-mic-btn"
+            @click="emit('toggle-mic')"
+            :class="store.isRecording
+              ? 'bg-red-900/40 border-red-500 text-red-300 shadow-[0_0_14px_rgba(239,68,68,0.45)] animate-pulse'
+              : 'bg-[#030509] hover:bg-space-800 border-cyan-500/40 hover:border-neon-cyan text-neon-cyan shadow-[0_0_12px_rgba(0,229,255,0.15)]'"
+            class="w-11 h-11 mb-1 shrink-0 rounded-xl border flex items-center justify-center transition-all active:scale-95 cursor-pointer"
+            :title="store.isRecording ? 'Detener grabación de voz' : 'Hablar con Atenea por micrófono'"
           >
-            <SendHorizontal class="w-5 h-5" />
+            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19v3"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><rect x="9" y="2" width="6" height="13" rx="3"></rect></svg>
           </button>
         </div>
       </form>

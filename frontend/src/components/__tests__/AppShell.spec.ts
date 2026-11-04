@@ -20,19 +20,29 @@ describe('AppShell.vue', () => {
     vi.restoreAllMocks()
   })
 
+  const setActiveTabSpy = vi.fn()
+  const resizeCanvasSpy = vi.fn()
+  const toggleRecordingSpy = vi.fn()
+
   const createWrapper = () => {
     return mount(AppShell, {
       global: {
         stubs: {
           AppHeader: { template: '<div data-test="app-header"></div>' },
           ChatPanel: {
-            template: '<div data-test="chat-panel"></div>',
-            methods: { onSubmit: vi.fn() }
+            name: 'ChatPanel',
+            template: '<div data-test="chat-panel" @click="$emit(\'toggle-mic\')"></div>',
+            methods: { onSubmit: vi.fn(), setActiveTab: setActiveTabSpy }
           },
           ParticleOrb: {
             name: 'ParticleOrb',
             template: '<div data-test="particle-orb" :data-color="activeAgentColor"></div>',
-            props: ['activeAgentColor', 'isDebating']
+            props: ['activeAgentColor', 'isDebating'],
+            methods: { resizeCanvas: resizeCanvasSpy, toggleRecording: toggleRecordingSpy }
+          },
+          ObservabilityPanel: {
+            name: 'ObservabilityPanel',
+            template: '<div data-test="observability-panel"></div>'
           }
         }
       }
@@ -122,5 +132,71 @@ describe('AppShell.vue', () => {
 
     const wrapper = createWrapper()
     expect(wrapper.text()).toContain('HITL Activo')
+  })
+
+  it('switches mobile tabs via bottom navigation bar and syncs with ChatPanel and ParticleOrb', async () => {
+    const wrapper = createWrapper()
+
+    // Default mobile tab is 'chat'
+    expect(wrapper.find('[data-test="shell-left-column"]').classes()).toContain('flex')
+    expect(wrapper.find('[data-test="mobile-mini-orb-bar"]').exists()).toBe(true)
+
+    // Switch to 'voice' (Voz 3D)
+    await wrapper.find('[data-test="mobile-nav-voice"]').trigger('click')
+    expect(wrapper.find('[data-test="shell-left-column"]').classes()).toContain('hidden')
+    expect(wrapper.find('[data-test="shell-orb-column"]').classes()).toContain('flex')
+    expect(resizeCanvasSpy).toHaveBeenCalled()
+
+    // Switch to 'agents'
+    await wrapper.find('[data-test="mobile-nav-agents"]').trigger('click')
+    expect(wrapper.find('[data-test="shell-agents-column"]').classes()).toContain('flex')
+
+    // Switch to 'telemetry'
+    await wrapper.find('[data-test="mobile-nav-telemetry"]').trigger('click')
+    expect(setActiveTabSpy).toHaveBeenCalledWith('observability')
+    expect(wrapper.find('[data-test="shell-left-column"]').classes()).toContain('flex')
+
+    // Switch back to 'chat'
+    await wrapper.find('[data-test="mobile-nav-chat"]').trigger('click')
+    expect(setActiveTabSpy).toHaveBeenCalledWith('chat')
+  })
+
+  it('switches to 3D voice view when tapping the mobile contextual mini-orb bar and shows active agent summary', async () => {
+    const store = useDebateStore()
+    store.agents = [
+      { role: 'diagrammer', name: 'Aracne', color_hex: '#ec4899', state: 'ACTIVE' }
+    ]
+
+    const wrapper = createWrapper()
+    const miniOrbBar = wrapper.find('[data-test="mobile-mini-orb-bar"]')
+    expect(miniOrbBar.text()).toContain('Aracne sintetizando...')
+
+    await miniOrbBar.trigger('click')
+    expect(wrapper.find('[data-test="shell-orb-column"]').classes()).toContain('flex')
+  })
+
+  it('switches tablet right column tabs between Orbe 3D, Agentes, and Telemetría', async () => {
+    const wrapper = createWrapper()
+
+    // Default tablet tab is 'orb'
+    expect(wrapper.find('[data-test="shell-tablet-telemetry"]').exists()).toBe(false)
+
+    // Switch to 'agents'
+    await wrapper.find('[data-test="tablet-tab-agents"]').trigger('click')
+    expect(wrapper.find('[data-test="shell-agents-column"]').classes()).toContain('md:flex')
+
+    // Switch to 'telemetry'
+    await wrapper.find('[data-test="tablet-tab-telemetry"]').trigger('click')
+    expect(wrapper.find('[data-test="shell-tablet-telemetry"]').exists()).toBe(true)
+
+    // Switch back to 'orb'
+    await wrapper.find('[data-test="tablet-tab-orb"]').trigger('click')
+    expect(wrapper.find('[data-test="shell-orb-column"]').classes()).toContain('md:flex')
+  })
+
+  it('triggers ParticleOrb toggleRecording when ChatPanel emits toggle-mic', async () => {
+    const wrapper = createWrapper()
+    await wrapper.find('[data-test="chat-panel"]').trigger('click')
+    expect(toggleRecordingSpy).toHaveBeenCalled()
   })
 })

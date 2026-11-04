@@ -2,11 +2,14 @@
 import { onMounted } from 'vue'
 import { useDebateStore } from './stores/debate'
 import { useConfigStore } from './stores/config'
+import { useTheme } from './composables/useTheme'
 
 const store = useDebateStore()
 const configStore = useConfigStore()
+const { initTheme } = useTheme()
 
 onMounted(async () => {
+  initTheme()
   await Promise.all([
     configStore.loadProviders(),
     configStore.loadAgentsConfig()

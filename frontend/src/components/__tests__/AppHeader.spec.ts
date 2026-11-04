@@ -20,7 +20,9 @@ vi.mock('@lucide/vue', () => ({
   History: { template: '<svg></svg>' },
   ChevronDown: { template: '<svg></svg>' },
   Ear: { template: '<svg></svg>' },
-  EarOff: { template: '<svg></svg>' }
+  EarOff: { template: '<svg></svg>' },
+  Sun: { template: '<svg data-test="sun-icon"></svg>' },
+  Moon: { template: '<svg data-test="moon-icon"></svg>' }
 }))
 
 // Mock configStore
@@ -49,9 +51,27 @@ describe('AppHeader.vue', () => {
 
   it('renders correctly with version', () => {
     const wrapper = mount(AppHeader)
-    expect(wrapper.text()).toContain('System Core v')
+    expect(wrapper.text()).toContain('System v')
+    expect(wrapper.text()).not.toContain('System Core')
     expect(wrapper.text()).toContain('A.T.E.N.E.A.')
     expect(wrapper.text()).toContain('SUPERVISOR: GEMINI - PRO 1.5')
+  })
+
+  it('renders theme toggle button and toggles dark/light mode', async () => {
+    const wrapper = mount(AppHeader)
+    const toggleBtn = wrapper.find('[data-test="theme-toggle-btn"]')
+    expect(toggleBtn.exists()).toBe(true)
+    
+    // Initial state is dark mode (shows moon)
+    expect(wrapper.find('[data-test="moon-icon"]').exists()).toBe(true)
+
+    // Click to toggle to light mode
+    await toggleBtn.trigger('click')
+    expect(wrapper.find('[data-test="sun-icon"]').exists()).toBe(true)
+
+    // Click again to toggle back to dark mode
+    await toggleBtn.trigger('click')
+    expect(wrapper.find('[data-test="moon-icon"]').exists()).toBe(true)
   })
 
   it('navigates to history on button click', async () => {

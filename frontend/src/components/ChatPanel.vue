@@ -571,7 +571,7 @@ defineExpose({
               <span class="text-[10px] font-mono tracking-wider uppercase font-bold">USUARIO (TÚ)</span>
               <User class="w-3.5 h-3.5" />
             </div>
-            <div class="bg-[#0a192f] border border-neon-cyan/50 rounded-xl rounded-tr-none px-4 py-3 sm:px-5 sm:py-4 text-sm text-cyan-50 shadow-[0_0_15px_-3px_rgba(0,229,255,0.15)] leading-relaxed break-words break-all [overflow-wrap:anywhere] min-w-0 max-w-full overflow-hidden">
+            <div class="bg-[#0a192f] border border-neon-cyan/50 rounded-xl rounded-tr-none px-4 py-3 sm:px-5 sm:py-4 text-sm text-cyan-50 shadow-[0_0_15px_-3px_rgba(0,229,255,0.15)] leading-relaxed break-words [overflow-wrap:break-word] min-w-0 max-w-full overflow-hidden">
               {{ msg.content }}
             </div>
           </div>
@@ -615,7 +615,7 @@ defineExpose({
             >
               <template v-for="(block, blockIdx) in parseMessageContent(msg.content)" :key="blockIdx">
                 <!-- Text block -->
-                <div v-if="block.type === 'text'" class="whitespace-pre-wrap leading-relaxed break-words break-all [overflow-wrap:anywhere] min-w-0 max-w-full">
+                <div v-if="block.type === 'text'" class="whitespace-pre-wrap leading-relaxed break-words [overflow-wrap:break-word] min-w-0 max-w-full">
                   {{ block.content }}
                 </div>
 

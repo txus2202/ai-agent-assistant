@@ -24,7 +24,7 @@ const activeAgentColor = computed(() => {
   if (store.activeTtsRole) {
     const ttsAgent = store.findAgent ? store.findAgent(store.activeTtsRole) : store.agents.find(a => a.role === store.activeTtsRole)
     if (ttsAgent?.color_hex) return ttsAgent.color_hex
-    if (store.activeTtsRole === 'supervisor') return '#f59e0b'
+    if (store.activeTtsRole === 'supervisor' || store.activeTtsRole.toLowerCase() === 'atenea') return '#f59e0b'
     return DEFAULT_COLOR
   }
   
@@ -40,7 +40,7 @@ const activeAgentStatusTitle = computed(() => {
   }
   if (store.activeTtsRole) {
     const ttsAgent = store.findAgent ? store.findAgent(store.activeTtsRole) : store.agents.find(a => a.role === store.activeTtsRole)
-    const speakerName = ttsAgent?.name || (store.activeTtsRole === 'supervisor' ? 'Atenea' : store.activeTtsRole)
+    const speakerName = ttsAgent?.name || ((store.activeTtsRole === 'supervisor' || store.activeTtsRole.toLowerCase() === 'atenea') ? 'Atenea' : store.activeTtsRole)
     return `${speakerName} hablando...`
   }
   const activeAgent = store.agents.find(a => a.state === 'ACTIVE')

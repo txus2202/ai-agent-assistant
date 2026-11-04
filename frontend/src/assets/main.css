@@ -199,9 +199,10 @@ html.light #orbRing3 {
   border-color: rgba(148, 163, 184, 0.45) !important;
 }
 
+/* Ambient glow in light mode inherits active agent color when debating */
 html.light #orbGlowCore1,
 html.light #orbGlowCore2 {
-  display: none !important;
+  opacity: 0.9;
 }
 
 /* Tabs: Agentes & Observabilidad in Light Mode */

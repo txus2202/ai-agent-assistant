@@ -36,7 +36,7 @@ describe('AppHeader.vue', () => {
 
   it('renders correctly with version and without supervisor info', () => {
     const wrapper = mount(AppHeader)
-    expect(wrapper.text()).toContain('System Core v')
+    expect(wrapper.text().toUpperCase()).toContain('SYSTEM CORE V')
     expect(wrapper.text()).toContain('A.T.E.N.E.A.')
     expect(wrapper.text()).not.toContain('SUPERVISOR:')
   })

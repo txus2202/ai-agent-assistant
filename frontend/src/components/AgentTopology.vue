@@ -1,15 +1,33 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
+import { Bot, Activity } from '@lucide/vue'
 import { useDebateStore, type Agent } from '../stores/debate'
 import AgentCard from './AgentCard.vue'
+import ObservabilityPanel from './ObservabilityPanel.vue'
 
 const store = useDebateStore()
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   agents: Agent[]
-}>()
+  initialTab?: 'agents' | 'observability'
+}>(), {
+  initialTab: 'agents'
+})
+
+const activeTab = ref<'agents' | 'observability'>(props.initialTab)
+watch(() => props.initialTab, (val) => {
+  if (val) activeTab.value = val
+})
 
 const listContainer = ref<HTMLElement | null>(null)
+
+const setActiveTab = (tab: 'agents' | 'observability') => {
+  activeTab.value = tab
+}
+
+defineExpose({
+  setActiveTab
+})
 
 const displayedAgents = computed(() => {
   return (props.agents || []).filter(a => a.role !== 'supervisor')
@@ -42,47 +60,76 @@ watch(
 </script>
 
 <template>
-  <div class="h-full flex flex-col border-l border-space-800 bg-space-900/50 backdrop-blur-sm">
-    <!-- Header -->
-    <div class="p-3 sm:p-4 border-b border-space-800 flex items-center justify-between gap-2">
-      <h2 class="text-xs font-mono text-neon-cyan tracking-[0.15em] uppercase flex items-center shrink-0">
-        <span class="inline-block w-2 h-2 bg-neon-cyan rounded-full mr-2 animate-pulse"></span>
-        AGENTES
-      </h2>
-    </div>
+  <div class="h-full flex flex-col border-l border-space-800 bg-space-900/50 backdrop-blur-sm min-h-0">
+    <!-- Header: Tabs for Agentes & Observabilidad -->
+    <div class="p-3 sm:p-3.5 border-b border-space-800 flex items-center justify-between shrink-0">
+      <div class="flex items-center gap-2 w-full">
+        <button 
+          type="button"
+          @click="activeTab = 'agents'"
+          data-test="tab-agents"
+          :class="activeTab === 'agents' ? 'text-neon-cyan border border-neon-cyan/40 bg-[#002b36]' : 'text-space-500 hover:text-slate-400 border-transparent hover:bg-space-900/60'"
+          class="flex-1 h-8 flex items-center justify-center px-2.5 font-mono text-[10px] tracking-wider uppercase transition-colors rounded border cursor-pointer"
+        >
+          <div class="flex items-center space-x-1.5 min-w-0">
+            <Bot class="w-3.5 h-3.5 shrink-0" />
+            <span>Agentes</span>
+          </div>
+        </button>
 
-    <!-- Scrollable Agent List -->
-    <div 
-      ref="listContainer"
-      data-test="topology-scroll-container" 
-      class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4"
-    >
-      <div v-if="displayedAgents.length === 0" data-test="empty-agents-message" class="text-xs text-slate-500 font-mono text-center py-8">
-        No agents available
+        <button 
+          type="button"
+          @click="activeTab = 'observability'"
+          data-test="tab-observability"
+          :class="activeTab === 'observability' ? 'text-neon-cyan border border-neon-cyan/40 bg-[#002b36]' : 'text-space-500 hover:text-slate-400 border-transparent hover:bg-space-900/60'"
+          class="flex-1 h-8 flex items-center justify-center px-2.5 font-mono text-[10px] tracking-wider uppercase transition-colors rounded border cursor-pointer"
+        >
+          <div class="flex items-center space-x-1.5 min-w-0">
+            <Activity class="w-3.5 h-3.5 shrink-0" />
+            <span>Observabilidad</span>
+          </div>
+        </button>
       </div>
-      <AgentCard
-        v-for="agent in displayedAgents"
-        :key="agent.role"
-        :role="agent.role"
-        :roleName="agent.name"
-        :description="agent.description"
-        :colorHex="agent.color_hex"
-        :state="isAgentActive(agent.role, agent.state) ? 'ACTIVE' : agent.state"
-        :tokensConsumed="agent.tokens"
-        :promptTokens="agent.promptTokens"
-        :completionTokens="agent.completionTokens"
-        :latencySeconds="agent.latency"
-        :turnsCount="agent.turns"
-        :usesRag="agent.uses_rag"
-        :supportsHitl="agent.supports_hitl"
-        :canIngestDocuments="agent.can_ingest_documents"
-        :topologyRoles="agent.topology_roles"
-      />
     </div>
 
-    <!-- Orchestration Panel (Bottom Fixed) -->
-    <div class="p-4 border-t border-space-800 bg-space-900">
-      <slot name="orchestration"></slot>
-    </div>
+    <!-- Observability View -->
+    <ObservabilityPanel v-if="activeTab === 'observability'" class="flex-1 min-h-0 overflow-y-auto" />
+
+    <!-- Agents View (List + Orchestration Footer) -->
+    <template v-else>
+      <!-- Scrollable Agent List -->
+      <div 
+        ref="listContainer"
+        data-test="topology-scroll-container" 
+        class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4 min-h-0"
+      >
+        <div v-if="displayedAgents.length === 0" data-test="empty-agents-message" class="text-xs text-slate-500 font-mono text-center py-8">
+          No agents available
+        </div>
+        <AgentCard
+          v-for="agent in displayedAgents"
+          :key="agent.role"
+          :role="agent.role"
+          :roleName="agent.name"
+          :description="agent.description"
+          :colorHex="agent.color_hex"
+          :state="isAgentActive(agent.role, agent.state) ? 'ACTIVE' : agent.state"
+          :tokensConsumed="agent.tokens"
+          :promptTokens="agent.promptTokens"
+          :completionTokens="agent.completionTokens"
+          :latencySeconds="agent.latency"
+          :turnsCount="agent.turns"
+          :usesRag="agent.uses_rag"
+          :supportsHitl="agent.supports_hitl"
+          :canIngestDocuments="agent.can_ingest_documents"
+          :topologyRoles="agent.topology_roles"
+        />
+      </div>
+
+      <!-- Orchestration Panel (Bottom Fixed) -->
+      <div class="p-4 border-t border-space-800 bg-space-900 shrink-0">
+        <slot name="orchestration"></slot>
+      </div>
+    </template>
   </div>
 </template>

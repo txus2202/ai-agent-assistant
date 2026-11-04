@@ -73,6 +73,35 @@ describe('AgentTopology.vue', () => {
     expect(text).toContain('NL Interpreter')
     expect(text).toContain('Senior Architect')
   })
+
+  it('switches between Agentes and Observabilidad tabs', async () => {
+    const wrapper = mount(AgentTopology, {
+      props: {
+        agents: [
+          { role: 'nl_interpreter', name: 'NL Interpreter', state: 'STANDBY', color_hex: '#00e5ff' }
+        ]
+      }
+    })
+
+    // Initially on agents tab
+    const agentsTab = wrapper.find('[data-test="tab-agents"]')
+    const obsTab = wrapper.find('[data-test="tab-observability"]')
+    expect(agentsTab.exists()).toBe(true)
+    expect(obsTab.exists()).toBe(true)
+    expect(agentsTab.classes()).toContain('text-neon-cyan')
+    expect(wrapper.find('[data-test="topology-scroll-container"]').exists()).toBe(true)
+
+    // Switch to Observability tab
+    await obsTab.trigger('click')
+    expect(obsTab.classes()).toContain('text-neon-cyan')
+    expect(wrapper.text()).toContain('SYSTEM OBSERVABILITY')
+    expect(wrapper.find('[data-test="topology-scroll-container"]').exists()).toBe(false)
+
+    // Switch back to Agentes tab
+    await agentsTab.trigger('click')
+    expect(agentsTab.classes()).toContain('text-neon-cyan')
+    expect(wrapper.find('[data-test="topology-scroll-container"]').exists()).toBe(true)
+  })
 })
 
 

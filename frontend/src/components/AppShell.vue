@@ -13,6 +13,7 @@ type TabletRightTab = 'orb' | 'agents' | 'telemetry'
 const store = useDebateStore()
 const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null)
 const particleOrbRef = ref<InstanceType<typeof ParticleOrb> | null>(null)
+const agentTopologyRef = ref<InstanceType<typeof AgentTopology> | null>(null)
 
 const mobileTab = ref<MobileTab>('chat')
 const tabletRightTab = ref<TabletRightTab>('orb')
@@ -56,8 +57,11 @@ const selectMobileTab = async (tab: MobileTab) => {
   mobileTab.value = tab
   if (tab === 'telemetry') {
     chatPanelRef.value?.setActiveTab?.('observability')
+    agentTopologyRef.value?.setActiveTab?.('observability')
   } else if (tab === 'chat') {
     chatPanelRef.value?.setActiveTab?.('chat')
+  } else if (tab === 'agents') {
+    agentTopologyRef.value?.setActiveTab?.('agents')
   } else if (tab === 'voice') {
     await nextTick()
     particleOrbRef.value?.resizeCanvas?.()
@@ -89,7 +93,7 @@ const handleToggleMic = () => {
       <!-- Left Column: Chat Panel (+ Mobile Contextual Mini-Orb Bar) -->
       <div
         data-test="shell-left-column"
-        :class="(mobileTab === 'chat' || mobileTab === 'telemetry') ? 'flex' : 'hidden'"
+        :class="mobileTab === 'chat' ? 'flex' : 'hidden'"
         class="w-full md:flex md:w-[58%] lg:w-[380px] xl:w-[400px] lg:shrink-0 flex-1 md:flex-none md:h-full z-10 flex-col overflow-hidden min-h-0"
       >
         <!-- Mobile Contextual Mini-Orb Status Bar (Visible on mobile in Chat view) -->
@@ -143,7 +147,7 @@ const handleToggleMic = () => {
       <!-- Center & Right Workspace Group (Tablet 42% Right Column / Desktop Center + Right Columns) -->
       <div
         data-test="shell-secondary-group"
-        :class="(mobileTab === 'voice' || mobileTab === 'agents') ? 'flex' : 'hidden'"
+        :class="(mobileTab === 'voice' || mobileTab === 'agents' || mobileTab === 'telemetry') ? 'flex' : 'hidden'"
         class="w-full md:flex md:w-[42%] lg:w-auto flex-1 flex-col overflow-hidden min-w-0 min-h-0 md:h-full"
       >
         <!-- Tablet Segmented Control Header (768px - 1023px: md to lg) -->
@@ -210,17 +214,22 @@ const handleToggleMic = () => {
             />
           </div>
 
-          <!-- Right Column: Agent Topology & Orchestration -->
+          <!-- Right Column: Agent Topology & Observability -->
           <div
             data-test="shell-agents-column"
             :class="[
-              mobileTab === 'agents' ? 'flex' : 'hidden',
+              (mobileTab === 'agents' || mobileTab === 'telemetry') ? 'flex' : 'hidden',
               tabletRightTab === 'agents' ? 'md:flex' : 'md:hidden',
               'lg:flex'
             ]"
             class="w-full lg:w-[380px] xl:w-[400px] lg:shrink-0 flex-1 lg:flex-none h-full z-10 bg-space-900/50 backdrop-blur-md flex-col min-h-0"
           >
-            <AgentTopology class="flex-1" :agents="store.agents">
+            <AgentTopology 
+              ref="agentTopologyRef"
+              class="flex-1" 
+              :agents="store.agents"
+              :initial-tab="mobileTab === 'telemetry' ? 'observability' : 'agents'"
+            >
               <template #orchestration>
                 <div class="flex flex-col space-y-2">
                   <h3 class="text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-1">

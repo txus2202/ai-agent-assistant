@@ -112,7 +112,11 @@ const getRgbFromHex = (hex: string): string => {
 let currentExpansion = 1.0
 
 const FAR_Z = -700
-const WHITE_RGB = '255, 255, 255'
+const getIdleParticleRgb = () => {
+  return (typeof document !== 'undefined' && document.documentElement.classList.contains('light'))
+    ? '2, 132, 199'
+    : '255, 255, 255'
+}
 
 interface FrameState {
   cx: number
@@ -167,7 +171,7 @@ const drawConnectionsFor = (
 ) => {
   const p1 = particles[i]!
   const isActive = isActiveGroup(p1, frame)
-  const color = isActive ? frame.activeColorRGB : WHITE_RGB
+  const color = isActive ? frame.activeColorRGB : getIdleParticleRgb()
 
   // Only check connections for a subset to save performance
   for (let j = i + 1; j < particles.length; j += 2) {
@@ -194,7 +198,7 @@ const drawParticle = (c: CanvasRenderingContext2D, p: Particle3D, frame: FrameSt
   const px = frame.cx + p.x * perspective
   const py = frame.cy + p.y * perspective
   const isActive = isActiveGroup(p, frame)
-  const baseColor = isActive ? frame.activeColorRGB : WHITE_RGB
+  const baseColor = isActive ? frame.activeColorRGB : getIdleParticleRgb()
 
   const projSize = (isActive ? p.size * 1.5 : p.size) * perspective
   const depthAlpha = Math.max(0.05, Math.min(1, (p.z + BASE_RADIUS) / (BASE_RADIUS * 2.5)))
@@ -226,7 +230,7 @@ const wrap = (value: number, limit: number) => {
 }
 
 const drawAmbientDust = (c: CanvasRenderingContext2D, frame: FrameState) => {
-  const color = props.isDebating ? frame.activeColorRGB : WHITE_RGB
+  const color = props.isDebating ? frame.activeColorRGB : getIdleParticleRgb()
   for (const d of ambientDust) {
     d.x = wrap(d.x + d.vx * frame.speedMultiplier, orbWidth)
     d.y = wrap(d.y + d.vy * frame.speedMultiplier, orbHeight)
@@ -469,7 +473,8 @@ const animateWaveform = () => {
     wCtx.stroke()
   } else {
     // Idle flat line / fake pulse
-    wCtx.strokeStyle = 'rgba(255, 255, 255, 0.25)'
+    const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
+    wCtx.strokeStyle = isLight ? 'rgba(2, 132, 199, 0.4)' : 'rgba(255, 255, 255, 0.25)'
     wCtx.lineWidth = 1.2
     wCtx.beginPath()
     wCtx.moveTo(0, centerY)
@@ -479,7 +484,7 @@ const animateWaveform = () => {
     const pulseX = (waveOffset * 30) % width
     wCtx.beginPath()
     wCtx.arc(pulseX, centerY, 1.8, 0, Math.PI * 2)
-    wCtx.fillStyle = '#ffffff'
+    wCtx.fillStyle = isLight ? '#0284c7' : '#ffffff'
     wCtx.fill()
 
     waveOffset += 0.08
@@ -592,12 +597,14 @@ const voiceDotStyle = computed(() => {
       
       <!-- Central ambient luminous glow cores -->
       <div 
+        id="orbGlowCore1"
         class="absolute w-[260px] h-[260px] sm:w-[380px] sm:h-[380px] rounded-full blur-3xl pointer-events-none transition-colors duration-700"
-        :style="isDebating ? `background-color: ${activeAgentColor}1A` : 'background-color: rgba(255, 255, 255, 0.05)'"
+        :style="isDebating ? `background-color: ${activeAgentColor}1A` : ''"
       ></div>
       <div 
+        id="orbGlowCore2"
         class="absolute w-[200px] h-[200px] sm:w-[280px] sm:h-[280px] rounded-full blur-2xl pointer-events-none transition-colors duration-700"
-        :style="isDebating ? `background-color: ${activeAgentColor}33` : 'background-color: rgba(255, 255, 255, 0.1)'"
+        :style="isDebating ? `background-color: ${activeAgentColor}33` : ''"
       ></div>
 
       <canvas ref="orbCanvasRef" class="w-full h-full absolute inset-0 z-10"></canvas>

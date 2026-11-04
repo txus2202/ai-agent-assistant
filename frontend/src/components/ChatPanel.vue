@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
-import { SendHorizontal, Paperclip, Activity, MessageSquare, Check, User, Bot, ChevronDown, Copy, Eye, Brain, X, Edit3, GitFork, Flag } from '@lucide/vue'
+import { SendHorizontal, Paperclip, Check, User, Bot, ChevronDown, Copy, Eye, Brain, X, Edit3, GitFork, Flag } from '@lucide/vue'
 import { useDebateStore, type ChatMessage } from '../stores/debate'
-import ObservabilityPanel from './ObservabilityPanel.vue'
 import DiagramModal from './DiagramModal.vue'
 import { cleanTextForTts, splitTextIntoTtsChunks } from '../utils/ttsFilter'
 import { parseMessageContent } from '../utils/messageParser'
@@ -18,7 +17,6 @@ const emit = defineEmits<{
 
 const store = useDebateStore()
 const chatScroll = ref<HTMLElement | null>(null)
-const activeTab = ref<'chat' | 'observability'>('chat')
 const isDiagramModalOpen = ref(false)
 const activeDiagramCode = ref('')
 const activeDiagramTitle = ref('Diagrama de Arquitectura')
@@ -415,8 +413,8 @@ watch(() => props.messages.length, async (newLen) => {
   }
 })
 
-const setActiveTab = (tab: 'chat' | 'observability') => {
-  activeTab.value = tab
+const setActiveTab = (_tab: 'chat' | 'observability') => {
+  // Observability is now located in the right column alongside AgentTopology
 }
 
 defineExpose({
@@ -427,40 +425,6 @@ defineExpose({
 
 <template>
   <div class="flex flex-col h-full bg-[#060a11] border-r border-space-800 font-sans">
-    
-    <!-- Top Tabs (hidden on mobile <md since mobile uses the bottom navigation bar) -->
-    <div class="hidden md:flex items-center justify-between p-3.5 md:p-4 border-b border-space-800">
-      <div class="flex items-center gap-2 w-full max-w-[420px]">
-        <button 
-          @click="activeTab = 'chat'"
-          data-test="tab-chat"
-          :class="activeTab === 'chat' ? 'text-neon-cyan border border-neon-cyan/40 bg-[#002b36]' : 'text-space-500 hover:text-slate-400 border-transparent hover:bg-space-900/60'"
-          class="flex-1 max-w-[195px] h-8 flex items-center justify-center px-2.5 font-mono text-[10px] tracking-wider uppercase transition-colors rounded border cursor-pointer"
-        >
-          <div class="flex items-center space-x-1.5 min-w-0">
-            <MessageSquare class="w-3.5 h-3.5 shrink-0" />
-            <span>Chat</span>
-          </div>
-        </button>
-
-        <button 
-          @click="activeTab = 'observability'"
-          data-test="tab-observability"
-          :class="activeTab === 'observability' ? 'text-neon-cyan border border-neon-cyan/40 bg-[#002b36]' : 'text-space-500 hover:text-slate-400 border-transparent hover:bg-space-900/60'"
-          class="flex-1 max-w-[195px] h-8 flex items-center justify-center px-2.5 font-mono text-[10px] tracking-wider uppercase transition-colors rounded border cursor-pointer"
-        >
-          <div class="flex items-center space-x-1.5 min-w-0">
-            <Activity class="w-3.5 h-3.5 shrink-0" />
-            <span>Observabilidad</span>
-          </div>
-        </button>
-      </div>
-    </div>
-
-    <!-- Active View Content -->
-    <ObservabilityPanel v-if="activeTab === 'observability'" />
-    <div v-else class="flex flex-col flex-1 overflow-hidden">
-
     <!-- Context Header -->
     <div class="p-3.5 md:p-5 border-b border-space-800/50 relative">
       <div class="absolute left-3.5 md:left-4 top-5 md:top-6 w-2 h-2 rounded-full bg-neon-cyan glow-cyan"></div>
@@ -872,7 +836,6 @@ defineExpose({
           </div>
         </div>
       </form>
-    </div>
     </div>
 
     <!-- Diagram Modal Visualizer -->

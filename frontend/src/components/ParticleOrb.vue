@@ -604,9 +604,9 @@ const voiceDotStyle = computed(() => {
     </div>
 
     <!-- Waveform Audio Visualizer, Voice State Controller & Microphone HUD Deck (Static/Mock for Phase 5) -->
-    <div class="w-full bg-space-900/85 border-t border-slate-800/90 p-2.5 z-20 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3 backdrop-blur-md shrink-0">
+    <div class="w-full bg-space-900/85 border-t border-slate-800/90 px-4 sm:px-6 py-2.5 z-20 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3 backdrop-blur-md shrink-0">
       <!-- Audio Deck Left: Microphone Button & Status Selector -->
-      <div class="flex items-center space-x-3 w-full sm:w-auto justify-between sm:justify-start">
+      <div class="flex items-center space-x-3 w-full sm:w-auto justify-between sm:justify-start pl-1 sm:pl-2">
         <button id="micButton" 
           @click="toggleRecording"
           :class="isRecording ? 'border-red-500 bg-red-900/30' : 'border-slate-700 hover:border-cyan-400 bg-space-850 hover:bg-space-800'"
@@ -632,7 +632,7 @@ const voiceDotStyle = computed(() => {
       </div>
 
       <!-- Audio Status Caption Right -->
-      <div class="w-full md:w-auto text-[10px] text-slate-400 font-mono flex items-center space-x-2 justify-end shrink-0">
+      <div class="w-full md:w-auto text-[10px] text-slate-400 font-mono flex items-center space-x-2 justify-end shrink-0 pr-1 sm:pr-2">
         <span class="w-2 h-2 rounded-full transition-colors duration-300" id="voiceIndicatorDot" :style="voiceDotStyle"></span>
         <span class="text-slate-400 font-mono" id="voiceStateCaption">{{ voiceStateText }}</span>
       </div>

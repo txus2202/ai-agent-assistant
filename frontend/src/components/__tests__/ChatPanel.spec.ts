@@ -636,5 +636,21 @@ describe('ChatPanel.vue', () => {
     expect(banner.exists()).toBe(true)
     expect(banner.text()).toContain('Metis ha aprendido la solución')
   })
+
+  it('emits toggle-mic when direct microphone button is clicked and supports programmatic setActiveTab', async () => {
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: false }
+    })
+
+    const micBtn = wrapper.find('[data-test="chat-mic-btn"]')
+    expect(micBtn.exists()).toBe(true)
+    await micBtn.trigger('click')
+    expect(wrapper.emitted('toggle-mic')).toBeTruthy()
+
+    // Programmatic tab switch via exposed method
+    ;(wrapper.vm as unknown as { setActiveTab: (tab: 'chat' | 'observability') => void }).setActiveTab('observability')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findComponent({ name: 'ObservabilityPanel' }).exists()).toBe(true)
+  })
 })
 

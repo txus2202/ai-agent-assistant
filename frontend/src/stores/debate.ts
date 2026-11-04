@@ -12,7 +12,12 @@ export interface Agent {
   state: AgentState
   tokens?: number
   latency?: number
+  turns?: number
   startedAt?: number
+  uses_rag?: boolean
+  supports_hitl?: boolean
+  can_ingest_documents?: boolean
+  topology_roles?: string[]
 }
 
 export interface ChatMessage {
@@ -349,12 +354,26 @@ export const useDebateStore = defineStore('debate', () => {
       const response = await fetch('/api/config/agents')
       if (!response.ok) throw new Error('Failed to fetch agents config')
       
-      const data: Array<{ id: string, name: string, description?: string, color_hex?: string }> = await response.json()
+      const data: Array<{
+        id: string
+        name: string
+        description?: string
+        color_hex?: string
+        uses_rag?: boolean
+        supports_hitl?: boolean
+        can_ingest_documents?: boolean
+        topology_roles?: string[]
+      }> = await response.json()
       agents.value = data.map(agent => ({
         role: agent.id,
         name: agent.name,
         description: agent.description,
         color_hex: agent.color_hex,
+        uses_rag: agent.uses_rag,
+        supports_hitl: agent.supports_hitl,
+        can_ingest_documents: agent.can_ingest_documents,
+        topology_roles: agent.topology_roles,
+        turns: 0,
         state: 'STANDBY'
       }))
       isAgentsLoaded.value = true
@@ -456,6 +475,7 @@ export const useDebateStore = defineStore('debate', () => {
       a.state = 'STANDBY'
       a.tokens = 0
       a.latency = 0
+      a.turns = 0
     })
   }
 
@@ -596,6 +616,7 @@ export const useDebateStore = defineStore('debate', () => {
     const agent = findAgent(event.role)
     if (!agent) return
     agent.state = 'ACTIVE'
+    agent.turns = (agent.turns || 0) + 1
     agent.startedAt = Date.now()
     recordExecutionTrail(agent.name)
   }

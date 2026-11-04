@@ -18,11 +18,13 @@ def get_config_repo(settings: Annotated[Settings, Depends(get_settings)]) -> Sql
     return SqliteAgentConfigRepository(str(settings.sqlite_db_path))
 
 @router.get("/agents")
-async def get_agents_config(repo: Annotated[SqliteAgentConfigRepository, Depends(get_config_repo)]) -> List[Dict[str, str]]:
+async def get_agents_config(repo: Annotated[SqliteAgentConfigRepository, Depends(get_config_repo)]) -> List[Dict[str, Any]]:
     """
-    Devuelve la lista de agentes disponibles en el sistema con su nombre, descripción, proveedor y modelo configurados.
+    Devuelve la lista de agentes disponibles en el sistema con su nombre, descripción, proveedor, modelo y capacidades configuradas.
     """
     settings = get_settings()
+    from src.domain.agents.debate_topology import load_topology
+    top = load_topology()
     
     result = []
     for profile in get_all_profiles():
@@ -30,13 +32,30 @@ async def get_agents_config(repo: Annotated[SqliteAgentConfigRepository, Depends
         config = repo.find_by_role(role_value)
         if not config:
             config = repo.find_by_role(profile.display_name)
+        
+        top_roles = []
+        if profile.display_name in top.interpreters or profile.id in top.interpreters:
+            top_roles.append("interpreter")
+        if profile.display_name in top.proposers or profile.id in top.proposers:
+            top_roles.append("proposer")
+        if profile.display_name in top.reviewers or profile.id in top.reviewers:
+            top_roles.append("reviewer")
+        if profile.display_name in top.evaluators or profile.id in top.evaluators:
+            top_roles.append("evaluator")
+        if profile.display_name in top.implementers or profile.id in top.implementers:
+            top_roles.append("implementer")
+
         result.append({
             "id": role_value,
             "name": profile.display_name,
             "description": profile.description,
             "color_hex": profile.color_hex,
             "provider": config.provider if config else settings.default_provider,
-            "model_name": config.model_name if config else settings.default_model
+            "model_name": config.model_name if config else settings.default_model,
+            "uses_rag": profile.uses_rag,
+            "supports_hitl": profile.supports_hitl,
+            "can_ingest_documents": profile.can_ingest_documents,
+            "topology_roles": top_roles,
         })
     return result
 

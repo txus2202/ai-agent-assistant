@@ -17,6 +17,7 @@ Raises LLMProviderError for:
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 from src.domain.exceptions import LLMProviderError
@@ -101,6 +102,20 @@ class GeminiAdapter(ILLMProvider):
 
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
+
+    def complete_stream(self, prompt: str, model_name: str) -> Iterator[str]:
+        clean_model = model_name.strip().lower().replace(" ", "-")
+        try:
+            response = self._client.models.generate_content_stream(
+                model=clean_model,
+                contents=prompt,
+            )
+            for chunk in response:
+                text = getattr(chunk, "text", "")
+                if text:
+                    yield text
+        except Exception as exc:  # noqa: BLE001
+            raise LLMProviderError(f"Gemini streaming error: {exc}") from exc
 
     def complete_image(self, prompt: str, image_path: Path, model_name: str) -> str:
         """

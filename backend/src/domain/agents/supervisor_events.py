@@ -15,10 +15,11 @@ from enum import Enum
 
 
 class EventType(Enum):
-    AGENT_STARTED  = "agent_started"
+    AGENT_STARTED   = "agent_started"
     AGENT_COMPLETED = "agent_completed"
-    HITL_REQUIRED  = "hitl_required"
-    DONE           = "done"
+    HITL_REQUIRED   = "hitl_required"
+    DONE            = "done"
+    STREAM_CHUNK    = "stream_chunk"
 
 
 @dataclass(frozen=True)

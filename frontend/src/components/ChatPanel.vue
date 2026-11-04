@@ -4,7 +4,7 @@ import { SendHorizontal, Paperclip, Activity, MessageSquare, Check, User, Bot, C
 import { useDebateStore, type ChatMessage } from '../stores/debate'
 import ObservabilityPanel from './ObservabilityPanel.vue'
 import DiagramModal from './DiagramModal.vue'
-import { cleanTextForTts } from '../utils/ttsFilter'
+import { cleanTextForTts, splitTextIntoTtsChunks } from '../utils/ttsFilter'
 import { parseMessageContent } from '../utils/messageParser'
 
 const props = defineProps<{
@@ -97,6 +97,11 @@ const handleClickOutsideAgent = (event: MouseEvent) => {
 
 onMounted(() => {
   document.addEventListener('click', handleClickOutsideAgent)
+  if (typeof store.onTtsChunkReady === 'function') {
+    store.onTtsChunkReady((chunk: string, role?: string) => {
+      queueTtsSentence(chunk, role)
+    })
+  }
 })
 
 onUnmounted(() => {
@@ -119,6 +124,24 @@ watch(() => store.isTtsPlaying, (isPlaying) => {
   }
 })
 
+const queueTtsSentence = (sentence: string, role?: string) => {
+  if (!store.isVoiceOutputEnabled || !sentence) return
+  const clean = cleanTextForTts(sentence)
+  if (!clean) return
+
+  store.isTtsPlaying = true
+  if (role) {
+    store.activeTtsRole = role
+  }
+
+  const chunks = splitTextIntoTtsChunks(clean)
+  ttsTextQueue.push(...chunks)
+
+  if (!isPrefetching) {
+    prefetchTtsQueue()
+  }
+}
+
 const playVoiceResponse = async (text: string, role?: string) => {
   if (!store.isVoiceOutputEnabled || !text) return
 
@@ -132,10 +155,10 @@ const playVoiceResponse = async (text: string, role?: string) => {
     store.activeTtsRole = role
   }
 
-  // Split by punctuation (., ?, !, \n) but keep the punctuation
-  const sentences = cleanText.match(/[^.!?\n]+[.!?\n]*/g) || [cleanText]
+  // Split by punctuation (., ?, !, \n, ,, ;, :) for immediate low-latency Time-To-First-Audio
+  const sentences = splitTextIntoTtsChunks(cleanText)
 
-  ttsTextQueue.push(...sentences.map(s => s.trim()).filter(s => s.length > 0))
+  ttsTextQueue.push(...sentences)
 
   if (!isPrefetching) {
     prefetchTtsQueue()
@@ -155,7 +178,7 @@ const prefetchTtsQueue = async () => {
     const response = await fetch('/api/audio/synthesize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: sentence })
+      body: JSON.stringify({ text: sentence, add_silence: false })
     })
     
     if (response.ok) {
@@ -218,7 +241,7 @@ const playNextAudio = async () => {
 watch(() => props.messages.length, (newLen, oldLen) => {
   if (newLen > oldLen) {
     const lastMsg = props.messages[newLen - 1]
-    if (newLen === oldLen + 1 && lastMsg && lastMsg.role === 'assistant') {
+    if (newLen === oldLen + 1 && lastMsg && lastMsg.role === 'assistant' && !store.streamingMessageId && !lastMsg.isStreaming) {
       // Determine the agent role for TTS voice synthesis (from agentRole or agentName)
       const match = lastMsg.content.match(/^\[(.*?)\]\s/)
       const role = lastMsg.agentRole || lastMsg.agentName || (match ? match[1] : undefined)

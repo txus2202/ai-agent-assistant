@@ -29,6 +29,10 @@ services:
       - ./backend/voices:/app/voices
     environment:
       - PYTHONUNBUFFERED=1
+      - MALLOC_ARENA_MAX=2
+      - WHISPER_BEAM_SIZE=1
+      - WHISPER_THREADS=4
+      - KOKORO_OMP_NUM_THREADS=${KOKORO_OMP_NUM_THREADS:-4}
       - VAULT_ROOT=/app/obsidian_vault
       - SQLITE_DB_PATH=/app/data/atenea.db
       - CHROMA_PERSIST_DIR=/app/data/chroma

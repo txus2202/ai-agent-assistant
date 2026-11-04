@@ -25,6 +25,7 @@ def get_audio_service() -> LocalAudioService:
             whisper_initial_prompt=settings.whisper_initial_prompt,
             whisper_beam_size=settings.whisper_beam_size,
             whisper_threads=settings.whisper_threads,
+            kokoro_omp_num_threads=settings.kokoro_omp_num_threads,
         )
     return _audio_service
 
@@ -75,7 +76,10 @@ async def synthesize_audio(request: dict) -> Response:
 
     try:
         service = get_audio_service()
-        audio_bytes = await service.synthesize_speech(text)
+        if "add_silence" in request:
+            audio_bytes = await service.synthesize_speech(text, add_silence=bool(request["add_silence"]))
+        else:
+            audio_bytes = await service.synthesize_speech(text)
         return Response(content=audio_bytes, media_type="audio/wav")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

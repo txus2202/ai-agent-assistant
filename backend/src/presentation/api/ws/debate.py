@@ -149,7 +149,7 @@ class DebateWebSocketHandler:
         self.active_spans: dict[str, SpanContext] = {}
 
     def _persist_event(self, event_dict: dict[str, Any], event: SupervisorEvent) -> None:
-        if not self.debate_record:
+        if not self.debate_record or event.type == EventType.STREAM_CHUNK:
             return
         self.debate_repo.append_event(self.debate_record.id, json.dumps(event_dict))
         if event.type == EventType.DONE:

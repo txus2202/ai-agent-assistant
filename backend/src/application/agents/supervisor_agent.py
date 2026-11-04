@@ -277,6 +277,38 @@ def _resolve_supervisor_config(
     return provider_name, model_name
 
 
+async def _stream_llm_completion(
+    provider: Any,
+    prompt: str,
+    model_name: str,
+) -> AsyncGenerator[str, None]:
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[Any] = asyncio.Queue()
+
+    def _producer() -> None:
+        try:
+            if hasattr(provider, "complete_stream"):
+                for piece in provider.complete_stream(prompt, model_name):
+                    loop.call_soon_threadsafe(queue.put_nowait, piece)
+            else:
+                piece = provider.complete(prompt, model_name)
+                loop.call_soon_threadsafe(queue.put_nowait, piece)
+        except Exception as e:
+            loop.call_soon_threadsafe(queue.put_nowait, e)
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+    asyncio.create_task(asyncio.to_thread(_producer))
+
+    while True:
+        item = await queue.get()
+        if item is None:
+            break
+        if isinstance(item, Exception):
+            raise item
+        yield item
+
+
 async def _run_direct_chat_mode(
     user_request: str,
     chat_history: list[dict[str, Any]] | None,
@@ -308,7 +340,12 @@ async def _run_direct_chat_mode(
 
 Responde directamente al usuario como {sup_agent_name} en español, manteniendo la personalidad y el tono definidos en tu instrucción de sistema. Si te piden presentar al equipo o sus miembros y funciones, básate estrictamente en la información oficial y veraz del consejo técnico."""
     start_time = time.perf_counter()
-    resp_text = await asyncio.to_thread(supervisor_provider.complete, direct_prompt, sup_model_name)
+    resp_pieces: list[str] = []
+    async for piece in _stream_llm_completion(supervisor_provider, direct_prompt, sup_model_name):
+        resp_pieces.append(piece)
+        yield SupervisorEvent(type=EventType.STREAM_CHUNK, role=sup_agent_name, content=piece)
+
+    resp_text = "".join(resp_pieces)
     latency = round(time.perf_counter() - start_time, 2)
     meta = {
         "model": sup_model_name,

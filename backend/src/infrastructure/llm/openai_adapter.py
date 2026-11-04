@@ -11,6 +11,7 @@ API key resolution order:
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 from src.domain.exceptions import LLMProviderError
@@ -55,6 +56,19 @@ class OpenAIAdapter(ILLMProvider):
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
 
+    def complete_stream(self, prompt: str, model_name: str) -> Iterator[str]:
+        try:
+            stream = self._client.chat.completions.create(
+                model=model_name,
+                messages=[{"role": "user", "content": prompt}],
+                stream=True,
+            )
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception as exc:  # noqa: BLE001
+            raise LLMProviderError(f"OpenAI streaming error: {exc}") from exc
+
     def complete_image(self, prompt: str, image_path: Path, model_name: str) -> str:
         try:
             import base64  # noqa: PLC0415
@@ -79,6 +93,19 @@ class OpenAIAdapter(ILLMProvider):
             return response.choices[0].message.content or ""
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
+
+    def complete_stream(self, prompt: str, model_name: str) -> Iterator[str]:
+        try:
+            stream = self._client.chat.completions.create(
+                model=model_name,
+                messages=[{"role": "user", "content": prompt}],
+                stream=True,
+            )
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception as exc:  # noqa: BLE001
+            raise LLMProviderError(f"OpenAI streaming error: {exc}") from exc
 
     def get_last_usage(self) -> dict[str, int]:
         """Return the token usage of the most recent complete() call."""

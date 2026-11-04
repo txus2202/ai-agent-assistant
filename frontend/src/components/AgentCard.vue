@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, useId } from 'vue'
 import { useConfigStore, type AgentConfig } from '../stores/config'
+import { useTheme } from '../composables/useTheme'
 
 const props = defineProps<{
   role: string
@@ -22,6 +23,23 @@ const props = defineProps<{
 }>()
 
 const store = useConfigStore()
+const { isDarkMode } = useTheme()
+
+const adaptColorForTheme = (hex: string, isDark: boolean): string => {
+  if (isDark) return hex
+  const lightMap: Record<string, string> = {
+    '#00e5ff': '#0284c7', // Sky-600
+    '#00ff9d': '#15803d', // Emerald-700
+    '#ffd000': '#b45309', // Amber-700
+    '#f59e0b': '#b45309', // Amber-700
+    '#b347ff': '#7e22ce', // Purple-700
+    '#ff8800': '#c2410c', // Orange-700
+    '#ef4444': '#b91c1c', // Red-700
+    '#2979ff': '#1d4ed8', // Blue-700
+  }
+  return lightMap[hex.toLowerCase()] || hex
+}
+
 const uid = useId()
 const providerId = `${uid}-provider`
 const modelId = `${uid}-model`
@@ -68,7 +86,8 @@ const agentDescription = computed(() => {
 })
 
 const agentColor = computed(() => {
-  return props.colorHex || agentConfig.value.color_hex || '#00e5ff'
+  const base = props.colorHex || agentConfig.value.color_hex || '#00e5ff'
+  return adaptColorForTheme(base, isDarkMode.value)
 })
 
 // Dynamic badges based on topology and capabilities

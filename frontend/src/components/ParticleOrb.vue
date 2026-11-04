@@ -158,7 +158,9 @@ const drawLink = (
 ) => {
   const persp1 = project(p1.z)
   const persp2 = project(p2.z)
-  const alpha = (1 - Math.sqrt(distSq) / 50) * 0.3 * (isActive ? 0.8 : 0.3)
+  const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
+  const alphaMultiplier = isLight ? 0.65 : 0.3
+  const alpha = (1 - Math.sqrt(distSq) / 50) * alphaMultiplier * (isActive ? 0.8 : (isLight ? 0.55 : 0.3))
   c.beginPath()
   c.moveTo(frame.cx + p1.x * persp1, frame.cy + p1.y * persp1)
   c.lineTo(frame.cx + p2.x * persp2, frame.cy + p2.y * persp2)
@@ -201,8 +203,11 @@ const drawParticle = (c: CanvasRenderingContext2D, p: Particle3D, frame: FrameSt
   const baseColor = isActive ? frame.activeColorRGB : getIdleParticleRgb()
 
   const projSize = (isActive ? p.size * 1.5 : p.size) * perspective
-  const depthAlpha = Math.max(0.05, Math.min(1, (p.z + BASE_RADIUS) / (BASE_RADIUS * 2.5)))
-  const finalAlpha = isActive ? Math.min(1, p.alpha * depthAlpha * 2) : p.alpha * depthAlpha
+  const depthAlpha = Math.max(0.08, Math.min(1, (p.z + BASE_RADIUS) / (BASE_RADIUS * 2.5)))
+  const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
+  const finalAlpha = isActive 
+    ? Math.min(1, p.alpha * depthAlpha * 2) 
+    : (isLight ? Math.min(0.95, p.alpha * depthAlpha * 1.8 + 0.3) : p.alpha * depthAlpha)
 
   c.beginPath()
   c.arc(px, py, projSize, 0, Math.PI * 2)
@@ -583,14 +588,17 @@ const voiceDotStyle = computed(() => {
     <div class="relative w-full flex-1 flex items-center justify-center min-h-[240px] sm:min-h-[300px] overflow-hidden" id="orbContainer">
       <!-- Sci-Fi Telemetry Orbit Rings & Coordinate Markings -->
       <div 
+        id="orbRing1"
         class="absolute w-[280px] h-[280px] sm:w-[440px] sm:h-[440px] lg:w-[580px] lg:h-[580px] rounded-full border border-cyan-500/20 pointer-events-none animate-[spin_120s_linear_infinite]"
         :style="isDebating ? `border-color: ${activeAgentColor}40` : ''"
       ></div>
       <div 
+        id="orbRing2"
         class="absolute w-[240px] h-[240px] sm:w-[380px] sm:h-[380px] lg:w-[500px] lg:h-[500px] rounded-full border border-dashed border-slate-700/40 pointer-events-none animate-[spin_80s_linear_infinite_reverse]"
         :style="isDebating ? `border-color: ${activeAgentColor}60` : ''"
       ></div>
       <div 
+        id="orbRing3"
         class="absolute w-[310px] h-[310px] sm:w-[470px] sm:h-[470px] lg:w-[620px] lg:h-[620px] rounded-full border border-cyan-400/15 pointer-events-none"
         :style="isDebating ? `border-color: ${activeAgentColor}20` : ''"
       ></div>

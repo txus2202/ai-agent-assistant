@@ -11,6 +11,8 @@ export interface Agent {
   color_hex?: string
   state: AgentState
   tokens?: number
+  promptTokens?: number
+  completionTokens?: number
   latency?: number
   turns?: number
   startedAt?: number
@@ -40,6 +42,9 @@ export interface SupervisorEvent {
     checkpoint?: string
     latency_seconds?: number | string
     tokens?: number | string
+    prompt_tokens?: number | string
+    completion_tokens?: number | string
+    total_tokens?: number | string
     cached_tokens?: number | string
     [key: string]: unknown
   }
@@ -374,6 +379,9 @@ export const useDebateStore = defineStore('debate', () => {
         can_ingest_documents: agent.can_ingest_documents,
         topology_roles: agent.topology_roles,
         turns: 0,
+        tokens: 0,
+        promptTokens: 0,
+        completionTokens: 0,
         state: 'STANDBY'
       }))
       isAgentsLoaded.value = true
@@ -474,6 +482,8 @@ export const useDebateStore = defineStore('debate', () => {
     agents.value.forEach(a => {
       a.state = 'STANDBY'
       a.tokens = 0
+      a.promptTokens = 0
+      a.completionTokens = 0
       a.latency = 0
       a.turns = 0
     })
@@ -630,15 +640,30 @@ export const useDebateStore = defineStore('debate', () => {
   }
 
   function updateAgentTokens(agent: Agent, event: SupervisorEvent): number {
-    if (event.metadata?.tokens) {
-      const tokens = Number.parseInt(String(event.metadata.tokens), 10)
+    let pTokens = 0
+    let cTokens = 0
+    if (event.metadata?.prompt_tokens) {
+      pTokens = Number.parseInt(String(event.metadata.prompt_tokens), 10) || 0
+      agent.promptTokens = (agent.promptTokens || 0) + pTokens
+    }
+    if (event.metadata?.completion_tokens) {
+      cTokens = Number.parseInt(String(event.metadata.completion_tokens), 10) || 0
+      agent.completionTokens = (agent.completionTokens || 0) + cTokens
+    }
+
+    if (event.metadata?.tokens || event.metadata?.total_tokens) {
+      const tokens = Number.parseInt(String(event.metadata.total_tokens || event.metadata.tokens), 10)
       agent.tokens = (agent.tokens || 0) + tokens
+      if (!pTokens && !cTokens) {
+        agent.completionTokens = (agent.completionTokens || 0) + tokens
+      }
       return tokens
     }
     if (event.content) {
       const words = event.content.trim().split(/\s+/).filter(Boolean).length
       const tokens = Math.max(12, Math.round(words * 1.35))
       agent.tokens = (agent.tokens || 0) + tokens
+      agent.completionTokens = (agent.completionTokens || 0) + tokens
       return tokens
     }
     return 0

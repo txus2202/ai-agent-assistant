@@ -123,6 +123,20 @@ describe('AgentCard.vue', () => {
     expect(wrapper.text()).toContain('0.85s')
   })
 
+  it('renders breakdown of input and output tokens', () => {
+    const wrapper = mount(AgentCard, {
+      props: {
+        role: 'the_judge',
+        state: 'ACTIVE',
+        promptTokens: 320,
+        completionTokens: 850
+      }
+    })
+
+    expect(wrapper.text()).toContain('In:320')
+    expect(wrapper.text()).toContain('Out:850')
+  })
+
   it('renders always-visible agent mission description', () => {
     const wrapper = mount(AgentCard, {
       props: {

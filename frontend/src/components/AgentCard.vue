@@ -11,6 +11,8 @@ const props = defineProps<{
   colorClass?: string
   glowClass?: string
   tokensConsumed?: number
+  promptTokens?: number
+  completionTokens?: number
   latencySeconds?: number
   turnsCount?: number
   usesRag?: boolean
@@ -202,11 +204,20 @@ const isDocs = computed(() => {
         </select>
       </div>
 
-      <!-- Observability Metrics Badges (Tokens, Latency, Turns) -->
+      <!-- Observability Metrics Badges (Tokens In/Out, Latency, Turns) -->
       <div class="pt-1.5 mt-1 border-t border-space-800/80 flex items-center justify-between text-[10px] font-mono text-slate-400">
-        <span class="flex items-center space-x-1" title="Tokens consumidos">
+        <span 
+          class="flex items-center space-x-1" 
+          :title="`Tokens: Entrada ${promptTokens || 0} (Prompt) / Salida ${completionTokens !== undefined ? completionTokens : (tokensConsumed || 0)} (Generación)`"
+        >
           <span>🪙</span>
-          <span class="text-slate-300 font-semibold">{{ tokensConsumed !== undefined ? tokensConsumed : 0 }}</span>
+          <span class="text-emerald-400 font-semibold" title="Tokens de entrada (Prompt)">
+            <span class="text-[8px] text-slate-500 font-normal mr-0.5">In:</span>{{ promptTokens !== undefined ? promptTokens : 0 }}
+          </span>
+          <span class="text-slate-600">/</span>
+          <span class="text-cyan-300 font-semibold" title="Tokens de salida (Generación)">
+            <span class="text-[8px] text-slate-500 font-normal mr-0.5">Out:</span>{{ completionTokens !== undefined ? completionTokens : (tokensConsumed || 0) }}
+          </span>
         </span>
         <span class="flex items-center space-x-1" title="Latencia">
           <span>⚡</span>

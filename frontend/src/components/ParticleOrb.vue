@@ -112,10 +112,12 @@ const getRgbFromHex = (hex: string): string => {
 let currentExpansion = 1.0
 
 const FAR_Z = -700
-const getIdleParticleRgb = () => {
-  return (typeof document !== 'undefined' && document.documentElement.classList.contains('light'))
-    ? '2, 132, 199'
-    : '255, 255, 255'
+const getIdleParticleRgb = (groupId?: number) => {
+  if (typeof document !== 'undefined' && document.documentElement.classList.contains('light')) {
+    // Crisp constellation ink dots in light mode, with subtle teal accents
+    return (groupId !== undefined && groupId % 2 === 0) ? '15, 118, 110' : '15, 23, 42'
+  }
+  return '255, 255, 255'
 }
 
 interface FrameState {
@@ -159,12 +161,13 @@ const drawLink = (
   const persp1 = project(p1.z)
   const persp2 = project(p2.z)
   const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
-  const alphaMultiplier = isLight ? 0.65 : 0.3
-  const alpha = (1 - Math.sqrt(distSq) / 50) * alphaMultiplier * (isActive ? 0.8 : (isLight ? 0.55 : 0.3))
+  const alphaMultiplier = isLight ? 0.35 : 0.3
+  const strokeColor = isLight && !isActive ? '15, 23, 42' : color
+  const alpha = (1 - Math.sqrt(distSq) / 50) * alphaMultiplier * (isActive ? 0.8 : (isLight ? 0.45 : 0.3))
   c.beginPath()
   c.moveTo(frame.cx + p1.x * persp1, frame.cy + p1.y * persp1)
   c.lineTo(frame.cx + p2.x * persp2, frame.cy + p2.y * persp2)
-  c.strokeStyle = `rgba(${color}, ${alpha})`
+  c.strokeStyle = `rgba(${strokeColor}, ${alpha})`
   c.stroke()
 }
 
@@ -173,7 +176,7 @@ const drawConnectionsFor = (
 ) => {
   const p1 = particles[i]!
   const isActive = isActiveGroup(p1, frame)
-  const color = isActive ? frame.activeColorRGB : getIdleParticleRgb()
+  const color = isActive ? frame.activeColorRGB : getIdleParticleRgb(p1.groupId)
 
   // Only check connections for a subset to save performance
   for (let j = i + 1; j < particles.length; j += 2) {
@@ -200,14 +203,14 @@ const drawParticle = (c: CanvasRenderingContext2D, p: Particle3D, frame: FrameSt
   const px = frame.cx + p.x * perspective
   const py = frame.cy + p.y * perspective
   const isActive = isActiveGroup(p, frame)
-  const baseColor = isActive ? frame.activeColorRGB : getIdleParticleRgb()
+  const baseColor = isActive ? frame.activeColorRGB : getIdleParticleRgb(p.groupId)
 
   const projSize = (isActive ? p.size * 1.5 : p.size) * perspective
   const depthAlpha = Math.max(0.08, Math.min(1, (p.z + BASE_RADIUS) / (BASE_RADIUS * 2.5)))
   const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
   const finalAlpha = isActive 
     ? Math.min(1, p.alpha * depthAlpha * 2) 
-    : (isLight ? Math.min(0.95, p.alpha * depthAlpha * 1.8 + 0.3) : p.alpha * depthAlpha)
+    : (isLight ? Math.min(0.95, p.alpha * depthAlpha * 1.6 + 0.35) : p.alpha * depthAlpha)
 
   c.beginPath()
   c.arc(px, py, projSize, 0, Math.PI * 2)
@@ -479,7 +482,7 @@ const animateWaveform = () => {
   } else {
     // Idle flat line / fake pulse
     const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
-    wCtx.strokeStyle = isLight ? 'rgba(2, 132, 199, 0.4)' : 'rgba(255, 255, 255, 0.25)'
+    wCtx.strokeStyle = isLight ? 'rgba(100, 116, 139, 0.45)' : 'rgba(255, 255, 255, 0.25)'
     wCtx.lineWidth = 1.2
     wCtx.beginPath()
     wCtx.moveTo(0, centerY)
@@ -488,8 +491,8 @@ const animateWaveform = () => {
 
     const pulseX = (waveOffset * 30) % width
     wCtx.beginPath()
-    wCtx.arc(pulseX, centerY, 1.8, 0, Math.PI * 2)
-    wCtx.fillStyle = isLight ? '#0284c7' : '#ffffff'
+    wCtx.arc(pulseX, centerY, 2.5, 0, Math.PI * 2)
+    wCtx.fillStyle = isLight ? '#0f172a' : '#ffffff'
     wCtx.fill()
 
     waveOffset += 0.08

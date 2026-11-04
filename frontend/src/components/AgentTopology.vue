@@ -73,7 +73,7 @@ watch(
           type="button"
           @click="activeTab = 'agents'"
           data-test="tab-agents"
-          :class="activeTab === 'agents' ? 'text-neon-cyan border border-neon-cyan/40 bg-[#002b36]' : 'text-space-500 hover:text-slate-400 border-transparent hover:bg-space-900/60'"
+          :class="activeTab === 'agents' ? 'text-neon-cyan border border-neon-cyan/40 bg-[#002b36] tab-active-btn' : 'text-space-500 hover:text-slate-400 border-transparent hover:bg-space-900/60'"
           class="flex-1 h-8 flex items-center justify-center px-2.5 font-mono text-[10px] tracking-wider uppercase transition-colors rounded border cursor-pointer"
         >
           <div class="flex items-center space-x-1.5 min-w-0">
@@ -86,7 +86,7 @@ watch(
           type="button"
           @click="activeTab = 'observability'"
           data-test="tab-observability"
-          :class="activeTab === 'observability' ? 'text-neon-cyan border border-neon-cyan/40 bg-[#002b36]' : 'text-space-500 hover:text-slate-400 border-transparent hover:bg-space-900/60'"
+          :class="activeTab === 'observability' ? 'text-neon-cyan border border-neon-cyan/40 bg-[#002b36] tab-active-btn' : 'text-space-500 hover:text-slate-400 border-transparent hover:bg-space-900/60'"
           class="flex-1 h-8 flex items-center justify-center px-2.5 font-mono text-[10px] tracking-wider uppercase transition-colors rounded border cursor-pointer"
         >
           <div class="flex items-center space-x-1.5 min-w-0">

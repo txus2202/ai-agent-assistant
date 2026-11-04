@@ -3,12 +3,14 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useConfigStore } from '../stores/config'
 import { useDebateStore } from '../stores/debate'
-import { Cpu, Volume2, VolumeX, History, ChevronDown, Ear, EarOff } from '@lucide/vue'
+import { Cpu, Volume2, VolumeX, History, ChevronDown, Ear, EarOff, Sun, Moon } from '@lucide/vue'
+import { useTheme } from '../composables/useTheme'
 import packageJson from '../../package.json'
 
 const router = useRouter()
 const version = packageJson.version
 const debateStore = useDebateStore()
+const { isDarkMode, toggleTheme } = useTheme()
 
 const toggleAudio = () => {
   debateStore.isVoiceOutputEnabled = !debateStore.isVoiceOutputEnabled
@@ -101,11 +103,34 @@ const selectModel = async (providerName: string, modelName: string) => {
       </div>
       <div class="flex flex-col">
         <span class="sm:hidden text-xs font-bold tracking-widest uppercase text-cyan-100 leading-tight">A.T.E.N.E.A.</span>
-        <span class="text-[9px] sm:text-[10px] md:text-xs text-slate-400 font-mono tracking-widest uppercase">System Core v{{ version }}</span>
+        <span class="text-[9px] sm:text-[10px] md:text-xs text-slate-400 font-mono tracking-widest uppercase">System v{{ version }}</span>
       </div>
 
-      <!-- Action Icons (centered with System Core on desktop) -->
-      <div class="flex items-center space-x-1 sm:space-x-1.5 text-slate-400 ml-1 sm:ml-2 pl-2 border-l border-space-800">
+      <!-- Theme Switcher (On/Off Toggle with Moon / Sun icons) -->
+      <button 
+        type="button"
+        @click="toggleTheme" 
+        data-test="theme-toggle-btn"
+        class="relative inline-flex items-center w-11 h-6 p-0.5 rounded-full transition-colors duration-300 focus:outline-none cursor-pointer shrink-0 border ml-1 sm:ml-1.5"
+        :class="isDarkMode 
+          ? 'bg-space-800 border-cyan-700/60 shadow-[0_0_8px_rgba(0,229,255,0.15)]' 
+          : 'bg-amber-100 border-amber-300 shadow-sm'"
+        :title="isDarkMode ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'"
+        aria-label="Alternar modo oscuro / claro"
+      >
+        <span 
+          class="flex items-center justify-center w-5 h-5 rounded-full transition-transform duration-300 transform shadow-sm"
+          :class="isDarkMode 
+            ? 'translate-x-0 bg-space-950 border border-cyan-400/80 text-cyan-300' 
+            : 'translate-x-5 bg-white border border-amber-400 text-amber-500'"
+        >
+          <Moon v-if="isDarkMode" class="w-3 h-3 text-cyan-300" />
+          <Sun v-else class="w-3 h-3 text-amber-500" />
+        </span>
+      </button>
+
+      <!-- Action Icons (centered with System on desktop) -->
+      <div class="flex items-center space-x-1 sm:space-x-1.5 text-slate-400 ml-1 sm:ml-1.5 pl-1.5 sm:pl-2 border-l border-space-800">
         <button 
           @click="toggleAudio"
           class="min-w-[34px] min-h-[34px] sm:min-w-0 sm:min-h-0 p-1.5 flex items-center justify-center hover:text-cyan-300 hover:bg-space-800 rounded transition border border-transparent hover:border-cyan-800/60 cursor-pointer" 

@@ -43,27 +43,12 @@ watch(
 
 <template>
   <div class="h-full flex flex-col border-l border-space-800 bg-space-900/50 backdrop-blur-sm">
-    <!-- Header with Live Debate Token Counter -->
+    <!-- Header -->
     <div class="p-3 sm:p-4 border-b border-space-800 flex items-center justify-between gap-2">
       <h2 class="text-xs font-mono text-neon-cyan tracking-[0.15em] uppercase flex items-center shrink-0">
         <span class="inline-block w-2 h-2 bg-neon-cyan rounded-full mr-2 animate-pulse"></span>
-        Agent Topology
+        AGENTES
       </h2>
-      <div class="flex items-center gap-1.5 text-[10px] font-mono">
-        <span 
-          class="bg-space-800/80 border border-space-700/60 rounded px-2 py-0.5 text-cyan-300 font-semibold"
-          title="Tokens totales consumidos en la deliberación"
-        >
-          🪙 {{ store.sessionTotalTokens || 0 }}
-        </span>
-        <span 
-          v-if="store.cacheSavingsPercentage > 0" 
-          class="bg-space-800/80 border border-space-700/60 rounded px-1.5 py-0.5 text-emerald-400 font-semibold hidden sm:inline-block"
-          title="Ahorro de caché de contexto"
-        >
-          ⚡ {{ store.cacheSavingsPercentage }}%
-        </span>
-      </div>
     </div>
 
     <!-- Scrollable Agent List -->

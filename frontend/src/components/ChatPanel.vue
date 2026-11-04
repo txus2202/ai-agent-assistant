@@ -435,26 +435,24 @@ defineExpose({
           @click="activeTab = 'chat'"
           data-test="tab-chat"
           :class="activeTab === 'chat' ? 'text-neon-cyan border border-neon-cyan/40 bg-[#002b36]' : 'text-space-500 hover:text-slate-400 border-transparent hover:bg-space-900/60'"
-          class="flex-1 max-w-[195px] h-8 flex items-center justify-between px-2.5 font-mono text-[10px] tracking-wider uppercase transition-colors rounded border cursor-pointer"
+          class="flex-1 max-w-[195px] h-8 flex items-center justify-center px-2.5 font-mono text-[10px] tracking-wider uppercase transition-colors rounded border cursor-pointer"
         >
           <div class="flex items-center space-x-1.5 min-w-0">
             <MessageSquare class="w-3.5 h-3.5 shrink-0" />
             <span>Chat</span>
           </div>
-          <span class="bg-neon-cyan/20 text-neon-cyan px-1.5 py-0.5 rounded-sm text-[8px] font-bold" :class="{ 'invisible': activeTab !== 'chat' }">ACTIVO</span>
         </button>
 
         <button 
           @click="activeTab = 'observability'"
           data-test="tab-observability"
           :class="activeTab === 'observability' ? 'text-neon-cyan border border-neon-cyan/40 bg-[#002b36]' : 'text-space-500 hover:text-slate-400 border-transparent hover:bg-space-900/60'"
-          class="flex-1 max-w-[195px] h-8 flex items-center justify-between px-2.5 font-mono text-[10px] tracking-wider uppercase transition-colors rounded border cursor-pointer"
+          class="flex-1 max-w-[195px] h-8 flex items-center justify-center px-2.5 font-mono text-[10px] tracking-wider uppercase transition-colors rounded border cursor-pointer"
         >
           <div class="flex items-center space-x-1.5 min-w-0">
             <Activity class="w-3.5 h-3.5 shrink-0" />
             <span>Observabilidad</span>
           </div>
-          <span class="bg-neon-cyan/20 text-neon-cyan px-1.5 py-0.5 rounded-sm text-[8px] font-bold" :class="{ 'invisible': activeTab !== 'observability' }">ACTIVO</span>
         </button>
       </div>
     </div>

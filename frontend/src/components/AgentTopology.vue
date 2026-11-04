@@ -84,6 +84,8 @@ watch(
         :colorHex="agent.color_hex"
         :state="isAgentActive(agent.role, agent.state) ? 'ACTIVE' : agent.state"
         :tokensConsumed="agent.tokens"
+        :promptTokens="agent.promptTokens"
+        :completionTokens="agent.completionTokens"
         :latencySeconds="agent.latency"
         :turnsCount="agent.turns"
         :usesRag="agent.uses_rag"

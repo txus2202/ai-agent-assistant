@@ -662,7 +662,7 @@ export const useDebateStore = defineStore('debate', () => {
 
     // Look for terminal punctuation (. ! ? \n) or clause delimiters (, ; :) with >= 20 characters
     const match = ttsStreamBuffer.match(/^([\s\S]*?[.!?\n]|[\s\S]{20,}?[,:;])\s*([\s\S]*)$/)
-    if (match) {
+    if (match && match[1]) {
       const sentence = match[1].trim()
       ttsStreamBuffer = match[2] || ''
       if (sentence) {

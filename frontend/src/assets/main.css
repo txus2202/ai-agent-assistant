@@ -90,48 +90,22 @@ html.light body {
     linear-gradient(to bottom, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
 }
 
-/* Light mode specific component overrides */
-html.light .bg-\[\#060a11\],
-html.light .bg-\[\#04070d\],
-html.light .bg-\[\#05070c\],
-html.light .bg-\[\#020408\] {
-  background-color: #f8fafc !important;
+/* Base Light Mode Texts, Titles & Numbers (Deep High-Contrast Slate) */
+html.light .text-white {
+  color: #0f172a !important;
 }
-
-html.light .bg-\[\#070b12\],
-html.light .bg-\[\#080d16\],
-html.light .bg-\[\#080d17\],
-html.light .bg-\[\#080d1a\],
-html.light .bg-\[\#080e1a\]\/95,
-html.light .bg-\[\#09101d\]\/95,
-html.light .bg-\[\#081120\] {
-  background-color: #ffffff !important;
-  border-color: #e2e8f0 !important;
+html.light .text-slate-100,
+html.light .text-slate-200 {
+  color: #0f172a !important;
 }
-
-html.light .bg-\[\#030509\],
-html.light .bg-\[\#050a14\] {
-  background-color: #ffffff !important;
-  border-color: #e2e8f0 !important;
-}
-
-/* User Message Bubble in Light Mode */
-html.light .bg-\[\#0a192f\] {
-  background-color: #f0f9ff !important;
-  border-color: #7dd3fc !important;
-  color: #0c4a6e !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
-}
-
-/* Assistant Bubble text & contrast */
 html.light .text-slate-300 {
-  color: #334155 !important;
+  color: #1e293b !important;
 }
 html.light .text-slate-400 {
-  color: #64748b !important;
+  color: #475569 !important;
 }
-html.light .text-slate-200 {
-  color: #1e293b !important;
+html.light .text-slate-500 {
+  color: #64748b !important;
 }
 html.light .text-cyan-50,
 html.light .text-cyan-100 {
@@ -150,8 +124,108 @@ html.light .text-emerald-300,
 html.light .text-emerald-400 {
   color: #059669 !important;
 }
+html.light .text-amber-400,
+html.light .text-neon-amber {
+  color: #d97706 !important;
+}
 
-/* Chat text input and selects */
+/* Light Mode Backgrounds & Panels */
+html.light .bg-\[\#060a11\],
+html.light .bg-\[\#05070c\],
+html.light .bg-\[\#020408\] {
+  background-color: #f8fafc !important;
+}
+
+/* Particle Orb Chamber Backdrop in Light Mode */
+html.light .bg-\[\#04070d\] {
+  background: radial-gradient(circle at center, #ffffff 0%, #f1f5f9 100%) !important;
+}
+
+/* Ambient glow & hud ring around orb in Light Mode */
+html.light #orbHudRing {
+  border-color: rgba(2, 132, 199, 0.25) !important;
+  box-shadow: 0 0 30px rgba(2, 132, 199, 0.12) !important;
+}
+html.light #orbGlowCore1 {
+  background-color: rgba(2, 132, 199, 0.14) !important;
+}
+html.light #orbGlowCore2 {
+  background-color: rgba(2, 132, 199, 0.10) !important;
+}
+
+/* Secondary Panels, Cards & Boxes */
+html.light .bg-\[\#070b12\],
+html.light .bg-\[\#080d16\],
+html.light .bg-\[\#080d17\],
+html.light .bg-\[\#080d1a\],
+html.light .bg-\[\#080e1a\]\/95,
+html.light .bg-\[\#09101d\]\/95,
+html.light .bg-\[\#081120\],
+html.light .bg-space-850 {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+html.light .bg-\[\#030509\],
+html.light .bg-\[\#050a14\] {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* User Message Bubble in Light Mode */
+html.light .bg-\[\#0a192f\] {
+  background-color: #f0f9ff !important;
+  border-color: #7dd3fc !important;
+  color: #0c4a6e !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Langfuse Telemetry Dashboard Banner (High-contrast light gradient card) */
+html.light [data-test="langfuse-dashboard-link"],
+html.light .from-\[\#0a1220\].to-\[\#070d18\] {
+  background: linear-gradient(to right, #f0f9ff, #e0f2fe) !important;
+  border-color: #7dd3fc !important;
+  box-shadow: 0 1px 4px rgba(2, 132, 199, 0.1) !important;
+}
+html.light [data-test="langfuse-dashboard-link"] span {
+  color: #0369a1 !important;
+}
+
+/* Agent Card Standby Tag & Dot in Light Mode */
+html.light .bg-slate-800\/80 {
+  background-color: #f1f5f9 !important;
+  color: #64748b !important;
+  border-color: #cbd5e1 !important;
+}
+html.light .bg-slate-700\/80 {
+  background-color: #cbd5e1 !important;
+  border-color: #94a3b8 !important;
+}
+
+/* Agent Card Badges & Selects in Light Mode */
+html.light .bg-space-800\/90 {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+html.light select {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0284c7 !important;
+}
+html.light select option {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
+/* Technical Council Orchestration Container */
+html.light .bg-space-950\/60 {
+  background-color: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #475569 !important;
+}
+
+/* Chat text input and search inputs */
 html.light textarea,
 html.light input[type="text"] {
   background-color: #ffffff !important;
@@ -175,6 +249,17 @@ html.light .bg-emerald-950\/30 {
   background-color: #ecfdf5 !important;
   border-color: #a7f3d0 !important;
   color: #047857 !important;
+}
+
+/* Audio Dock Canvas Waveform */
+html.light #waveformCanvas {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* Radial Gauge Background Track */
+html.light .stroke-slate-800 {
+  stroke: #e2e8f0 !important;
 }
 
 /* Light mode scrollbar */

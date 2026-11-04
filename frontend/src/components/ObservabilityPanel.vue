@@ -251,7 +251,8 @@ function openLangfuse(e: MouseEvent) {
               cy="50"
               r="40"
               fill="transparent"
-              stroke="#1e293b"
+              class="stroke-slate-800 dark:stroke-slate-800 light:stroke-slate-200"
+              stroke="currentColor"
               stroke-width="8"
             />
             <!-- Progress circle -->

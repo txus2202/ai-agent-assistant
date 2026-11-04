@@ -104,7 +104,7 @@ const isDocs = computed(() => {
           <div 
             class="h-2.5 w-2.5 shrink-0 rounded-full transition-all duration-300"
             :class="[
-              state === 'ACTIVE' ? 'animate-pulse' : 'bg-slate-700/80 border border-slate-600/50'
+              state === 'ACTIVE' ? 'animate-pulse' : 'bg-slate-300 dark:bg-slate-700/80 border border-slate-400 dark:border-slate-600/50'
             ]"
             :style="state === 'ACTIVE' ? { backgroundColor: agentColor, boxShadow: `0 0 10px ${agentColor}` } : {}"
           ></div>
@@ -121,7 +121,7 @@ const isDocs = computed(() => {
         <!-- Status Tag -->
         <span 
           class="shrink-0 text-[9px] font-mono px-2 py-0.5 rounded uppercase tracking-wider font-semibold border"
-          :class="state === 'ACTIVE' ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/40 animate-pulse' : 'bg-slate-800/80 text-slate-500 border-slate-700/60'"
+          :class="state === 'ACTIVE' ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/40 animate-pulse' : 'bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700/60'"
         >
           {{ state === 'ACTIVE' ? 'ACTIVE CO-EXEC' : state }}
         </span>

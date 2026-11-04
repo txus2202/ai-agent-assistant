@@ -419,20 +419,6 @@ describe('ChatPanel.vue', () => {
     expect(unlockSpy).toHaveBeenCalled()
   })
 
-  it('switches to observability tab and displays ObservabilityPanel', async () => {
-    const wrapper = mount(ChatPanel, {
-      props: { messages: [], isDebating: false }
-    })
-
-    const obsTabBtn = wrapper.find('[data-test="tab-observability"]')
-    expect(obsTabBtn.exists()).toBe(true)
-
-    await obsTabBtn.trigger('click')
-
-    expect(wrapper.text()).toContain('SYSTEM OBSERVABILITY')
-    expect(wrapper.find('[data-test="tab-observability"]').classes()).toContain('text-neon-cyan')
-  })
-
   it('renders integrated HITL card when isHitlRequired is true', () => {
     mockStore.isHitlRequired = true
     const wrapper = mount(ChatPanel, {
@@ -637,18 +623,13 @@ describe('ChatPanel.vue', () => {
     expect(banner.text()).toContain('Metis ha aprendido la solución')
   })
 
-  it('supports programmatic setActiveTab and omits duplicate chat mic button', async () => {
+  it('omits duplicate chat mic button next to textarea', () => {
     const wrapper = mount(ChatPanel, {
       props: { messages: [], isDebating: false }
     })
 
     const micBtn = wrapper.find('[data-test="chat-mic-btn"]')
     expect(micBtn.exists()).toBe(false)
-
-    // Programmatic tab switch via exposed method
-    ;(wrapper.vm as unknown as { setActiveTab: (tab: 'chat' | 'observability') => void }).setActiveTab('observability')
-    await wrapper.vm.$nextTick()
-    expect(wrapper.findComponent({ name: 'ObservabilityPanel' }).exists()).toBe(true)
   })
 })
 

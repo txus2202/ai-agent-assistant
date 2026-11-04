@@ -42,3 +42,4 @@ describe('useTheme composable', () => {
     expect(localStorage.getItem('atenea_theme')).toBe('dark')
   })
 })
+

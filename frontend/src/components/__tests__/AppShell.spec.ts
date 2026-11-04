@@ -154,7 +154,7 @@ describe('AppShell.vue', () => {
     // Switch to 'telemetry'
     await wrapper.find('[data-test="mobile-nav-telemetry"]').trigger('click')
     expect(setActiveTabSpy).toHaveBeenCalledWith('observability')
-    expect(wrapper.find('[data-test="shell-left-column"]').classes()).toContain('flex')
+    expect(wrapper.find('[data-test="shell-agents-column"]').classes()).toContain('flex')
 
     // Switch back to 'chat'
     await wrapper.find('[data-test="mobile-nav-chat"]').trigger('click')

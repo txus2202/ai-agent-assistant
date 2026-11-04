@@ -93,9 +93,9 @@ const selectModel = async (providerName: string, modelName: string) => {
 </script>
 
 <template>
-  <header class="h-14 border-b border-cyan-900/40 bg-space-900/90 backdrop-blur-md flex items-center justify-between px-3 md:px-4 z-30 shrink-0 w-full gap-2">
-    <!-- Left branding & Status tag + Action Controls moved to left -->
-    <div class="flex items-center gap-2 sm:gap-3 shrink-0">
+  <header class="h-14 border-b border-cyan-900/40 bg-space-900/90 backdrop-blur-md flex items-center justify-between z-30 shrink-0 w-full">
+    <!-- Left branding & Status tag + Action Controls (centered relative to chat column) -->
+    <div class="flex items-center justify-start lg:justify-center px-3 sm:px-4 lg:w-[380px] xl:w-[400px] lg:shrink-0 shrink-0 gap-2 sm:gap-3">
       <div class="sm:hidden w-7 h-7 rounded-lg bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center text-cyan-400 font-bold text-xs shadow-[0_0_8px_rgba(0,229,255,0.25)]">
         <Cpu class="w-3.5 h-3.5 text-cyan-400" />
       </div>
@@ -104,7 +104,7 @@ const selectModel = async (providerName: string, modelName: string) => {
         <span class="text-[9px] sm:text-[10px] md:text-xs text-slate-400 font-mono tracking-widest uppercase">System Core v{{ version }}</span>
       </div>
 
-      <!-- Action Icons (moved to left behind System Core to gain space) -->
+      <!-- Action Icons (centered with System Core on desktop) -->
       <div class="flex items-center space-x-1 sm:space-x-1.5 text-slate-400 ml-1 sm:ml-2 pl-2 border-l border-space-800">
         <button 
           @click="toggleAudio"
@@ -134,7 +134,7 @@ const selectModel = async (providerName: string, modelName: string) => {
     </div>
 
     <!-- Center App Title Banner -->
-    <div class="hidden sm:flex flex-1 justify-center items-center h-full min-w-0">
+    <div class="hidden sm:flex flex-1 justify-center items-center h-full min-w-0 px-2">
       <div class="relative px-4 lg:px-8 pt-[5px] pb-[6px] bg-space-850 border border-cyan-500/30 rounded-t-sm shadow-[0_0_20px_rgba(0,229,255,0.08)] truncate">
         <div class="absolute -top-[1px] left-1/2 -translate-x-1/2 w-16 h-[2px] bg-cyan-400 shadow-[0_0_10px_#00e5ff]"></div>
         <h1 class="text-xs sm:text-sm font-semibold tracking-widest uppercase text-cyan-100 flex items-center justify-center space-x-2">
@@ -147,13 +147,13 @@ const selectModel = async (providerName: string, modelName: string) => {
       </div>
     </div>
 
-    <!-- Right System Controls (Supervisor single-line info) -->
-    <div class="flex items-center justify-end shrink-0">
+    <!-- Right System Controls (Supervisor box centered relative to agent cards column) -->
+    <div class="flex items-center justify-end lg:justify-center px-3 sm:px-4 lg:w-[380px] xl:w-[400px] lg:shrink-0 shrink-0">
       <!-- Supervisor Model Selector -->
       <div class="relative" ref="dropdownRef">
         <button 
           @click="toggleDropdown"
-          class="flex items-center space-x-1.5 sm:space-x-2 font-mono text-[9px] sm:text-[10px] md:text-[11px] text-emerald-300 bg-emerald-950/30 border border-emerald-500/30 px-2 sm:px-2.5 py-1.5 sm:py-1 min-h-[36px] sm:min-h-0 rounded hover:bg-emerald-950/50 hover:border-emerald-500/60 transition-colors whitespace-nowrap cursor-pointer"
+          class="flex items-center space-x-1.5 sm:space-x-2 font-mono text-[9px] sm:text-[10px] md:text-[11px] text-emerald-300 bg-emerald-950/30 border border-emerald-500/30 px-2.5 sm:px-3 py-1.5 min-h-[36px] sm:min-h-0 rounded hover:bg-emerald-950/50 hover:border-emerald-500/60 transition-colors whitespace-nowrap cursor-pointer shadow-sm"
           title="Supervisor Model Configuration"
         >
           <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>

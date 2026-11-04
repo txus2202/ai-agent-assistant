@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     kokoro_model_path: Path = Path("voices/kokoro-v1.0.onnx")
     kokoro_voices_path: Path = Path("voices/voices-v1.0.bin")
     kokoro_voice_name: str = "ef_dora"
+    kokoro_omp_num_threads: int | None = None
 
     # Observability (Phase 6 / Langfuse)
     langfuse_metrics_enabled: bool = False

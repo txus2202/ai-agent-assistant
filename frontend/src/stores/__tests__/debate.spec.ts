@@ -1122,4 +1122,37 @@ describe('learnSession action', () => {
     expect(store.isLearningSession).toBe(false)
     expect(store.learningStatusMessage).toContain('No conversation events found')
   })
+
+  it('handles stream_chunk events by accumulating text in streaming message and triggering TTS callbacks', () => {
+    const store = useDebateStore()
+    const ttsChunks: string[] = []
+    store.onTtsChunkReady((chunk) => {
+      ttsChunks.push(chunk)
+    })
+
+    store.handleSupervisorEvent({
+      type: 'stream_chunk',
+      role: 'the_judge',
+      content: 'Hola, estoy revisando '
+    })
+    store.handleSupervisorEvent({
+      type: 'stream_chunk',
+      role: 'the_judge',
+      content: 'la arquitectura del clúster. '
+    })
+
+    expect(store.messages).toHaveLength(1)
+    expect(store.messages[0]!.content).toBe('Hola, estoy revisando la arquitectura del clúster. ')
+    expect(store.messages[0]!.isStreaming).toBe(true)
+    expect(ttsChunks.length).toBeGreaterThan(0)
+
+    store.handleSupervisorEvent({
+      type: 'done',
+      role: 'the_judge',
+      content: 'Hola, estoy revisando la arquitectura del clúster.'
+    })
+
+    expect(store.messages[0]!.isStreaming).toBe(false)
+    expect(store.streamingMessageId).toBeNull()
+  })
 })

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cleanTextForTts } from '../ttsFilter'
+import { cleanTextForTts, splitTextIntoTtsChunks } from '../ttsFilter'
 
 describe('cleanTextForTts', () => {
   it('removes mermaid diagram code blocks and keeps introductory and trailing text', () => {
@@ -59,5 +59,29 @@ Todos los diagramas han sido generados.`
   it('returns empty string if input is empty or only whitespace', () => {
     expect(cleanTextForTts('')).toBe('')
     expect(cleanTextForTts('   \n  ')).toBe('')
+  })
+})
+
+describe('splitTextIntoTtsChunks', () => {
+  it('returns empty array for empty or whitespace text', () => {
+    expect(splitTextIntoTtsChunks('')).toEqual([])
+    expect(splitTextIntoTtsChunks('   ')).toEqual([])
+  })
+
+  it('splits text into sentences by terminal punctuation', () => {
+    const input = 'Primera frase. Segunda frase! ¿Tercera frase?'
+    const result = splitTextIntoTtsChunks(input)
+    expect(result).toHaveLength(3)
+    expect(result[0]).toBe('Primera frase.')
+    expect(result[1]).toBe('Segunda frase!')
+    expect(result[2]).toBe('¿Tercera frase?')
+  })
+
+  it('splits long sentences with commas into smaller clauses for low-latency streaming', () => {
+    const input = 'Entendido, estoy comprobando todos los servicios del clúster, y verificando la memoria.'
+    const result = splitTextIntoTtsChunks(input)
+    expect(result.length).toBeGreaterThan(1)
+    expect(result[0]).toContain('Entendido, estoy comprobando todos los servicios del clúster,')
+    expect(result[result.length - 1]).toContain('y verificando la memoria.')
   })
 })

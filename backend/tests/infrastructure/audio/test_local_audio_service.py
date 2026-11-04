@@ -89,3 +89,35 @@ async def test_synthesize_speech_applies_phonetic_normalization(mock_kokoro):
     assert "efésto" in spoken_text.lower()
     assert "##" not in spoken_text
     assert "**" not in spoken_text
+
+
+@pytest.mark.asyncio
+async def test_kokoro_omp_num_threads_applied(mock_kokoro, monkeypatch):
+    mock_kokoro_class, _ = mock_kokoro
+    monkeypatch.setenv("KOKORO_OMP_NUM_THREADS", "4")
+
+    with patch("pathlib.Path.exists", return_value=True), \
+         patch("onnxruntime.InferenceSession") as mock_session_class, \
+         patch("soundfile.write"):
+        mock_kokoro_class.from_session.return_value = MagicMock()
+        service = LocalAudioService("base", Path("dummy.onnx"), Path("dummy.bin"), "ef_dora")
+        _ = service._get_kokoro()
+
+        mock_session_class.assert_called_once()
+        _, kwargs = mock_session_class.call_args
+        sess_opts = kwargs.get("sess_options")
+        assert sess_opts is not None
+        assert sess_opts.intra_op_num_threads == 4
+        mock_kokoro_class.from_session.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_kokoro_default_threads_when_env_unset(mock_kokoro, monkeypatch):
+    mock_kokoro_class, _ = mock_kokoro
+    monkeypatch.delenv("KOKORO_OMP_NUM_THREADS", raising=False)
+
+    with patch("pathlib.Path.exists", return_value=True):
+        service = LocalAudioService("base", Path("dummy.onnx"), Path("dummy.bin"), "ef_dora")
+        _ = service._get_kokoro()
+
+        mock_kokoro_class.assert_called_once_with("dummy.onnx", "dummy.bin")

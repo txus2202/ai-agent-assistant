@@ -20,7 +20,7 @@ class IAudioService(ABC):
         pass
 
     @abstractmethod
-    async def synthesize_speech(self, text: str) -> bytes:
+    async def synthesize_speech(self, text: str, add_silence: bool = False) -> bytes:
         """
         Synthesize text to speech.
         

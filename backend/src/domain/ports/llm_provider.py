@@ -8,8 +8,7 @@ must implement this contract (ADR-004, ADR-010).
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-
-
+from collections.abc import Iterator
 from pathlib import Path
 
 
@@ -56,6 +55,13 @@ class ILLMProvider(ABC):
         Raises:
             LLMProviderError: On any provider-level failure.
         """
+
+    def complete_stream(self, prompt: str, model_name: str) -> Iterator[str]:
+        """
+        Stream textual chunks from the LLM.
+        Default fallback yields the single complete() response.
+        """
+        yield self.complete(prompt, model_name)
 
     @abstractmethod
     def list_models(self) -> list[dict[str, str]]:

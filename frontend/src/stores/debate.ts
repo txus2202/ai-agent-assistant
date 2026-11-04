@@ -23,6 +23,7 @@ export interface ChatMessage {
   agentRole?: string
   agentName?: string
   colorHex?: string
+  isStreaming?: boolean
 }
 
 export interface SupervisorEvent {
@@ -314,6 +315,7 @@ export const useDebateStore = defineStore('debate', () => {
   function stopTts() {
     isTtsPlaying.value = false
     activeTtsRole.value = null
+    ttsStreamBuffer = ''
     if (currentTtsSource) {
       try {
         currentTtsSource.stop()
@@ -645,15 +647,93 @@ export const useDebateStore = defineStore('debate', () => {
     sessionTotalTokens.value += estTokens
   }
 
+  // Streaming TTS & chunk accumulation for real-time speech synthesis
+  const streamingMessageId = ref<string | null>(null)
+  let ttsStreamBuffer = ''
+  const ttsChunkCallbacks: Array<(chunk: string, role?: string) => void> = []
+
+  function onTtsChunkReady(callback: (chunk: string, role?: string) => void) {
+    ttsChunkCallbacks.push(callback)
+  }
+
+  function feedTtsStreamingChunk(chunk: string, role?: string) {
+    if (!isVoiceOutputEnabled.value) return
+    ttsStreamBuffer += chunk
+
+    // Look for terminal punctuation (. ! ? \n) or clause delimiters (, ; :) with >= 20 characters
+    const match = ttsStreamBuffer.match(/^([\s\S]*?[.!?\n]|[\s\S]{20,}?[,:;])\s*([\s\S]*)$/)
+    if (match) {
+      const sentence = match[1].trim()
+      ttsStreamBuffer = match[2] || ''
+      if (sentence) {
+        for (const cb of ttsChunkCallbacks) {
+          cb(sentence, role)
+        }
+      }
+    }
+  }
+
+  function flushTtsStreamingBuffer(role?: string) {
+    if (!isVoiceOutputEnabled.value) return
+    const remaining = ttsStreamBuffer.trim()
+    ttsStreamBuffer = ''
+    if (remaining) {
+      for (const cb of ttsChunkCallbacks) {
+        cb(remaining, role)
+      }
+    }
+  }
+
+  function handleStreamChunk(event: SupervisorEvent) {
+    const { agentRole, agentName, colorHex } = resolveAgentDisplay(event.role)
+    const chunk = event.content || ''
+
+    let targetMsg = streamingMessageId.value ? messages.value.find(m => m.id === streamingMessageId.value) : null
+
+    if (!targetMsg) {
+      const newId = crypto.randomUUID()
+      streamingMessageId.value = newId
+      targetMsg = {
+        id: newId,
+        role: 'assistant',
+        content: chunk,
+        agentRole,
+        agentName,
+        colorHex,
+        isStreaming: true,
+      }
+      messages.value.push(targetMsg)
+    } else {
+      targetMsg.content += chunk
+    }
+
+    feedTtsStreamingChunk(chunk, agentRole || event.role || undefined)
+  }
+
   function handleDone(event: SupervisorEvent) {
     isDebating.value = false
     resetWakeWordSession()
-    pushAgentMessage(event.content || 'Debate finished.', event.role)
+    
+    if (streamingMessageId.value) {
+      const targetMsg = messages.value.find(m => m.id === streamingMessageId.value)
+      if (targetMsg) {
+        targetMsg.isStreaming = false
+        if (event.content) {
+          targetMsg.content = cleanAgentMessageContent(event.content)
+        }
+      }
+      streamingMessageId.value = null
+      flushTtsStreamingBuffer(event.role || undefined)
+    } else {
+      pushAgentMessage(event.content || 'Debate finished.', event.role)
+    }
     recordExecutionTrail('Atenea')
   }
 
   function handleError(event: SupervisorEvent) {
     isDebating.value = false
+    streamingMessageId.value = null
+    ttsStreamBuffer = ''
     messages.value.push({ role: 'assistant', content: `Error: ${event.content}` })
   }
 
@@ -663,6 +743,9 @@ export const useDebateStore = defineStore('debate', () => {
 
   function handleSupervisorEvent(event: SupervisorEvent) {
     switch (event.type) {
+      case 'stream_chunk':
+        handleStreamChunk(event)
+        break
       case 'hitl_required':
         handleHitlRequired(event)
         break
@@ -1013,6 +1096,8 @@ export const useDebateStore = defineStore('debate', () => {
     learnSession,
     findAgent,
     normalizeAgentRole,
+    streamingMessageId,
+    onTtsChunkReady,
     cleanAgentMessageContent,
     get ws() { return ws } // Getter for testing purposes
   }

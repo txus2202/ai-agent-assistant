@@ -1,5 +1,6 @@
 import asyncio
 import io
+import os
 import wave
 from pathlib import Path
 from typing import BinaryIO
@@ -38,6 +39,7 @@ class LocalAudioService(IAudioService):
         whisper_initial_prompt: str | None = None,
         whisper_beam_size: int = 5,
         whisper_threads: int = 4,
+        kokoro_omp_num_threads: int | None = None,
     ):
         self.whisper_model_size = whisper_model_size
         self.kokoro_model_path = kokoro_model_path
@@ -46,6 +48,7 @@ class LocalAudioService(IAudioService):
         self.whisper_language = whisper_language
         self.whisper_beam_size = whisper_beam_size
         self.whisper_threads = whisper_threads
+        self.kokoro_omp_num_threads = kokoro_omp_num_threads
         self.whisper_initial_prompt = whisper_initial_prompt or (
             "Conversación técnica en castellano sobre desarrollo de software, arquitectura de sistemas e infraestructura. "
             "Uso frecuente de términos técnicos, herramientas, patrones y nombres en inglés: "
@@ -82,9 +85,30 @@ class LocalAudioService(IAudioService):
                 raise FileNotFoundError(f"Kokoro model not found at {self.kokoro_model_path}")
             if not self.kokoro_voices_path.exists():
                 raise FileNotFoundError(f"Kokoro voices not found at {self.kokoro_voices_path}")
-                
-            print(f"Loading Kokoro from '{self.kokoro_model_path}'...")
-            self.kokoro = Kokoro(str(self.kokoro_model_path), str(self.kokoro_voices_path))
+
+            # Check if KOKORO_OMP_NUM_THREADS is specified in env or settings
+            threads_env = os.environ.get("KOKORO_OMP_NUM_THREADS")
+            omp_threads = None
+            if threads_env and threads_env.strip().isdigit():
+                omp_threads = int(threads_env.strip())
+            elif self.kokoro_omp_num_threads is not None and self.kokoro_omp_num_threads > 0:
+                omp_threads = self.kokoro_omp_num_threads
+
+            if omp_threads is not None and omp_threads > 0:
+                print(f"Loading Kokoro from '{self.kokoro_model_path}' with {omp_threads} ONNX intra_op threads...")
+                import onnxruntime as rt
+                sess_options = rt.SessionOptions()
+                sess_options.intra_op_num_threads = omp_threads
+                sess_options.inter_op_num_threads = 1
+                session = rt.InferenceSession(
+                    str(self.kokoro_model_path),
+                    sess_options=sess_options,
+                    providers=["CPUExecutionProvider"],
+                )
+                self.kokoro = Kokoro.from_session(session, str(self.kokoro_voices_path))
+            else:
+                print(f"Loading Kokoro from '{self.kokoro_model_path}' (default ONNX thread pool)...")
+                self.kokoro = Kokoro(str(self.kokoro_model_path), str(self.kokoro_voices_path))
         return self.kokoro
 
     def _build_initial_prompt(self) -> str:
@@ -120,7 +144,7 @@ class LocalAudioService(IAudioService):
         # Run in thread to not block event loop
         return await asyncio.to_thread(_transcribe)
 
-    async def synthesize_speech(self, text: str) -> bytes:
+    async def synthesize_speech(self, text: str, add_silence: bool = False) -> bytes:
         """
         Synthesize text to speech using Kokoro ONNX.
         Applies Spanish technical phonetic normalization and strips Markdown before synthesis.
@@ -139,10 +163,11 @@ class LocalAudioService(IAudioService):
                 lang="es"
             )
             
-            # Add 300ms of silence at the beginning to prevent browser cutoff
-            silence_samples = int(0.3 * sample_rate)
-            silence = np.zeros(silence_samples, dtype=samples.dtype)
-            samples = np.concatenate((silence, samples))
+            # Add initial silence if explicitly requested (e.g., for isolated one-off playbacks)
+            if add_silence:
+                silence_samples = int(0.15 * sample_rate)
+                silence = np.zeros(silence_samples, dtype=samples.dtype)
+                samples = np.concatenate((silence, samples))
             
             # Write samples to an in-memory WAV buffer
             buf = io.BytesIO()

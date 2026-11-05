@@ -79,36 +79,40 @@ class LocalAudioService(IAudioService):
             )
         return self.whisper_model
 
+    def _resolve_omp_threads(self) -> int | None:
+        threads_env = os.environ.get("KOKORO_OMP_NUM_THREADS")
+        if threads_env and threads_env.strip().isdigit():
+            return int(threads_env.strip())
+        if self.kokoro_omp_num_threads is not None and self.kokoro_omp_num_threads > 0:
+            return self.kokoro_omp_num_threads
+        return None
+
+    def _init_kokoro_instance(self) -> Kokoro:
+        if not self.kokoro_model_path.exists():
+            raise FileNotFoundError(f"Kokoro model not found at {self.kokoro_model_path}")
+        if not self.kokoro_voices_path.exists():
+            raise FileNotFoundError(f"Kokoro voices not found at {self.kokoro_voices_path}")
+
+        omp_threads = self._resolve_omp_threads()
+        if omp_threads:
+            print(f"Loading Kokoro from '{self.kokoro_model_path}' with {omp_threads} ONNX intra_op threads...")
+            import onnxruntime as rt
+            sess_options = rt.SessionOptions()
+            sess_options.intra_op_num_threads = omp_threads
+            sess_options.inter_op_num_threads = 1
+            session = rt.InferenceSession(
+                str(self.kokoro_model_path),
+                sess_options=sess_options,
+                providers=["CPUExecutionProvider"],
+            )
+            return Kokoro.from_session(session, str(self.kokoro_voices_path))
+
+        print(f"Loading Kokoro from '{self.kokoro_model_path}' (default ONNX thread pool)...")
+        return Kokoro(str(self.kokoro_model_path), str(self.kokoro_voices_path))
+
     def _get_kokoro(self) -> Kokoro:
         if self.kokoro is None:
-            if not self.kokoro_model_path.exists():
-                raise FileNotFoundError(f"Kokoro model not found at {self.kokoro_model_path}")
-            if not self.kokoro_voices_path.exists():
-                raise FileNotFoundError(f"Kokoro voices not found at {self.kokoro_voices_path}")
-
-            # Check if KOKORO_OMP_NUM_THREADS is specified in env or settings
-            threads_env = os.environ.get("KOKORO_OMP_NUM_THREADS")
-            omp_threads = None
-            if threads_env and threads_env.strip().isdigit():
-                omp_threads = int(threads_env.strip())
-            elif self.kokoro_omp_num_threads is not None and self.kokoro_omp_num_threads > 0:
-                omp_threads = self.kokoro_omp_num_threads
-
-            if omp_threads is not None and omp_threads > 0:
-                print(f"Loading Kokoro from '{self.kokoro_model_path}' with {omp_threads} ONNX intra_op threads...")
-                import onnxruntime as rt
-                sess_options = rt.SessionOptions()
-                sess_options.intra_op_num_threads = omp_threads
-                sess_options.inter_op_num_threads = 1
-                session = rt.InferenceSession(
-                    str(self.kokoro_model_path),
-                    sess_options=sess_options,
-                    providers=["CPUExecutionProvider"],
-                )
-                self.kokoro = Kokoro.from_session(session, str(self.kokoro_voices_path))
-            else:
-                print(f"Loading Kokoro from '{self.kokoro_model_path}' (default ONNX thread pool)...")
-                self.kokoro = Kokoro(str(self.kokoro_model_path), str(self.kokoro_voices_path))
+            self.kokoro = self._init_kokoro_instance()
         return self.kokoro
 
     def _build_initial_prompt(self) -> str:

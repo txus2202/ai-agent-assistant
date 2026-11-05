@@ -205,6 +205,7 @@ const isDocs = computed(() => {
 
       <!-- Config Selectors (Provider ~36%, Model flex-1) -->
       <div class="pt-2 border-t border-space-700/50 flex items-center gap-1.5 w-full">
+        <label :for="providerId" class="sr-only">Proveedor de IA para {{ displayRole }}</label>
         <select 
           :id="providerId"
           v-model="provider" 
@@ -215,6 +216,7 @@ const isDocs = computed(() => {
           <option v-for="p in store.providers" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
 
+        <label :for="modelId" class="sr-only">Modelo de IA para {{ displayRole }}</label>
         <select 
           :id="modelId"
           v-model="modelName" 

@@ -242,14 +242,18 @@ const drawLink = (
   const isSameAgent = rgb1 === rgb2
 
   let strokeColor = rgb1
-  if (!isActive1 && !isActive2) {
-    strokeColor = isLight ? '15, 23, 42' : '255, 255, 255'
-  } else if (isBothActive && !isSameAgent) {
-    // Inter-agent crossover confluence link
+  if ((!isActive1 && !isActive2) || (isBothActive && !isSameAgent)) {
+    // Idle links or inter-agent crossover confluence link
     strokeColor = isLight ? '15, 23, 42' : '255, 255, 255'
   }
 
-  const alpha = (1 - Math.sqrt(distSq) / 50) * alphaMultiplier * (isBothActive ? 0.85 : (isLight ? 0.45 : 0.3))
+  let linkAlphaFactor = 0.3
+  if (isBothActive) {
+    linkAlphaFactor = 0.85
+  } else if (isLight) {
+    linkAlphaFactor = 0.45
+  }
+  const alpha = (1 - Math.sqrt(distSq) / 50) * alphaMultiplier * linkAlphaFactor
   c.beginPath()
   c.moveTo(frame.cx + p1.x * persp1, frame.cy + p1.y * persp1)
   c.lineTo(frame.cx + p2.x * persp2, frame.cy + p2.y * persp2)
@@ -297,9 +301,14 @@ const drawParticle = (c: CanvasRenderingContext2D, p: Particle3D, frame: FrameSt
   const projSize = (isActive ? p.size * 1.5 : p.size) * perspective
   const depthAlpha = Math.max(0.08, Math.min(1, (p.z + BASE_RADIUS) / (BASE_RADIUS * 2.5)))
   const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
-  const finalAlpha = isActive 
-    ? Math.min(1, p.alpha * depthAlpha * 2.2) 
-    : (isLight ? Math.min(0.95, p.alpha * depthAlpha * 1.6 + 0.35) : p.alpha * depthAlpha)
+  let finalAlpha: number
+  if (isActive) {
+    finalAlpha = Math.min(1, p.alpha * depthAlpha * 2.2)
+  } else if (isLight) {
+    finalAlpha = Math.min(0.95, p.alpha * depthAlpha * 1.6 + 0.35)
+  } else {
+    finalAlpha = p.alpha * depthAlpha
+  }
 
   c.beginPath()
   c.arc(px, py, projSize, 0, Math.PI * 2)
@@ -326,10 +335,20 @@ const wrap = (value: number, limit: number) => {
   return value
 }
 
+const getAmbientDustColor = (isDebating: boolean, isLight: boolean, primaryColor: string) => {
+  if (isDebating) {
+    return primaryColor
+  }
+  if (isLight) {
+    return '15, 23, 42'
+  }
+  return '255, 255, 255'
+}
+
 const drawAmbientDust = (c: CanvasRenderingContext2D, frame: FrameState) => {
   const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
   const primaryColor = frame.activeAgentsRgb.length > 0 ? frame.activeAgentsRgb[0]!.rgb : frame.activeColorRGB
-  const color = props.isDebating ? primaryColor : (isLight ? '15, 23, 42' : '255, 255, 255')
+  const color = getAmbientDustColor(props.isDebating, isLight, primaryColor)
   for (const d of ambientDust) {
     d.x = wrap(d.x + d.vx * frame.speedMultiplier, orbWidth)
     d.y = wrap(d.y + d.vy * frame.speedMultiplier, orbHeight)

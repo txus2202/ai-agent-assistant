@@ -70,7 +70,6 @@ jobs:
           args: >
             -Dsonar.projectKey=txus2202_ai-agent-assistant
             -Dsonar.organization=txus2202
-            -Dsonar.region=eu
             -Dsonar.python.coverage.reportPaths=backend/coverage.xml
             -Dsonar.javascript.lcov.reportPaths=frontend/coverage/lcov.info
             -Dsonar.sources=backend/src,frontend/src

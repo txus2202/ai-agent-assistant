@@ -182,13 +182,13 @@ const getParticleActiveAgent = (
   if (agents.length === 2) {
     const a1 = agents[0]!
     const a2 = agents[1]!
-    let chosen = a1
+    let chosen: AgentRgbItem
     if (p.ox < -0.04) {
       chosen = a1
     } else if (p.ox > 0.04) {
       chosen = a2
     } else {
-      chosen = (p.oz > 0) ? a1 : a2
+      chosen = p.oz > 0 ? a1 : a2
     }
     return { isActive: true, rgb: chosen.rgb, hex: chosen.hex }
   }

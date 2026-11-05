@@ -5,7 +5,6 @@ import ChatPanel from './ChatPanel.vue'
 import ParticleOrb from './ParticleOrb.vue'
 import AgentTopology from './AgentTopology.vue'
 import AppHeader from './AppHeader.vue'
-import ObservabilityPanel from './ObservabilityPanel.vue'
 import SoundBar from './SoundBar.vue'
 
 type MobileTab = 'chat' | 'voice' | 'agents' | 'telemetry'
@@ -157,34 +156,6 @@ const activeAgentColor = computed(() => {
   if (activeAgent?.color_hex) return activeAgent.color_hex
 
   return DEFAULT_COLOR
-})
-
-const activeAgentStatusTitle = computed(() => {
-  if (store.isRecording) {
-    return 'Escuchando orden por voz...'
-  }
-  if (store.isHitlRequired) {
-    return 'Esperando aprobación humana (HITL)...'
-  }
-  if (store.activeTtsRole) {
-    const ttsAgent = store.findAgent ? store.findAgent(store.activeTtsRole) : store.agents.find(a => a.role === store.activeTtsRole)
-    const speakerName = ttsAgent?.name || ((store.activeTtsRole === 'supervisor' || store.activeTtsRole.toLowerCase() === 'atenea') ? 'Atenea' : store.activeTtsRole)
-    return `${speakerName} hablando...`
-  }
-  
-  // Delegated active agents (excluding supervisor to describe the specific specialist in action)
-  const delegatedActive = store.agents.filter(a => a.state === 'ACTIVE' && a.role !== 'supervisor')
-  if (delegatedActive.length > 1) {
-    const names = delegatedActive.map(a => a.name).join(' & ')
-    return `${names} deliberando en paralelo...`
-  }
-  if (delegatedActive.length === 1) {
-    return `${delegatedActive[0]!.name} sintetizando...`
-  }
-  if (store.isDebating) {
-    return 'Atenea coordinando el debate...'
-  }
-  return 'Atenea en línea y a la espera'
 })
 
 const selectMobileTab = async (tab: MobileTab) => {

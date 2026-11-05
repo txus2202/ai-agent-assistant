@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
-import { useDebateStore } from '../stores/debate'
 import SoundBar from './SoundBar.vue'
-
-const store = useDebateStore()
 
 export interface ActiveAgentItem {
   role: string
@@ -348,7 +345,7 @@ const drawAmbientDust = (c: CanvasRenderingContext2D, frame: FrameState) => {
 }
 
 const animateOrb = () => {
-  if (!ctx || !orbCanvasRef.value) return
+  if (isComponentUnmounted || !ctx || !orbCanvasRef.value) return
 
   ctx.clearRect(0, 0, orbWidth, orbHeight)
 

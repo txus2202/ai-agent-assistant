@@ -458,6 +458,7 @@ class DebateWebSocketHandler:
         emit_done: bool = True,
         emit_message: bool = False,
     ) -> str | None:
+        agent_role = target_agent
         try:
             profile = get_profile(target_agent)
             agent_role = profile.display_name
@@ -512,9 +513,8 @@ class DebateWebSocketHandler:
         except Exception as e:
             if self.debate_record:
                 self.debate_repo.update_status(self.debate_record.id, "error")
-            target_role = agent_role if 'agent_role' in locals() else target_agent
             await self.send_event(SupervisorEvent(
-                type=EventType.ERROR, role=target_role, content=str(e)
+                type=EventType.ERROR, role=agent_role, content=str(e)
             ))
             raise
 
@@ -552,6 +552,23 @@ class DebateWebSocketHandler:
             }
         )
 
+    async def _dispatch_ingestion_target(
+        self,
+        target_profile: Any,
+        target_agent: str,
+        user_request: str,
+        chat_history: list,
+        attachments: list,
+    ) -> None:
+        directive_match = LEARN_DIRECTIVE_REGEX.match(user_request.strip()) if user_request else None
+        pending_learning = self._get_pending_learning() if not directive_match else None
+        if pending_learning:
+            await self._handle_pending_learning(target_profile, user_request, pending_learning)
+        elif attachments or directive_match:
+            await self._handle_learning(target_profile, user_request, attachments, directive_match)
+        else:
+            await self._handle_sub_agent(target_agent, user_request, chat_history=chat_history)
+
     async def _dispatch_target(self, target_agent: str, user_request: str, chat_history: list, attachments: list) -> bool:
         try:
             target_profile = get_profile(target_agent)
@@ -565,27 +582,61 @@ class DebateWebSocketHandler:
         if target_profile.is_supervisor:
             await self._handle_supervisor(user_request, chat_history=chat_history)
         elif target_profile.can_ingest_documents:
-            directive_match = LEARN_DIRECTIVE_REGEX.match(user_request.strip()) if user_request else None
-            pending_learning = self._get_pending_learning() if not directive_match else None
-            if pending_learning:
-                await self._handle_pending_learning(target_profile, user_request, pending_learning)
-            elif attachments or directive_match:
-                await self._handle_learning(target_profile, user_request, attachments, directive_match)
-            else:
-                await self._handle_sub_agent(target_agent, user_request, chat_history=chat_history)
+            await self._dispatch_ingestion_target(target_profile, target_agent, user_request, chat_history, attachments)
         else:
             await self._handle_sub_agent(target_agent, user_request, chat_history=chat_history)
         return True
 
+    @staticmethod
+    def _extract_target_agents(raw_start: dict) -> list[str]:
+        target_agents = raw_start.get("target_agents", [])
+        if target_agents:
+            return list(target_agents)
+        target_agent = raw_start.get("target_agent", "supervisor")
+        return [target_agent] if isinstance(target_agent, str) else list(target_agent)
+
+    @staticmethod
+    def _resolve_agent_display_name(agent_id: str) -> str:
+        try:
+            return get_profile(agent_id).display_name
+        except Exception:
+            return agent_id
+
+    async def _dispatch_multi_agent(
+        self,
+        target_agents: list[str],
+        user_request: str,
+        chat_history: list,
+    ) -> None:
+        current_history = list(chat_history) if chat_history else []
+        last_agent_role = "supervisor"
+
+        for agent_id in target_agents:
+            current_role = self._resolve_agent_display_name(agent_id)
+            last_agent_role = current_role
+
+            agent_content = await self._handle_sub_agent(
+                agent_id,
+                user_request,
+                chat_history=current_history,
+                emit_done=False,
+                emit_message=True,
+            )
+            if agent_content:
+                current_history.append({
+                    "role": "assistant",
+                    "agent": current_role,
+                    "content": agent_content
+                })
+
+        await self.send_event(SupervisorEvent(
+            type=EventType.DONE, role=last_agent_role, content=""
+        ))
+        if self.debate_record:
+            self.debate_repo.update_status(self.debate_record.id, "finished")
+
     async def _handle_start_request(self, raw_start: dict) -> None:
         user_request = raw_start.get("user_request", "")
-        target_agent = raw_start.get("target_agent", "supervisor")
-        target_agents = raw_start.get("target_agents", [])
-        if not target_agents and target_agent:
-            target_agents = [target_agent] if isinstance(target_agent, str) else list(target_agent)
-        attachments = raw_start.get("attachments", [])
-        chat_history = raw_start.get("history", [])
-
         if not user_request:
             await self.websocket.send_json({"type": "error", "content": "user_request is required"})
             return
@@ -596,40 +647,16 @@ class DebateWebSocketHandler:
             await self.websocket.send_json({"type": "error", "content": f"Default provider error: {str(e)}"})
             return
 
-        self._init_session_and_trace(raw_start.get("session_id"), user_request, target_agent)
+        target_agents = self._extract_target_agents(raw_start)
+        primary_target = target_agents[0] if target_agents else "supervisor"
+        attachments = raw_start.get("attachments", [])
+        chat_history = raw_start.get("history", [])
 
-        # Multi-agent dispatch when multiple specific agents are selected
+        self._init_session_and_trace(raw_start.get("session_id"), user_request, primary_target)
+
         if len(target_agents) > 1:
-            current_history = list(chat_history) if chat_history else []
-            last_agent_role = "supervisor"
-            for agent_id in target_agents:
-                try:
-                    profile = get_profile(agent_id)
-                    current_role = profile.display_name
-                except Exception:
-                    current_role = agent_id
-                last_agent_role = current_role
-
-                agent_content = await self._handle_sub_agent(
-                    agent_id,
-                    user_request,
-                    chat_history=current_history,
-                    emit_done=False,
-                    emit_message=True,
-                )
-                if agent_content:
-                    current_history.append({
-                        "role": "assistant",
-                        "agent": current_role,
-                        "content": agent_content
-                    })
-            await self.send_event(SupervisorEvent(
-                type=EventType.DONE, role=last_agent_role, content=""
-            ))
-            if self.debate_record:
-                self.debate_repo.update_status(self.debate_record.id, "finished")
+            await self._dispatch_multi_agent(target_agents, user_request, chat_history)
         else:
-            primary_target = target_agents[0] if target_agents else target_agent
             await self._dispatch_target(primary_target, user_request, chat_history, attachments)
 
     async def process_messages(self) -> None:

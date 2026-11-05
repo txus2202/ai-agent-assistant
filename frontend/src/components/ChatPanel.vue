@@ -11,7 +11,7 @@ const props = defineProps<{
   isDebating: boolean
 }>()
 
-const emit = defineEmits<{
+defineEmits<{
   (e: 'toggle-mic'): void
 }>()
 
@@ -71,15 +71,6 @@ const selectedAgents = ref<string[]>(
         : [store.selectedAgent || 'supervisor'])
 )
 
-const selectedAgent = computed({
-  get: () => selectedAgents.value[0] || 'supervisor',
-  set: (val: string) => {
-    selectedAgents.value = [val]
-    store.selectedAgent = val
-    store.selectedAgents = [val]
-  }
-})
-
 watch(() => store.selectedAgent, (newAgent) => {
   if (newAgent && (selectedAgents.value.length <= 1 || !selectedAgents.value.includes(newAgent))) {
     selectedAgents.value = [newAgent]
@@ -136,10 +127,6 @@ const toggleAgent = (role: string) => {
   }
   store.selectedAgents = [...selectedAgents.value]
   store.selectedAgent = selectedAgents.value[0] || 'supervisor'
-}
-
-const selectAgent = (value: string) => {
-  toggleAgent(value)
 }
 
 const selectAllAgents = () => {
@@ -530,6 +517,7 @@ watch(() => props.messages.length, async (newLen) => {
 })
 
 const setActiveTab = (_tab: 'chat' | 'observability') => {
+  void _tab
   // Observability is now located in the right column alongside AgentTopology
 }
 

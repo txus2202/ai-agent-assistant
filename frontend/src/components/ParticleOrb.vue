@@ -156,12 +156,18 @@ interface FrameState {
   activeAgentsRgb: AgentRgbItem[]
 }
 
+interface ParticleAgentInfo {
+  isActive: boolean
+  rgb: string
+  hex: string
+}
+
 const project = (z: number) => 800 / (800 + z)
 
 const getParticleActiveAgent = (
   p: Particle3D,
   frame: FrameState
-): { isActive: boolean; rgb: string; hex: string } => {
+): ParticleAgentInfo => {
   const agents = frame.activeAgentsRgb
   if (!props.isDebating || agents.length === 0) {
     return { isActive: false, rgb: getIdleParticleRgb(p.groupId), hex: '' }
@@ -228,21 +234,19 @@ const drawLink = (
   p1: Particle3D,
   p2: Particle3D,
   distSq: number,
-  rgb1: string,
-  rgb2: string,
-  isActive1: boolean,
-  isActive2: boolean,
+  a1: ParticleAgentInfo,
+  a2: ParticleAgentInfo,
   frame: FrameState
 ) => {
   const persp1 = project(p1.z)
   const persp2 = project(p2.z)
   const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
   const alphaMultiplier = isLight ? 0.35 : 0.3
-  const isBothActive = isActive1 && isActive2
-  const isSameAgent = rgb1 === rgb2
+  const isBothActive = a1.isActive && a2.isActive
+  const isSameAgent = a1.rgb === a2.rgb
 
-  let strokeColor = rgb1
-  if ((!isActive1 && !isActive2) || (isBothActive && !isSameAgent)) {
+  let strokeColor = a1.rgb
+  if ((!a1.isActive && !a2.isActive) || (isBothActive && !isSameAgent)) {
     // Idle links or inter-agent crossover confluence link
     strokeColor = isLight ? '15, 23, 42' : '255, 255, 255'
   }
@@ -277,7 +281,7 @@ const drawConnectionsFor = (
     const distSq = dx * dx + dy * dy + dz * dz
     if (distSq < 2500) {
       const a2 = getParticleActiveAgent(p2, frame)
-      drawLink(c, p1, p2, distSq, a1.rgb, a2.rgb, a1.isActive, a2.isActive, frame)
+      drawLink(c, p1, p2, distSq, a1, a2, frame)
     }
   }
 }

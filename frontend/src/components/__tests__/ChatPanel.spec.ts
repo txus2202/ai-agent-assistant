@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ChatPanel from '../ChatPanel.vue'
 
@@ -22,11 +22,24 @@ const mockStore = {
   ],
   startDebate: mockStartDebate,
   uploadFile: mockUploadFile,
+  projectName: 'A.T.E.N.E.A.',
+  projectDescription: 'Asistente Técnica y Evaluadora de Nuevas Estructuras y Arquitecturas',
   draftMessage: '',
   isVoiceOutputEnabled: false,
   isTtsPlaying: false,
   activeTtsRole: null as string | null,
+  readingAgentRoles: [] as string[],
+  addReadingAgentRole: vi.fn((role: string) => {
+    if (!mockStore.readingAgentRoles.includes(role)) {
+      mockStore.readingAgentRoles.push(role)
+    }
+  }),
+  removeReadingAgentRole: vi.fn((role: string) => {
+    mockStore.readingAgentRoles = mockStore.readingAgentRoles.filter(r => r !== role)
+  }),
+  isAgentReading: vi.fn((role: string) => mockStore.readingAgentRoles.includes(role)),
   selectedAgent: 'supervisor',
+  selectedAgents: ['supervisor'] as string[],
   playTtsAudioChunk: vi.fn(),
   stopTts: vi.fn(),
   unlockAudioContext: vi.fn(),
@@ -48,6 +61,9 @@ describe('ChatPanel.vue', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     mockStore.selectedAgent = 'supervisor'
+    mockStore.selectedAgents = ['supervisor']
+    mockStore.isHitlRequired = false
+    mockStore.isDebating = false
     Element.prototype.scrollIntoView = vi.fn()
   })
 
@@ -630,6 +646,47 @@ describe('ChatPanel.vue', () => {
 
     const micBtn = wrapper.find('[data-test="chat-mic-btn"]')
     expect(micBtn.exists()).toBe(false)
+  })
+
+  it('removes MODO CONSULTA MULTI-AGENTE label from chat header', () => {
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: false }
+    })
+    expect(wrapper.text()).not.toContain('MODO CONSULTA MULTI-AGENTE')
+  })
+
+  it('allows selecting and deselecting multiple agents to target', async () => {
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: false }
+    })
+
+    const dropdownBtn = wrapper.find('[data-test="agent-dropdown-btn"]')
+    await dropdownBtn.trigger('click')
+
+    // Click NL Interpreter
+    const interpreterOption = wrapper.findAll('[data-test="agent-option"]').find(b => b.text().includes('NL Interpreter'))
+    await interpreterOption!.trigger('click')
+
+    // Click Learning Agent (multi-select)
+    const learningOption = wrapper.findAll('[data-test="agent-option"]').find(b => b.text().includes('Learning Agent'))
+    await learningOption!.trigger('click')
+
+    expect(dropdownBtn.text()).toContain('NL Interpreter, Learning Agent')
+
+    // Submit form with multiple agents
+    await wrapper.find('textarea').setValue('Auditen juntos')
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(mockStartDebate).toHaveBeenCalledWith(
+      'Auditen juntos',
+      ['nl_interpreter', 'learning'],
+      null
+    )
+
+    // Deselect NL Interpreter
+    await interpreterOption!.trigger('click')
+    expect(dropdownBtn.text()).toContain('Learning Agent')
   })
 })
 

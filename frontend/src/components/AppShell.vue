@@ -9,7 +9,6 @@ import ObservabilityPanel from './ObservabilityPanel.vue'
 import SoundBar from './SoundBar.vue'
 
 type MobileTab = 'chat' | 'voice' | 'agents' | 'telemetry'
-type TabletRightTab = 'orb' | 'agents' | 'telemetry'
 
 const store = useDebateStore()
 const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null)
@@ -17,7 +16,6 @@ const particleOrbRef = ref<InstanceType<typeof ParticleOrb> | null>(null)
 const agentTopologyRef = ref<InstanceType<typeof AgentTopology> | null>(null)
 
 const mobileTab = ref<MobileTab>('chat')
-const tabletRightTab = ref<TabletRightTab>('orb')
 
 const DEFAULT_COLOR = '#f59e0b'
 
@@ -35,7 +33,7 @@ const isOrbDebating = computed(() => {
   if (store.isHitlRequired && !store.isTtsPlaying) {
     return false
   }
-  return store.isDebating || store.isTtsPlaying
+  return store.isDebating || store.isTtsPlaying || Boolean(store.readingAgentRoles && store.readingAgentRoles.length > 0)
 })
 
 const activeAgentsList = computed<ActiveAgentItem[]>(() => {
@@ -48,7 +46,7 @@ const activeAgentsList = computed<ActiveAgentItem[]>(() => {
   const supervisorAgent = store.findAgent ? store.findAgent('supervisor') : store.agents.find(a => a.role === 'supervisor')
   const ateneaColor = supervisorAgent?.color_hex || '#f59e0b'
 
-  const isDebatingOrTts = store.isDebating || store.isTtsPlaying
+  const isDebatingOrTts = store.isDebating || store.isTtsPlaying || Boolean(store.readingAgentRoles && store.readingAgentRoles.length > 0)
 
   // In an Atenea debate flow, Atenea is the overarching supervisor delegating to council agents,
   // so she is ALWAYS present in the active orb deliberation alongside delegated specialists.
@@ -73,6 +71,44 @@ const activeAgentsList = computed<ActiveAgentItem[]>(() => {
     })
     if (!alreadyInList) {
       result.push({ role: store.activeTtsRole, name, color })
+    }
+  }
+
+  // Include any agents currently reading their messages
+  if (store.readingAgentRoles && store.readingAgentRoles.length > 0) {
+    for (const role of store.readingAgentRoles) {
+      const ag = store.findAgent ? store.findAgent(role) : store.agents.find(a => a.role === role)
+      const normR = store.normalizeAgentRole ? store.normalizeAgentRole(role) : role
+      const isAtenea = normR === 'supervisor' || normR.toLowerCase() === 'atenea'
+      const color = ag?.color_hex || (isAtenea ? ateneaColor : DEFAULT_COLOR)
+      const name = ag?.name || (isAtenea ? 'Atenea' : role)
+
+      const alreadyInList = result.some(r => {
+        const normExisting = store.normalizeAgentRole ? store.normalizeAgentRole(r.role) : r.role
+        return normExisting === normR
+      })
+      if (!alreadyInList) {
+        result.push({ role, name, color })
+      }
+    }
+  }
+
+  // If multiple agents were chosen in the multi-agent selector, keep all selected agents active on the orb
+  if (isDebatingOrTts && store.selectedAgents && store.selectedAgents.length > 1) {
+    for (const role of store.selectedAgents) {
+      const ag = store.findAgent ? store.findAgent(role) : store.agents.find(a => a.role === role)
+      const normR = store.normalizeAgentRole ? store.normalizeAgentRole(role) : role
+      const isAtenea = normR === 'supervisor' || normR.toLowerCase() === 'atenea'
+      const color = ag?.color_hex || (isAtenea ? ateneaColor : DEFAULT_COLOR)
+      const name = ag?.name || (isAtenea ? 'Atenea' : role)
+
+      const alreadyInList = result.some(r => {
+        const normExisting = store.normalizeAgentRole ? store.normalizeAgentRole(r.role) : r.role
+        return normExisting === normR
+      })
+      if (!alreadyInList) {
+        result.push({ role, name, color })
+      }
     }
   }
 
@@ -163,14 +199,9 @@ const selectMobileTab = async (tab: MobileTab) => {
   } else if (tab === 'voice') {
     await nextTick()
     particleOrbRef.value?.resizeCanvas?.()
-  }
-}
-
-const selectTabletRightTab = async (tab: TabletRightTab) => {
-  tabletRightTab.value = tab
-  if (tab === 'orb') {
-    await nextTick()
-    particleOrbRef.value?.resizeCanvas?.()
+    requestAnimationFrame(() => {
+      particleOrbRef.value?.resizeCanvas?.()
+    })
   }
 }
 
@@ -185,14 +216,16 @@ const handleToggleMic = () => {
     <!-- Top Header -->
     <AppHeader />
 
-    <!-- Responsive Workspace: 1-Col Mobile / 2-Col Tablet Split / 3-Col Desktop -->
-    <div class="flex-1 flex flex-col md:flex-row overflow-hidden relative min-h-0">
-      
-      <!-- Left Column: Chat Panel (+ Mobile Contextual Mini-Orb Bar) -->
+    <!-- Responsive Workspace: 1-Col Mobile / 2-Col Grid Tablet (Hero Centerpiece Top + Split Bottom) / 3-Col Desktop (>= 1280px) -->
+    <div
+      data-test="shell-workspace-grid"
+      class="flex-1 flex flex-col md:grid md:grid-cols-2 md:grid-rows-[minmax(260px,38%)_1fr] xl:flex xl:flex-row overflow-hidden relative min-h-0"
+    >
+      <!-- Chat Panel (Mobile: Tab 'chat' / Tablet: Bottom-Left Col 1 Row 2 / Desktop: Left Column) -->
       <div
         data-test="shell-left-column"
         :class="mobileTab === 'chat' ? 'flex' : 'hidden'"
-        class="w-full md:flex md:w-[58%] lg:w-[380px] xl:w-[400px] lg:shrink-0 flex-1 md:flex-none md:h-full z-10 flex-col overflow-hidden min-h-0"
+        class="w-full md:flex md:col-span-1 md:row-start-2 md:h-full xl:w-[380px] 2xl:w-[400px] xl:shrink-0 xl:order-1 flex-1 md:flex-none xl:h-full z-10 flex-col overflow-hidden min-h-0 md:border-r border-space-800"
       >
         <!-- Mobile SoundBar (Visible on mobile in Chat view) -->
         <div
@@ -217,122 +250,51 @@ const handleToggleMic = () => {
         />
       </div>
 
-      <!-- Center & Right Workspace Group (Tablet 42% Right Column / Desktop Center + Right Columns) -->
+      <!-- Particle Orb (Mobile: Tab 'voice' / Tablet: Top Hero Centerpiece Col-Span-2 Row 1 / Desktop: Center Column) -->
       <div
-        data-test="shell-secondary-group"
-        :class="(mobileTab === 'voice' || mobileTab === 'agents' || mobileTab === 'telemetry') ? 'flex' : 'hidden'"
-        class="w-full md:flex md:w-[42%] lg:w-auto flex-1 flex-col overflow-hidden min-w-0 min-h-0 md:h-full"
+        data-test="shell-orb-column"
+        :class="mobileTab === 'voice' ? 'flex' : 'hidden'"
+        class="w-full flex-1 md:flex-none xl:flex-1 h-full md:flex md:col-span-2 md:row-start-1 md:h-full xl:order-2 xl:h-full relative z-0 flex-col bg-[#04070d] min-h-0 overflow-hidden md:border-b xl:border-b-0 border-space-800"
       >
-        <!-- Tablet Segmented Control Header (768px - 1023px: md to lg) -->
-        <div
-          data-test="tablet-segmented-control"
-          class="hidden md:flex lg:hidden items-center justify-between gap-1.5 p-2 bg-[#080d17] border-b border-space-800 shrink-0"
+        <ParticleOrb 
+          ref="particleOrbRef"
+          :active-agent-color="activeAgentColor"
+          :active-agents="activeAgentsList"
+          :is-debating="isOrbDebating"
+          @submit-draft="chatPanelRef?.onSubmit()"
+          class="flex-1 w-full h-full"
+        />
+      </div>
+
+      <!-- Agent Topology & Observability (Mobile: Tab 'agents' or 'telemetry' / Tablet: Bottom-Right Col 2 Row 2 / Desktop: Right Column) -->
+      <div
+        data-test="shell-agents-column"
+        :class="(mobileTab === 'agents' || mobileTab === 'telemetry') ? 'flex' : 'hidden'"
+        class="w-full md:flex md:col-span-1 md:row-start-2 md:h-full xl:w-[380px] 2xl:w-[400px] xl:shrink-0 xl:order-3 flex-1 md:flex-none xl:h-full z-10 bg-space-900/50 backdrop-blur-md flex-col min-h-0"
+      >
+        <AgentTopology 
+          ref="agentTopologyRef"
+          class="flex-1" 
+          :agents="store.agents"
+          :initial-tab="mobileTab === 'telemetry' ? 'observability' : 'agents'"
         >
-          <button
-            type="button"
-            data-test="tablet-tab-orb"
-            @click="selectTabletRightTab('orb')"
-            :class="tabletRightTab === 'orb'
-              ? 'bg-neon-cyan text-space-950 font-bold shadow-[0_0_10px_rgba(0,229,255,0.3)]'
-              : 'text-slate-400 hover:text-cyan-300 hover:bg-space-900'"
-            class="flex-1 py-1.5 px-2 min-h-[36px] rounded text-[11px] font-mono uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: tabletRightTab === 'orb' ? '#060a11' : activeAgentColor }"></span>
-            <span>Orbe 3D</span>
-          </button>
-          <button
-            type="button"
-            data-test="tablet-tab-agents"
-            @click="selectTabletRightTab('agents')"
-            :class="tabletRightTab === 'agents'
-              ? 'bg-neon-cyan text-space-950 font-bold shadow-[0_0_10px_rgba(0,229,255,0.3)]'
-              : 'text-slate-400 hover:text-cyan-300 hover:bg-space-900'"
-            class="flex-1 py-1.5 px-2 min-h-[36px] rounded text-[11px] font-mono uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <span>Agentes</span>
-            <span v-if="store.isDebating" class="w-1.5 h-1.5 rounded-full bg-neon-green animate-ping"></span>
-          </button>
-          <button
-            type="button"
-            data-test="tablet-tab-telemetry"
-            @click="selectTabletRightTab('telemetry')"
-            :class="tabletRightTab === 'telemetry'
-              ? 'bg-neon-cyan text-space-950 font-bold shadow-[0_0_10px_rgba(0,229,255,0.3)]'
-              : 'text-slate-400 hover:text-cyan-300 hover:bg-space-900'"
-            class="flex-1 py-1.5 px-2 min-h-[36px] rounded text-[11px] font-mono uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <span>Telemetría</span>
-          </button>
-        </div>
-
-        <!-- Inner Columns Container -->
-        <div class="flex-1 flex flex-col lg:flex-row overflow-hidden relative min-h-0">
-          
-          <!-- Middle Column: Particle Orb & Canvas -->
-          <div
-            data-test="shell-orb-column"
-            :class="[
-              mobileTab === 'voice' ? 'flex' : 'hidden',
-              tabletRightTab === 'orb' ? 'md:flex' : 'md:hidden',
-              'lg:flex'
-            ]"
-            class="w-full flex-1 h-full relative z-0 flex-col bg-[#04070d] min-h-0"
-          >
-            <ParticleOrb 
-              ref="particleOrbRef"
-              :active-agent-color="activeAgentColor"
-              :active-agents="activeAgentsList"
-              :is-debating="isOrbDebating"
-              @submit-draft="chatPanelRef?.onSubmit()"
-              class="flex-1"
-            />
-          </div>
-
-          <!-- Right Column: Agent Topology & Observability -->
-          <div
-            data-test="shell-agents-column"
-            :class="[
-              (mobileTab === 'agents' || mobileTab === 'telemetry') ? 'flex' : 'hidden',
-              tabletRightTab === 'agents' ? 'md:flex' : 'md:hidden',
-              'lg:flex'
-            ]"
-            class="w-full lg:w-[380px] xl:w-[400px] lg:shrink-0 flex-1 lg:flex-none h-full z-10 bg-space-900/50 backdrop-blur-md flex-col min-h-0"
-          >
-            <AgentTopology 
-              ref="agentTopologyRef"
-              class="flex-1" 
-              :agents="store.agents"
-              :initial-tab="mobileTab === 'telemetry' ? 'observability' : 'agents'"
-            >
-              <template #orchestration>
-                <div class="flex flex-col justify-center space-y-2 h-full">
-                  <h3 class="text-[10px] font-mono text-slate-500 uppercase tracking-widest">
-                    Consejo Técnico
-                  </h3>
-                  <div class="p-3 bg-space-950/60 border border-space-800 rounded text-slate-400 font-mono text-xs flex items-center justify-between">
-                    <span class="flex items-center gap-2">
-                      <span class="w-1.5 h-1.5 rounded-full" :class="store.isDebating ? 'bg-neon-green animate-pulse' : 'bg-slate-500'"></span>
-                      <span>{{ store.isDebating ? 'Debate en curso' : 'Consejo en espera' }}</span>
-                    </span>
-                    <span v-if="store.isHitlRequired" class="text-neon-amber text-[10px] uppercase font-bold animate-pulse">
-                      HITL Activo
-                    </span>
-                  </div>
-                </div>
-              </template>
-            </AgentTopology>
-          </div>
-
-          <!-- Tablet Side-by-Side Telemetry Column (visible on Tablet when tabletRightTab === 'telemetry') -->
-          <div
-            v-if="tabletRightTab === 'telemetry'"
-            data-test="shell-tablet-telemetry"
-            class="hidden md:flex lg:hidden w-full flex-1 h-full flex-col overflow-hidden bg-[#060a11] min-h-0"
-          >
-            <ObservabilityPanel class="flex-1" />
-          </div>
-
-        </div>
+          <template #orchestration>
+            <div class="flex flex-col justify-center space-y-2 h-full">
+              <h3 class="text-[10px] font-mono text-slate-500 uppercase tracking-widest">
+                Consejo Técnico
+              </h3>
+              <div class="p-3 bg-space-950/60 border border-space-800 rounded text-slate-400 font-mono text-xs flex items-center justify-between">
+                <span class="flex items-center gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full" :class="store.isDebating ? 'bg-neon-green animate-pulse' : 'bg-slate-500'"></span>
+                  <span>{{ store.isDebating ? 'Debate en curso' : 'Consejo en espera' }}</span>
+                </span>
+                <span v-if="store.isHitlRequired" class="text-neon-amber text-[10px] uppercase font-bold animate-pulse">
+                  HITL Activo
+                </span>
+              </div>
+            </div>
+          </template>
+        </AgentTopology>
       </div>
 
     </div>

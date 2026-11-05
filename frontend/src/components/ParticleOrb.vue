@@ -112,8 +112,10 @@ const resizeCanvas = () => {
   const parent = canvas.parentElement
   if (!parent) return
   const rect = parent.getBoundingClientRect()
-  orbWidth = canvas.width = (rect && rect.width > 200) ? Math.floor(rect.width) : 800
-  orbHeight = canvas.height = (rect && rect.height > 200) ? Math.floor(rect.height) : 560
+  const fallbackW = typeof window !== 'undefined' ? window.innerWidth : 800
+  const fallbackH = typeof window !== 'undefined' ? (window.innerHeight ? window.innerHeight - 112 : 560) : 560
+  orbWidth = canvas.width = (rect && rect.width > 50) ? Math.floor(rect.width) : fallbackW
+  orbHeight = canvas.height = (rect && rect.height > 50) ? Math.floor(rect.height) : fallbackH
   const minDimension = Math.min(orbWidth, orbHeight)
   BASE_RADIUS = minDimension < 460
     ? Math.max(105, minDimension * 0.36)
@@ -194,26 +196,12 @@ const getParticleActiveAgent = (
     return { isActive: true, rgb: chosen.rgb, hex: chosen.hex }
   }
 
-  // Case 3: 3 agents in parallel (120-degree angular sectors)
-  if (agents.length === 3) {
-    const angle = Math.atan2(p.oz, p.ox)
-    let idx = 0
-    if (angle < -Math.PI / 3) idx = 0
-    else if (angle < Math.PI / 3) idx = 1
-    else idx = 2
-    const chosen = agents[idx]!
-    return { isActive: true, rgb: chosen.rgb, hex: chosen.hex }
-  }
-
-  // Case 4+: 4 or more agents in parallel (Radial quadrants)
-  const isTop = p.oy < 0
-  const isLeft = p.ox < 0
-  let sector = 0
-  if (isTop && isLeft) sector = 0
-  else if (isTop && !isLeft) sector = 1
-  else if (!isTop && isLeft) sector = 2
-  else sector = 3
-  const chosen = agents[sector % agents.length]!
+  // Case 3+: 3 or more agents in parallel (Equidistant angular meridian sectors around the orb)
+  const count = agents.length
+  const angle = Math.atan2(p.oz, p.ox)
+  const normAngle = ((angle + Math.PI) / (2 * Math.PI) + 1) % 1
+  const sector = Math.floor(normAngle * count) % count
+  const chosen = agents[sector]!
   return { isActive: true, rgb: chosen.rgb, hex: chosen.hex }
 }
 
@@ -447,11 +435,10 @@ const coreGlowStyle1 = computed(() => {
       background: `radial-gradient(circle at center, ${agents[0]!.color}26 0%, ${agents[1]!.color}26 60%, transparent 75%)` 
     }
   }
-  const c1 = agents[0]!.color
-  const c2 = agents[1]!.color
-  const c3 = agents[2] ? agents[2].color : c1
+  const step = 360 / agents.length
+  const stops = agents.map((a, i) => `${a.color}33 ${Math.round(i * step)}deg, ${a.color}33 ${Math.round((i + 1) * step)}deg`).join(', ')
   return {
-    background: `radial-gradient(circle at center, ${c1}26 0%, ${c2}26 40%, ${c3}26 70%, transparent 80%)`
+    background: `conic-gradient(from 0deg at 50% 50%, ${stops})`
   }
 })
 
@@ -467,10 +454,10 @@ const coreGlowStyle2 = computed(() => {
       background: `radial-gradient(circle at center, ${agents[1]!.color}33 0%, ${agents[0]!.color}33 60%, transparent 75%)` 
     }
   }
-  const c1 = agents[0]!.color
-  const c2 = agents[1]!.color
+  const step = 360 / agents.length
+  const stops = agents.map((a, i) => `${a.color}26 ${Math.round((i + 0.5) * step)}deg, ${a.color}26 ${Math.round((i + 1.5) * step)}deg`).join(', ')
   return {
-    background: `radial-gradient(circle at center, ${c2}33 0%, ${c1}33 70%, transparent 80%)`
+    background: `conic-gradient(from 180deg at 50% 50%, ${stops})`
   }
 })
 
@@ -500,8 +487,8 @@ const ring3Style = computed(() => {
   <!-- CenterOrbCanvasCore -->
   <section class="flex flex-col relative w-full h-full border-x border-slate-800/80 overflow-hidden" data-purpose="neural-orb-centerpiece">
     
-    <!-- Waveform Audio Visualizer, Voice State Controller & Microphone HUD Deck via SoundBar (Top on Mobile, Bottom on Desktop) -->
-    <div class="order-1 md:order-2 w-full bg-space-900/85 border-b md:border-b-0 md:border-t border-slate-800/90 px-4 sm:px-6 py-2.5 z-20 backdrop-blur-md shrink-0">
+    <!-- Waveform Audio Visualizer, Voice State Controller & Microphone HUD Deck via SoundBar (Floating Top on Mobile, Bottom Dock on Tablet/Desktop) -->
+    <div class="order-1 md:order-2 w-full bg-space-900/85 border-b md:border-b-0 md:border-t border-slate-800/90 px-4 sm:px-6 py-2.5 z-20 backdrop-blur-md shrink-0 absolute top-0 left-0 md:relative">
       <SoundBar
         ref="soundBarRef"
         :active-agent-color="activeAgentColor"
@@ -511,22 +498,22 @@ const ring3Style = computed(() => {
       />
     </div>
 
-    <!-- Interactive Cosmic Neural Orb Web Canvas (Flex 1 ensures it takes remaining space, centering its content) -->
-    <div class="order-2 md:order-1 relative w-full flex-1 flex items-center justify-center min-h-[240px] sm:min-h-[300px] overflow-hidden" id="orbContainer">
+    <!-- Interactive Cosmic Neural Orb Web Canvas (Centered in screen on mobile, flex-1 min-h-0 on tablet/desktop) -->
+    <div class="order-2 md:order-1 relative w-full h-full flex-1 flex items-center justify-center min-h-0 xl:min-h-[300px] overflow-hidden" id="orbContainer">
       <!-- Sci-Fi Telemetry Orbit Rings & Coordinate Markings -->
       <div 
         id="orbRing1"
-        class="absolute w-[280px] h-[280px] sm:w-[440px] sm:h-[440px] lg:w-[580px] lg:h-[580px] rounded-full border border-cyan-500/20 pointer-events-none animate-[spin_120s_linear_infinite]"
+        class="absolute w-[280px] h-[280px] sm:w-[440px] sm:h-[440px] xl:w-[580px] xl:h-[580px] rounded-full border border-cyan-500/20 pointer-events-none animate-[spin_120s_linear_infinite]"
         :style="ring1Style"
       ></div>
       <div 
         id="orbRing2"
-        class="absolute w-[240px] h-[240px] sm:w-[380px] sm:h-[380px] lg:w-[500px] lg:h-[500px] rounded-full border border-dashed border-slate-700/40 pointer-events-none animate-[spin_80s_linear_infinite_reverse]"
+        class="absolute w-[240px] h-[240px] sm:w-[380px] sm:h-[380px] xl:w-[500px] xl:h-[500px] rounded-full border border-dashed border-slate-700/40 pointer-events-none animate-[spin_80s_linear_infinite_reverse]"
         :style="ring2Style"
       ></div>
       <div 
         id="orbRing3"
-        class="absolute w-[310px] h-[310px] sm:w-[470px] sm:h-[470px] lg:w-[620px] lg:h-[620px] rounded-full border border-cyan-400/15 pointer-events-none"
+        class="absolute w-[310px] h-[310px] sm:w-[470px] sm:h-[470px] xl:w-[620px] xl:h-[620px] rounded-full border border-cyan-400/15 pointer-events-none"
         :style="ring3Style"
       ></div>
       

@@ -32,14 +32,15 @@ const formatTime = (isoString?: string) => {
 </script>
 
 <template>
-  <div class="h-full flex flex-col font-mono text-[10px] text-space-400">
-    <div class="p-2 border-b border-space-800 flex justify-between items-center">
+  <div class="h-full flex flex-col font-mono text-[10px] text-space-400 min-h-0">
+    <div class="p-2 border-b border-space-800 flex justify-between items-center shrink-0">
       <span class="text-neon-amber uppercase tracking-widest">Event Stream</span>
       <span class="text-space-500">{{ events.length }} events</span>
     </div>
     <div 
       ref="listContainer"
-      class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1"
+      class="flex-1 min-h-0 overflow-y-auto custom-scrollbar overscroll-contain p-2 space-y-1"
+      style="-webkit-overflow-scrolling: touch;"
     >
       <div 
         v-for="(event, index) in events" 

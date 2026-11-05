@@ -8,7 +8,7 @@ const props = defineProps<{
   roleName?: string
   description?: string
   colorHex?: string
-  state: 'STANDBY' | 'ACTIVE' | 'COMPLETED'
+  state: 'STANDBY' | 'ACTIVE' | 'COMPLETED' | 'ERROR'
   colorClass?: string
   glowClass?: string
   tokensConsumed?: number
@@ -112,8 +112,11 @@ const isDocs = computed(() => {
   <div 
     data-test="card-container"
     class="relative h-[230px] min-h-[230px] flex flex-col justify-between overflow-hidden rounded-xl bg-space-850/80 border border-space-700/80 p-3.5 transition-all duration-300"
-    :class="[isGlowActive ? (glowClass || '') : '']"
-    :style="isGlowActive ? { borderColor: agentColor, boxShadow: `0 0 20px ${agentColor}40, inset 0 0 15px ${agentColor}1a` } : {}"
+    :class="[
+      isGlowActive ? (glowClass || '') : '',
+      state === 'ERROR' ? 'border-rose-500/60 bg-rose-950/20' : ''
+    ]"
+    :style="isGlowActive ? { borderColor: agentColor, boxShadow: `0 0 20px ${agentColor}40, inset 0 0 15px ${agentColor}1a` } : (state === 'ERROR' ? { borderColor: '#ef4444', boxShadow: '0 0 15px rgba(239, 68, 68, 0.2)' } : {})"
   >
     <!-- Top Section: Header & Badges -->
     <div>
@@ -123,14 +126,14 @@ const isDocs = computed(() => {
           <div 
             class="h-2.5 w-2.5 shrink-0 rounded-full transition-all duration-300"
             :class="[
-              state === 'ACTIVE' ? 'animate-pulse' : 'bg-slate-300 dark:bg-slate-700/80 border border-slate-400 dark:border-slate-600/50'
+              state === 'ACTIVE' ? 'animate-pulse' : (state === 'ERROR' ? 'bg-rose-500 border border-rose-400' : 'bg-slate-300 dark:bg-slate-700/80 border border-slate-400 dark:border-slate-600/50')
             ]"
-            :style="state === 'ACTIVE' ? { backgroundColor: agentColor, boxShadow: `0 0 10px ${agentColor}` } : {}"
+            :style="state === 'ACTIVE' ? { backgroundColor: agentColor, boxShadow: `0 0 10px ${agentColor}` } : (state === 'ERROR' ? { backgroundColor: '#ef4444', boxShadow: '0 0 8px #ef4444' } : {})"
           ></div>
           <h3 
             class="font-mono text-xs font-bold tracking-wider truncate" 
             :class="colorClass"
-            :style="{ color: agentColor }"
+            :style="{ color: state === 'ERROR' ? '#ef4444' : agentColor }"
             :title="displayRole"
           >
             {{ displayRole }}
@@ -140,9 +143,13 @@ const isDocs = computed(() => {
         <!-- Status Tag -->
         <span 
           class="shrink-0 text-[9px] font-mono px-2 py-0.5 rounded uppercase tracking-wider font-semibold border"
-          :class="state === 'ACTIVE' ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/40 animate-pulse' : 'bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700/60'"
+          :class="state === 'ACTIVE' 
+            ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/40 animate-pulse' 
+            : (state === 'ERROR' 
+                ? 'bg-rose-500/20 text-rose-400 border-rose-500/50' 
+                : 'bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700/60')"
         >
-          {{ state === 'ACTIVE' ? 'ACTIVE CO-EXEC' : state }}
+          {{ state === 'ACTIVE' ? 'ACTIVE CO-EXEC' : (state === 'ERROR' ? 'ERROR' : state) }}
         </span>
       </div>
 

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
-export type AgentState = 'STANDBY' | 'ACTIVE' | 'COMPLETED'
+export type AgentState = 'STANDBY' | 'ACTIVE' | 'COMPLETED' | 'ERROR'
 export type HitlDecisionType = 'approve' | 'refine' | 'divert' | 'finish' | 'reject'
 
 export interface Agent {
@@ -61,6 +61,8 @@ export interface DebateSession {
 }
 
 export interface DebateTopology {
+  project_name?: string
+  project_description?: string
   supervisor: string
   interpreters: string[]
   proposers: string[]
@@ -163,6 +165,8 @@ export const useDebateStore = defineStore('debate', () => {
   const isAgentsLoaded = ref(false)
   const executionTrail = ref<string[]>([])
   const topology = ref<DebateTopology | null>(null)
+  const projectName = computed(() => topology.value?.project_name || 'A.T.E.N.E.A.')
+  const projectDescription = computed(() => topology.value?.project_description || 'Asistente Técnica y Evaluadora de Nuevas Estructuras y Arquitecturas')
 
   function recordExecutionTrail(name?: string | null) {
     if (!name) return
@@ -184,8 +188,66 @@ export const useDebateStore = defineStore('debate', () => {
   // TTS State
   const isTtsPlaying = ref(false)
   const activeTtsRole = ref<string | null>(null)
+  const readingAgentRoles = ref<string[]>([])
   const isVoiceOutputEnabled = ref(true)
   const globalAudioPlayer = new Audio()
+
+  function isAgentReading(role?: string | null): boolean {
+    if (!role || !isVoiceOutputEnabled.value) return false
+    const norm = (normalizeAgentRole(role) || role).toLowerCase()
+    return readingAgentRoles.value.some(r => {
+      const normR = (normalizeAgentRole(r) || r).toLowerCase()
+      if (normR === norm) return true
+      if ((norm === 'supervisor' || norm === 'atenea') && (normR === 'supervisor' || normR === 'atenea')) return true
+      return false
+    })
+  }
+
+  function addReadingAgentRole(role?: string | null) {
+    if (!role || !isVoiceOutputEnabled.value) return
+    const norm = normalizeAgentRole(role) || role
+    if (!isAgentReading(norm)) {
+      readingAgentRoles.value.push(norm)
+    }
+    const ag = findAgent(norm) || (norm === 'supervisor' ? findAgent('supervisor') : undefined)
+    if (ag && ag.state !== 'ACTIVE') {
+      ag.state = 'ACTIVE'
+    }
+  }
+
+  function removeReadingAgentRole(role?: string | null) {
+    if (!role) return
+    const norm = (normalizeAgentRole(role) || role).toLowerCase()
+    readingAgentRoles.value = readingAgentRoles.value.filter(r => {
+      const normR = (normalizeAgentRole(r) || r).toLowerCase()
+      if (normR === norm) return false
+      if ((norm === 'supervisor' || norm === 'atenea') && (normR === 'supervisor' || normR === 'atenea')) return false
+      return true
+    })
+    const ag = findAgent(role) || (norm === 'supervisor' ? findAgent('supervisor') : undefined)
+    if (ag && ag.state === 'ACTIVE' && !isDebating.value) {
+      ag.state = 'COMPLETED'
+    }
+    if (activeTtsRole.value) {
+      const currentNorm = (normalizeAgentRole(activeTtsRole.value) || activeTtsRole.value).toLowerCase()
+      if (currentNorm === norm || ((norm === 'supervisor' || norm === 'atenea') && (currentNorm === 'supervisor' || currentNorm === 'atenea'))) {
+        activeTtsRole.value = readingAgentRoles.value[0] || null
+      }
+    }
+  }
+
+  function clearReadingAgentRoles() {
+    const wasReading = [...readingAgentRoles.value]
+    readingAgentRoles.value = []
+    if (!isDebating.value) {
+      wasReading.forEach(role => {
+        const ag = findAgent(role) || (normalizeAgentRole(role) === 'supervisor' ? findAgent('supervisor') : undefined)
+        if (ag && ag.state === 'ACTIVE') {
+          ag.state = 'COMPLETED'
+        }
+      })
+    }
+  }
   
   // Auto-Listen (Wake-Word) State
   // Expose isRecording so WW can be muted
@@ -193,6 +255,7 @@ export const useDebateStore = defineStore('debate', () => {
   const isAutoListenEnabled = ref(false)
   const isWakeWordTriggered = ref(false)
   const selectedAgent = ref<string>('supervisor')
+  const selectedAgents = ref<string[]>(['supervisor'])
 
   // Learning Session State (Metis Vault & Vector persistence)
   const isLearningSession = ref(false)
@@ -327,6 +390,7 @@ export const useDebateStore = defineStore('debate', () => {
     isTtsPlaying.value = false
     activeTtsRole.value = null
     ttsStreamBuffer = ''
+    clearReadingAgentRoles()
     if (currentTtsSource) {
       try {
         currentTtsSource.stop()
@@ -386,6 +450,7 @@ export const useDebateStore = defineStore('debate', () => {
         state: 'STANDBY'
       }))
       isAgentsLoaded.value = true
+      fetchTopology()
     } catch (error) {
       console.error('Error loading agents:', error)
       agents.value = []
@@ -444,13 +509,24 @@ export const useDebateStore = defineStore('debate', () => {
     ws.onclose = () => {
       console.log('[WS] Disconnected')
       isConnected.value = false
+      if (isDebating.value) {
+        handleError({
+          type: 'error',
+          content: 'Conexión interrumpida con el servidor de agentes.'
+        })
+      }
       ws = null
       attemptReconnect()
     }
     
     ws.onerror = (error) => {
       console.error('[WS] Error', error)
-      // onclose will be triggered automatically
+      if (isDebating.value) {
+        handleError({
+          type: 'error',
+          content: 'Error de comunicación WebSocket con el servidor.'
+        })
+      }
     }
   }
 
@@ -517,7 +593,7 @@ export const useDebateStore = defineStore('debate', () => {
     isDebating.value = debate.status === 'running'
   }
 
-  function startDebate(userRequest: string, targetAgent: string = 'supervisor', attachmentUrl: string | string[] | null = null) {
+  function startDebate(userRequest: string, targetAgent: string | string[] = 'supervisor', attachmentUrl: string | string[] | null = null) {
     stopTts() // Interrupt any ongoing TTS
 
     if (!isConnected.value || !ws) {
@@ -533,14 +609,21 @@ export const useDebateStore = defineStore('debate', () => {
       sessionCachedTokens.value = 0
     }
 
+    // Resolve target agent(s)
+    const targetAgentsList = Array.isArray(targetAgent) 
+      ? (targetAgent.length > 0 ? targetAgent : ['supervisor'])
+      : [targetAgent || 'supervisor']
+    const primaryTarget = targetAgentsList[0] || 'supervisor'
+
     // Reset agent states to STANDBY for the new turn
     agents.value.forEach(a => a.state = 'STANDBY')
-    const startRole = targetAgent || 'supervisor'
-    const startingAgent = findAgent(startRole) || (normalizeAgentRole(startRole) === 'supervisor' ? findAgent('supervisor') : undefined)
-    if (startingAgent) {
-      startingAgent.state = 'ACTIVE'
-      startingAgent.startedAt = Date.now()
-    }
+    targetAgentsList.forEach(role => {
+      const startingAgent = findAgent(role) || (normalizeAgentRole(role) === 'supervisor' ? findAgent('supervisor') : undefined)
+      if (startingAgent) {
+        startingAgent.state = 'ACTIVE'
+        startingAgent.startedAt = Date.now()
+      }
+    })
     executionTrail.value = ['Atenea']
     
     // Capture session chat history before adding the new user message
@@ -565,13 +648,16 @@ export const useDebateStore = defineStore('debate', () => {
       attachments = [attachmentUrl]
     }
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       type: 'start',
       session_id: currentSessionId.value,
       user_request: userRequest,
-      target_agent: targetAgent,
+      target_agent: primaryTarget,
       attachments,
       history
+    }
+    if (Array.isArray(targetAgent)) {
+      payload.target_agents = targetAgentsList
     }
     ws.send(JSON.stringify(payload))
   }
@@ -715,7 +801,9 @@ export const useDebateStore = defineStore('debate', () => {
     const agent = findAgent(event.role) || (normalizeAgentRole(event.role) === 'supervisor' ? findAgent('supervisor') : undefined)
     if (!agent) return
 
-    agent.state = 'COMPLETED'
+    if (!isAgentReading(agent.role)) {
+      agent.state = 'COMPLETED'
+    }
     updateAgentLatency(agent, event)
     const estTokens = updateAgentTokens(agent, event)
     updateCachedTokens(event, estTokens)
@@ -807,9 +895,9 @@ export const useDebateStore = defineStore('debate', () => {
     isDebating.value = false
     resetWakeWordSession()
     
-    // Mark any remaining active agents as COMPLETED
+    // Mark any remaining active agents as COMPLETED unless they are currently reading TTS
     agents.value.forEach(a => {
-      if (a.state === 'ACTIVE') {
+      if (a.state === 'ACTIVE' && !isAgentReading(a.role)) {
         a.state = 'COMPLETED'
       }
     })
@@ -825,7 +913,9 @@ export const useDebateStore = defineStore('debate', () => {
       streamingMessageId.value = null
       flushTtsStreamingBuffer(event.role || undefined)
     } else {
-      pushAgentMessage(event.content || 'Debate finished.', event.role)
+      if (event.content && event.content.trim()) {
+        pushAgentMessage(event.content, event.role)
+      }
     }
     recordExecutionTrail('Atenea')
   }
@@ -834,6 +924,20 @@ export const useDebateStore = defineStore('debate', () => {
     isDebating.value = false
     streamingMessageId.value = null
     ttsStreamBuffer = ''
+    stopTts()
+    resetWakeWordSession()
+
+    // Stop timers and return active agents to inactive STANDBY state
+    agents.value.forEach(a => {
+      if (a.state === 'ACTIVE') {
+        if (a.startedAt) {
+          a.latency = Number(((Date.now() - a.startedAt) / 1000).toFixed(2))
+          a.startedAt = undefined
+        }
+        a.state = 'STANDBY'
+      }
+    })
+
     messages.value.push({ role: 'assistant', content: `Error: ${event.content}` })
   }
 
@@ -1165,11 +1269,17 @@ export const useDebateStore = defineStore('debate', () => {
     cacheSavingsPercentage,
     isTtsPlaying,
     activeTtsRole,
+    readingAgentRoles,
+    isAgentReading,
+    addReadingAgentRole,
+    removeReadingAgentRole,
+    clearReadingAgentRoles,
     isVoiceOutputEnabled,
     isAutoListenEnabled,
     isRecording,
     isWakeWordTriggered,
     selectedAgent,
+    selectedAgents,
     globalAudioPlayer,
     globalAnalyser,
     unlockAudioContext,
@@ -1181,6 +1291,8 @@ export const useDebateStore = defineStore('debate', () => {
     loadDebate,
     fetchTopology,
     topology,
+    projectName,
+    projectDescription,
     executionTrail,
     recordExecutionTrail,
     connect,

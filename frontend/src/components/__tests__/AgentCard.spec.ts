@@ -181,5 +181,19 @@ describe('AgentCard.vue', () => {
     const cardEl = wrapper.find('[data-test="card-container"]')
     expect(cardEl.attributes('style')).toContain('border-color: rgb(34, 197, 94)')
   })
+
+  it('renders ERROR status tag and does not display progress bar when in ERROR state', () => {
+    const wrapper = mount(AgentCard, {
+      props: {
+        role: 'THE_JUDGE',
+        state: 'ERROR',
+        colorHex: '#ef4444'
+      }
+    })
+
+    expect(wrapper.text()).toContain('ERROR')
+    const progressBar = wrapper.find('[data-test="progress-bar"]')
+    expect(progressBar.exists()).toBe(false)
+  })
 })
 

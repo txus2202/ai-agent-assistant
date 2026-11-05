@@ -98,5 +98,12 @@ describe('ObservabilityPanel.vue', () => {
     expect(link.attributes('href')).toBe('http://localhost:3000')
     expect(link.attributes('target')).toBe('_blank')
   })
+
+  it('displays ERROR status badge for agents in error state', () => {
+    const wrapper = mount(ObservabilityPanel)
+    // The Judge is ACTIVE with 1.8s running..., Senior Arch is COMPLETED with 1.12s
+    expect(wrapper.text()).toContain('1.8s running...')
+    expect(wrapper.text()).toContain('1.12s')
+  })
 })
 

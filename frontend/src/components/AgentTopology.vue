@@ -39,6 +39,9 @@ const displayedAgents = computed(() => {
 })
 
 const isAgentActive = (agentRole: string, agentState: string) => {
+  if (typeof store.isAgentReading === 'function' && store.isAgentReading(agentRole)) {
+    return true
+  }
   if (store.activeTtsRole) {
     const normTts = (store.normalizeAgentRole ? store.normalizeAgentRole(store.activeTtsRole) : store.activeTtsRole).toLowerCase()
     const normAgent = (store.normalizeAgentRole ? store.normalizeAgentRole(agentRole) : agentRole).toLowerCase()
@@ -48,9 +51,9 @@ const isAgentActive = (agentRole: string, agentState: string) => {
   return agentState === 'ACTIVE'
 }
 
-// Watch for changes in displayedAgents or activeTtsRole to trigger scrollIntoView on the active one
+// Watch for changes in displayedAgents, activeTtsRole or readingAgentRoles to trigger scrollIntoView on the active one
 watch(
-  () => [displayedAgents.value, store.activeTtsRole],
+  () => [displayedAgents.value, store.activeTtsRole, store.readingAgentRoles],
   async () => {
     const activeIndex = displayedAgents.value.findIndex(a => isAgentActive(a.role, a.state))
     if (activeIndex !== -1) {

@@ -115,10 +115,12 @@ const displayAgents = computed(() => {
   const list = debateStore.agents || []
   return list.map(a => {
     const colorHex = a.color_hex || DEFAULT_COLOR
+    const isReading = typeof debateStore.isAgentReading === 'function' ? debateStore.isAgentReading(a.role) : false
+    const computedState = isReading ? 'ACTIVE' : a.state
     return {
       role: a.role,
       name: a.name || (a as { roleName?: string }).roleName || a.role,
-      state: a.state,
+      state: computedState,
       latency: a.latency,
       tokens: a.tokens,
       startedAt: a.startedAt,
@@ -130,7 +132,7 @@ const displayAgents = computed(() => {
 
 // Support multiple concurrently active agents (e.g. Innovator + Senior, or Diagrammer + DevOps)
 const activeAgents = computed<Agent[]>(() => {
-  return debateStore.agents?.filter(a => a.state === 'ACTIVE') || []
+  return debateStore.agents?.filter(a => a.state === 'ACTIVE' || (typeof debateStore.isAgentReading === 'function' && debateStore.isAgentReading(a.role))) || []
 })
 
 const activeAgentsTitle = computed(() => {
@@ -144,6 +146,7 @@ const clusterMetrics = computed(() => {
   const agents = displayAgents.value
   const total = agents.length || 1
   const completed = agents.filter(a => a.state === 'COMPLETED').length
+  const hasError = agents.some(a => a.state === 'ERROR')
   const activeCount = activeAgents.value.length
   const isDebateRunning = debateStore.isDebating || activeCount > 0
 
@@ -151,7 +154,11 @@ const clusterMetrics = computed(() => {
   let statusText: string
   let strokeColor: string
 
-  if (isDebateRunning) {
+  if (hasError && !isDebateRunning) {
+    percentage = Math.round((completed / total) * 100)
+    statusText = 'ERROR DETECTED'
+    strokeColor = '#ef4444'
+  } else if (isDebateRunning) {
     percentage = Math.min(100, Math.max(15, Math.round(((completed + (activeCount * 0.5)) / total) * 100)))
     statusText = 'AUDIT ONLINE'
     strokeColor = activeCount > 0 ? (displayAgents.value.find(a => a.state === 'ACTIVE')?.colorHex || '#00e5ff') : '#00e5ff'
@@ -190,6 +197,14 @@ function getAgentStatusBadge(agent: { state: string; latency?: number; tokens?: 
       text: `${elapsed}s running...`,
       badgeClass: 'text-[#ef4444] font-semibold animate-pulse',
       isLive: true
+    }
+  }
+  if (agent.state === 'ERROR') {
+    const lat = agent.latency !== undefined ? `${agent.latency.toFixed(2)}s` : 'Failed'
+    return {
+      text: `${lat} (Error)`,
+      badgeClass: 'text-rose-400 font-semibold',
+      isLive: false
     }
   }
   if (agent.state === 'COMPLETED') {
@@ -266,7 +281,7 @@ function openLangfuse(e: MouseEvent) {
               stroke-dasharray="251.2"
               :stroke-dashoffset="clusterMetrics.dashoffset"
               stroke-linecap="round"
-              class="transition-all duration-500 drop-shadow-[0_0_8px_rgba(244,63,94,0.6)]"
+              class="transition-all duration-500"
             />
           </svg>
           <div class="absolute flex flex-col items-center justify-center">
@@ -402,8 +417,8 @@ function openLangfuse(e: MouseEvent) {
     </div>
 
     <!-- Unified Logs / Event Stream -->
-    <div class="bg-[#080d16] border border-space-800 rounded p-3">
-      <div class="flex items-center justify-between mb-2 text-[10px] font-mono">
+    <div class="bg-[#080d16] border border-space-800 rounded p-3 flex flex-col">
+      <div class="flex items-center justify-between mb-2 text-[10px] font-mono shrink-0">
         <div class="flex items-center space-x-1.5 text-white font-bold tracking-wider uppercase">
           <Terminal class="w-3.5 h-3.5 text-neon-cyan" />
           <span>LOGS / EVENT STREAM</span>
@@ -420,9 +435,9 @@ function openLangfuse(e: MouseEvent) {
         </span>
       </div>
 
-      <!-- Unified Real-Time Event Stream View -->
-      <div class="bg-space-950/90 border border-space-800/60 rounded max-h-56 overflow-hidden">
-        <EventStream :events="debateStore.rawEvents" class="h-48" />
+      <!-- Unified Real-Time Event Stream View (Scrollable on tablet, desktop, and mobile) -->
+      <div class="bg-space-950/90 border border-space-800/60 rounded h-56 flex flex-col overflow-hidden">
+        <EventStream :events="debateStore.rawEvents" class="flex-1 min-h-0" />
       </div>
     </div>
 

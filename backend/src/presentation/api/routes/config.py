@@ -129,6 +129,8 @@ async def get_topology() -> Dict[str, Any]:
     from src.domain.agents.debate_topology import load_topology
     top = load_topology()
     return {
+        "project_name": top.project_name,
+        "project_description": top.project_description,
         "supervisor": top.supervisor,
         "interpreters": list(top.interpreters),
         "proposers": list(top.proposers),

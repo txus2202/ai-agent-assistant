@@ -450,7 +450,7 @@ export const useDebateStore = defineStore('debate', () => {
         state: 'STANDBY'
       }))
       isAgentsLoaded.value = true
-      fetchTopology()
+      await fetchTopology()
     } catch (error) {
       console.error('Error loading agents:', error)
       agents.value = []
@@ -610,9 +610,12 @@ export const useDebateStore = defineStore('debate', () => {
     }
 
     // Resolve target agent(s)
-    const targetAgentsList = Array.isArray(targetAgent) 
-      ? (targetAgent.length > 0 ? targetAgent : ['supervisor'])
-      : [targetAgent || 'supervisor']
+    let targetAgentsList: string[]
+    if (Array.isArray(targetAgent)) {
+      targetAgentsList = targetAgent.length > 0 ? targetAgent : ['supervisor']
+    } else {
+      targetAgentsList = [targetAgent || 'supervisor']
+    }
     const primaryTarget = targetAgentsList[0] || 'supervisor'
 
     // Reset agent states to STANDBY for the new turn
@@ -912,10 +915,8 @@ export const useDebateStore = defineStore('debate', () => {
       }
       streamingMessageId.value = null
       flushTtsStreamingBuffer(event.role || undefined)
-    } else {
-      if (event.content && event.content.trim()) {
-        pushAgentMessage(event.content, event.role)
-      }
+    } else if (event.content && event.content.trim()) {
+      pushAgentMessage(event.content, event.role)
     }
     recordExecutionTrail('Atenea')
   }

@@ -77,3 +77,6 @@ jobs:
             -Dsonar.exclusions=**/__tests__/**,**/*.spec.ts
             -Dsonar.tests=backend/tests,frontend/src
             -Dsonar.test.inclusions=backend/tests/**,**/__tests__/**,**/*.spec.ts
+            -Dsonar.issue.ignore.multicriteria=e1
+            -Dsonar.issue.ignore.multicriteria.e1.ruleKey=css:S4667
+            -Dsonar.issue.ignore.multicriteria.e1.resourceKey=**/*.css

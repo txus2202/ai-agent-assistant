@@ -17,6 +17,54 @@ class AgentConfigUpdate(BaseModel):
 def get_config_repo(settings: Annotated[Settings, Depends(get_settings)]) -> SqliteAgentConfigRepository:
     return SqliteAgentConfigRepository(str(settings.sqlite_db_path))
 
+def _extract_topology_roles(profile: Any, top: Any, role_value: str) -> list[str]:
+    top_roles: list[str] = []
+    identifiers = {profile.display_name, profile.id}
+
+    if (
+        identifiers.intersection({top.supervisor, "supervisor"})
+        or getattr(profile, "is_supervisor", False)
+    ):
+        top_roles.append("supervisor")
+
+    slot_mappings = (
+        (top.interpreters, "interpreter"),
+        (top.proposers, "proposer"),
+        (top.reviewers, "reviewer"),
+        (top.evaluators, "evaluator"),
+        (top.implementers, "implementer"),
+    )
+    for slot_agents, role_name in slot_mappings:
+        if identifiers.intersection(slot_agents):
+            top_roles.append(role_name)
+
+    return top_roles
+
+
+def _build_agent_item(
+    profile: Any,
+    top: Any,
+    repo: SqliteAgentConfigRepository,
+    default_provider: str,
+    default_model: str,
+) -> dict[str, Any]:
+    role_value = profile.id
+    config = repo.find_by_role(role_value) or repo.find_by_role(profile.display_name)
+
+    return {
+        "id": role_value,
+        "name": profile.display_name,
+        "description": profile.description,
+        "color_hex": profile.color_hex,
+        "provider": config.provider if config else default_provider,
+        "model_name": config.model_name if config else default_model,
+        "uses_rag": profile.uses_rag,
+        "supports_hitl": profile.supports_hitl,
+        "can_ingest_documents": profile.can_ingest_documents,
+        "topology_roles": _extract_topology_roles(profile, top, role_value),
+    }
+
+
 @router.get("/agents")
 async def get_agents_config(repo: Annotated[SqliteAgentConfigRepository, Depends(get_config_repo)]) -> List[Dict[str, Any]]:
     """
@@ -25,41 +73,11 @@ async def get_agents_config(repo: Annotated[SqliteAgentConfigRepository, Depends
     settings = get_settings()
     from src.domain.agents.debate_topology import load_topology
     top = load_topology()
-    
-    result = []
-    for profile in get_all_profiles():
-        role_value = profile.id
-        config = repo.find_by_role(role_value)
-        if not config:
-            config = repo.find_by_role(profile.display_name)
-        
-        top_roles = []
-        if profile.display_name == top.supervisor or profile.id == top.supervisor or getattr(profile, "is_supervisor", False) or role_value == "supervisor":
-            top_roles.append("supervisor")
-        if profile.display_name in top.interpreters or profile.id in top.interpreters:
-            top_roles.append("interpreter")
-        if profile.display_name in top.proposers or profile.id in top.proposers:
-            top_roles.append("proposer")
-        if profile.display_name in top.reviewers or profile.id in top.reviewers:
-            top_roles.append("reviewer")
-        if profile.display_name in top.evaluators or profile.id in top.evaluators:
-            top_roles.append("evaluator")
-        if profile.display_name in top.implementers or profile.id in top.implementers:
-            top_roles.append("implementer")
 
-        result.append({
-            "id": role_value,
-            "name": profile.display_name,
-            "description": profile.description,
-            "color_hex": profile.color_hex,
-            "provider": config.provider if config else settings.default_provider,
-            "model_name": config.model_name if config else settings.default_model,
-            "uses_rag": profile.uses_rag,
-            "supports_hitl": profile.supports_hitl,
-            "can_ingest_documents": profile.can_ingest_documents,
-            "topology_roles": top_roles,
-        })
-    return result
+    return [
+        _build_agent_item(profile, top, repo, settings.default_provider, settings.default_model)
+        for profile in get_all_profiles()
+    ]
 
 @router.get(
     "/agents/{role}",

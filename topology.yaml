@@ -12,6 +12,8 @@
 # =============================================================================
 
 version: "2.0"
+project_name: "A.T.E.N.E.A."
+project_description: "Asistente Técnica y Evaluadora de Nuevas Estructuras y Arquitecturas"
 
 # Main strategic orchestrator (strictly 1:1, must be an agent with is_supervisor=True)
 supervisor: "Atenea"

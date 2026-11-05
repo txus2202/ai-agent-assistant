@@ -209,23 +209,28 @@ describe('AppShell.vue', () => {
     expect(soundBar.props('showViewSwitch')).toBe(false)
   })
 
-  it('switches tablet right column tabs between Orbe 3D, Agentes, and Telemetría', async () => {
+  it('configures Hero Centerpiece layout on tablet with top full-width orb and split bottom chat and agents', () => {
     const wrapper = createWrapper()
+    const grid = wrapper.find('[data-test="shell-workspace-grid"]')
+    expect(grid.classes()).toContain('md:grid')
+    expect(grid.classes()).toContain('md:grid-cols-2')
+    expect(grid.classes()).toContain('xl:flex')
+    expect(grid.classes()).toContain('xl:flex-row')
 
-    // Default tablet tab is 'orb'
-    expect(wrapper.find('[data-test="shell-tablet-telemetry"]').exists()).toBe(false)
+    const orbCol = wrapper.find('[data-test="shell-orb-column"]')
+    expect(orbCol.classes()).toContain('md:col-span-2')
+    expect(orbCol.classes()).toContain('md:row-start-1')
+    expect(orbCol.classes()).toContain('xl:flex-1')
 
-    // Switch to 'agents'
-    await wrapper.find('[data-test="tablet-tab-agents"]').trigger('click')
-    expect(wrapper.find('[data-test="shell-agents-column"]').classes()).toContain('md:flex')
+    const chatCol = wrapper.find('[data-test="shell-left-column"]')
+    expect(chatCol.classes()).toContain('md:col-span-1')
+    expect(chatCol.classes()).toContain('md:row-start-2')
+    expect(chatCol.classes()).toContain('xl:w-[380px]')
 
-    // Switch to 'telemetry'
-    await wrapper.find('[data-test="tablet-tab-telemetry"]').trigger('click')
-    expect(wrapper.find('[data-test="shell-tablet-telemetry"]').exists()).toBe(true)
-
-    // Switch back to 'orb'
-    await wrapper.find('[data-test="tablet-tab-orb"]').trigger('click')
-    expect(wrapper.find('[data-test="shell-orb-column"]').classes()).toContain('md:flex')
+    const agentsCol = wrapper.find('[data-test="shell-agents-column"]')
+    expect(agentsCol.classes()).toContain('md:col-span-1')
+    expect(agentsCol.classes()).toContain('md:row-start-2')
+    expect(agentsCol.classes()).toContain('xl:w-[380px]')
   })
 
   it('triggers ParticleOrb toggleRecording when ChatPanel emits toggle-mic', async () => {

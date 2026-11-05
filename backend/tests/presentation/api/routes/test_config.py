@@ -57,6 +57,8 @@ def test_get_topology(client):
     response = client.get("/config/topology")
     assert response.status_code == 200
     data = response.json()
+    assert data["project_name"] == "A.T.E.N.E.A."
+    assert "Asistente Técnica y Evaluadora" in data["project_description"]
     assert "supervisor" in data
     assert data["supervisor"] == "Atenea"
     assert "interpreters" in data

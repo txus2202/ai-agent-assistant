@@ -255,6 +255,13 @@ class DebateWebSocketHandler:
                 chat_history=chat_history,
             ):
                 await self.send_event(event)
+        except Exception as e:
+            if self.debate_record:
+                self.debate_repo.update_status(self.debate_record.id, "error")
+            await self.send_event(SupervisorEvent(
+                type=EventType.ERROR, role="supervisor", content=str(e)
+            ))
+            raise
         finally:
             try:
                 from src.presentation.api.ws.wake_word import wake_word_service
@@ -443,7 +450,14 @@ class DebateWebSocketHandler:
             type=EventType.DONE, role=learn_role, content=content, metadata=learn_meta
         ))
 
-    async def _handle_sub_agent(self, target_agent: str, user_request: str, chat_history: list[dict[str, Any]] | None = None) -> None:
+    async def _handle_sub_agent(
+        self,
+        target_agent: str,
+        user_request: str,
+        chat_history: list[dict[str, Any]] | None = None,
+        emit_done: bool = True,
+        emit_message: bool = False,
+    ) -> str | None:
         try:
             profile = get_profile(target_agent)
             agent_role = profile.display_name
@@ -476,18 +490,33 @@ class DebateWebSocketHandler:
                 "latency_seconds": str(resp.latency),
                 "tokens": str(resp.tokens.get("total", 0)),
             }
+            if emit_message:
+                await self.send_event(SupervisorEvent(
+                    type=EventType.MESSAGE, role=agent_role, content=resp.content
+                ))
             await self.send_event(SupervisorEvent(
                 type=EventType.AGENT_COMPLETED, role=agent_role, content=resp.content, metadata=sub_meta
             ))
-            await self.send_event(SupervisorEvent(
-                type=EventType.DONE, role=agent_role, content=resp.content, metadata=sub_meta
-            ))
+            if emit_done:
+                await self.send_event(SupervisorEvent(
+                    type=EventType.DONE, role=agent_role, content=resp.content, metadata=sub_meta
+                ))
+            return resp.content
             
         except KeyError:
             if self.debate_record:
                 self.debate_repo.update_status(self.debate_record.id, "aborted")
             await self.websocket.send_json({"type": "error", "content": f"Unknown agent role: {target_agent}"})
             await self.websocket.close(code=1003)
+            return None
+        except Exception as e:
+            if self.debate_record:
+                self.debate_repo.update_status(self.debate_record.id, "error")
+            target_role = agent_role if 'agent_role' in locals() else target_agent
+            await self.send_event(SupervisorEvent(
+                type=EventType.ERROR, role=target_role, content=str(e)
+            ))
+            raise
 
     def _init_session_and_trace(self, session_id: str | None, user_request: str, target_agent: str) -> None:
         existing_record = self.debate_repo.find_by_id(session_id) if session_id else None
@@ -551,6 +580,9 @@ class DebateWebSocketHandler:
     async def _handle_start_request(self, raw_start: dict) -> None:
         user_request = raw_start.get("user_request", "")
         target_agent = raw_start.get("target_agent", "supervisor")
+        target_agents = raw_start.get("target_agents", [])
+        if not target_agents and target_agent:
+            target_agents = [target_agent] if isinstance(target_agent, str) else list(target_agent)
         attachments = raw_start.get("attachments", [])
         chat_history = raw_start.get("history", [])
 
@@ -565,7 +597,40 @@ class DebateWebSocketHandler:
             return
 
         self._init_session_and_trace(raw_start.get("session_id"), user_request, target_agent)
-        await self._dispatch_target(target_agent, user_request, chat_history, attachments)
+
+        # Multi-agent dispatch when multiple specific agents are selected
+        if len(target_agents) > 1:
+            current_history = list(chat_history) if chat_history else []
+            last_agent_role = "supervisor"
+            for agent_id in target_agents:
+                try:
+                    profile = get_profile(agent_id)
+                    current_role = profile.display_name
+                except Exception:
+                    current_role = agent_id
+                last_agent_role = current_role
+
+                agent_content = await self._handle_sub_agent(
+                    agent_id,
+                    user_request,
+                    chat_history=current_history,
+                    emit_done=False,
+                    emit_message=True,
+                )
+                if agent_content:
+                    current_history.append({
+                        "role": "assistant",
+                        "agent": current_role,
+                        "content": agent_content
+                    })
+            await self.send_event(SupervisorEvent(
+                type=EventType.DONE, role=last_agent_role, content=""
+            ))
+            if self.debate_record:
+                self.debate_repo.update_status(self.debate_record.id, "finished")
+        else:
+            primary_target = target_agents[0] if target_agents else target_agent
+            await self._dispatch_target(primary_target, user_request, chat_history, attachments)
 
     async def process_messages(self) -> None:
         while True:

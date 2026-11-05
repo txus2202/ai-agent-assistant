@@ -32,6 +32,8 @@ class DebateTopology:
     reviewers: tuple[str, ...] = ()
     evaluators: tuple[str, ...] = ()
     implementers: tuple[str, ...] = ()
+    project_name: str = "A.T.E.N.E.A."
+    project_description: str = "Asistente Técnica y Evaluadora de Nuevas Estructuras y Arquitecturas"
 
     def validate(self) -> None:
         """
@@ -101,6 +103,8 @@ def load_topology(path: str | Path | None = None) -> DebateTopology:
         reviewers=tuple(_to_string_list(data.get("reviewers"))),
         evaluators=tuple(_to_string_list(data.get("evaluators"))),
         implementers=tuple(_to_string_list(data.get("implementers"))),
+        project_name=str(data.get("project_name", "A.T.E.N.E.A.")),
+        project_description=str(data.get("project_description", "Asistente Técnica y Evaluadora de Nuevas Estructuras y Arquitecturas")),
     )
     top.validate()
     return top

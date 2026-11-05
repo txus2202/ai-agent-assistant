@@ -533,5 +533,82 @@ def test_debate_learning_multisource_attachments(ws_client, monkeypatch):
     ]
 
 
+def test_multi_agent_sequential_dispatch_in_arrival_order(ws_client, monkeypatch):
+    """When multiple agents are selected, all of them respond in sequential arrival order."""
+    from unittest.mock import AsyncMock
+    from src.application.agents.sub_agent_runner import SubAgentRunner, SubAgentResponse
+
+    responses = {
+        "Sphinx": SubAgentResponse(
+            role="Sphinx",
+            content="Análisis de Sphinx",
+            tokens={"input": 15, "output": 25, "total": 40},
+            latency=0.4,
+            model_name="mock-model",
+        ),
+        "Hefesto": SubAgentResponse(
+            role="Hefesto",
+            content="Análisis de Hefesto",
+            tokens={"input": 20, "output": 30, "total": 50},
+            latency=0.6,
+            model_name="mock-model",
+        ),
+    }
+
+    call_order = []
+
+    async def fake_runner_run(role, user_request, **kwargs):
+        call_order.append((role, kwargs.get("chat_history", [])))
+        return responses[role]
+
+    monkeypatch.setattr(SubAgentRunner, "run", AsyncMock(side_effect=fake_runner_run))
+
+    with ws_client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({
+            "type": "start",
+            "session_id": str(uuid.uuid4()),
+            "target_agents": ["the_judge", "devops_secops"],
+            "user_request": "¿Cuál es vuestra opinión técnica?",
+        })
+
+        # Agent 1 (Sphinx): STARTED -> MESSAGE -> COMPLETED
+        ev1_started = websocket.receive_json()
+        assert ev1_started["type"] == EventType.AGENT_STARTED.value
+        assert ev1_started["role"] == "Sphinx"
+
+        ev1_msg = websocket.receive_json()
+        assert ev1_msg["type"] == EventType.MESSAGE.value
+        assert ev1_msg["role"] == "Sphinx"
+        assert ev1_msg["content"] == "Análisis de Sphinx"
+
+        ev1_comp = websocket.receive_json()
+        assert ev1_comp["type"] == EventType.AGENT_COMPLETED.value
+        assert ev1_comp["role"] == "Sphinx"
+
+        # Agent 2 (Hefesto): STARTED -> MESSAGE -> COMPLETED
+        ev2_started = websocket.receive_json()
+        assert ev2_started["type"] == EventType.AGENT_STARTED.value
+        assert ev2_started["role"] == "Hefesto"
+
+        ev2_msg = websocket.receive_json()
+        assert ev2_msg["type"] == EventType.MESSAGE.value
+        assert ev2_msg["role"] == "Hefesto"
+        assert ev2_msg["content"] == "Análisis de Hefesto"
+
+        ev2_comp = websocket.receive_json()
+        assert ev2_comp["type"] == EventType.AGENT_COMPLETED.value
+        assert ev2_comp["role"] == "Hefesto"
+
+        # Final DONE event closing the multi-agent turn
+        ev_done = websocket.receive_json()
+        assert ev_done["type"] == EventType.DONE.value
+
+    # Verify execution order and cumulative history
+    assert [call[0] for call in call_order] == ["Sphinx", "Hefesto"]
+    # Hefesto received Sphinx's response in its chat_history
+    assert any(h.get("agent") == "Sphinx" and h.get("content") == "Análisis de Sphinx" for h in call_order[1][1])
+
+
+
 
 

@@ -41,6 +41,24 @@ describe('AppHeader.vue', () => {
     expect(wrapper.text()).not.toContain('SUPERVISOR:')
   })
 
+  it('renders dynamic project_name and project_description from debate store topology', async () => {
+    const store = useDebateStore()
+    store.topology = {
+      project_name: 'TITAN-CORE',
+      project_description: 'Plataforma de Inteligencia Artificial Distribuida',
+      supervisor: 'Atenea',
+      interpreters: [],
+      proposers: [],
+      reviewers: [],
+      evaluators: [],
+      implementers: []
+    }
+
+    const wrapper = mount(AppHeader)
+    expect(wrapper.text()).toContain('TITAN-CORE')
+    expect(wrapper.text()).toContain('Plataforma de Inteligencia Artificial Distribuida')
+  })
+
   it('renders theme toggle button on the right and toggles dark/light mode', async () => {
     const wrapper = mount(AppHeader)
     const toggleBtn = wrapper.find('[data-test="theme-toggle-btn"]')
@@ -79,6 +97,15 @@ describe('AppHeader.vue', () => {
     expect(store.isVoiceOutputEnabled).toBe(false)
   })
 
+  it('applies desktop active styling to speaker button when voice output is enabled', () => {
+    const wrapper = mount(AppHeader)
+    const store = useDebateStore()
+    store.isVoiceOutputEnabled = true
+    const audioButton = wrapper.find('button[title="Toggle System Audio"]')
+    expect(audioButton.classes()).toContain('xl:text-amber-400')
+    expect(audioButton.classes()).toContain('xl:bg-amber-900/30')
+  })
+
   it('toggles auto-listen on button click', async () => {
     const wrapper = mount(AppHeader)
     const store = useDebateStore()
@@ -98,5 +125,27 @@ describe('AppHeader.vue', () => {
     await autoListenButton.trigger('click')
     expect(store.stopAutoListen).toHaveBeenCalled()
     expect(store.isAutoListenEnabled).toBe(false)
+  })
+
+  it('shares matching amber hover and active color schemes between speaker, auto-listen, and history buttons', async () => {
+    const wrapper = mount(AppHeader)
+    const store = useDebateStore()
+    store.isVoiceOutputEnabled = true
+    store.isAutoListenEnabled = true
+    await wrapper.vm.$nextTick()
+
+    const speakerBtn = wrapper.find('button[title="Toggle System Audio"]')
+    const autoListenBtn = wrapper.find('button[title="Toggle Auto-Listen (Wake Word)"]')
+    const historyBtn = wrapper.find('button[title="Debate History"]')
+
+    // Both active buttons share amber active background and text
+    expect(speakerBtn.classes()).toContain('text-amber-600')
+    expect(speakerBtn.classes()).toContain('bg-amber-500/15')
+    expect(autoListenBtn.classes()).toContain('text-amber-600')
+    expect(autoListenBtn.classes()).toContain('bg-amber-500/15')
+
+    // History button shares the same hover amber styling
+    expect(historyBtn.classes()).toContain('hover:text-amber-600')
+    expect(historyBtn.classes()).toContain('hover:border-amber-500/40')
   })
 })

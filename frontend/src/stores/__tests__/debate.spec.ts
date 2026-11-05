@@ -1155,4 +1155,64 @@ describe('learnSession action', () => {
     expect(store.messages[0]!.isStreaming).toBe(false)
     expect(store.streamingMessageId).toBeNull()
   })
+
+  it('stops running timers and returns active agents to STANDBY when an error event occurs', () => {
+    const store = useDebateStore()
+    store.agents = [
+      { role: 'supervisor', name: 'Atenea', state: 'STANDBY' },
+      { role: 'innovator_architect', name: 'Ícaro', state: 'ACTIVE', startedAt: Date.now() - 2500 }
+    ]
+    store.isDebating = true
+
+    store.handleSupervisorEvent({
+      type: 'error',
+      role: 'innovator_architect',
+      content: '503 Service Unavailable: LLM provider is down'
+    })
+
+    expect(store.isDebating).toBe(false)
+    const icaro = store.agents.find(a => a.role === 'innovator_architect')!
+    expect(icaro.state).toBe('STANDBY')
+    expect(icaro.latency).toBeGreaterThan(0)
+    expect(icaro.startedAt).toBeUndefined()
+    expect(store.messages.some(m => m.content.includes('503 Service Unavailable'))).toBe(true)
+  })
+
+  it('keeps multi-agents in ACTIVE state while reading their messages and transitions them to COMPLETED only when finished', () => {
+    const store = useDebateStore()
+    store.isVoiceOutputEnabled = true
+    store.agents = [
+      { role: 'innovator_architect', name: 'Ícaro', state: 'ACTIVE' },
+      { role: 'the_judge', name: 'Sphinx', state: 'ACTIVE' }
+    ]
+
+    // Both agents are queued/reading their messages
+    store.addReadingAgentRole('innovator_architect')
+    store.addReadingAgentRole('the_judge')
+
+    expect(store.isAgentReading('innovator_architect')).toBe(true)
+    expect(store.isAgentReading('the_judge')).toBe(true)
+
+    // Backend emits done (all messages delivered)
+    store.handleSupervisorEvent({
+      type: 'done',
+      role: 'the_judge',
+      content: ''
+    })
+
+    // Both agents must stay ACTIVE while reading their messages
+    const icaro = store.agents.find(a => a.role === 'innovator_architect')!
+    const sphinx = store.agents.find(a => a.role === 'the_judge')!
+    expect(icaro.state).toBe('ACTIVE')
+    expect(sphinx.state).toBe('ACTIVE')
+
+    // Icaro finishes reading its messages
+    store.removeReadingAgentRole('innovator_architect')
+    expect(icaro.state).toBe('COMPLETED')
+    expect(sphinx.state).toBe('ACTIVE')
+
+    // Sphinx finishes reading its messages
+    store.removeReadingAgentRole('the_judge')
+    expect(sphinx.state).toBe('COMPLETED')
+  })
 })

@@ -20,6 +20,8 @@ class EventType(Enum):
     HITL_REQUIRED   = "hitl_required"
     DONE            = "done"
     STREAM_CHUNK    = "stream_chunk"
+    MESSAGE         = "message"
+    ERROR           = "error"
 
 
 @dataclass(frozen=True)

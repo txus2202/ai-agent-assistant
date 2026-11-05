@@ -453,4 +453,35 @@ describe('ParticleOrb.vue', () => {
     expect(ring1.attributes('style')).toMatch(/16,\s*185,\s*129|10b981/)
     expect(ring2.attributes('style')).toMatch(/245,\s*158,\s*11|f59e0b/)
   })
+
+  it('renders correctly with all 8 council agents in parallel and generates multi-stop conic glow', () => {
+    const eightAgents = [
+      { role: 'supervisor', name: 'Atenea', color: '#f59e0b' },
+      { role: 'nl_interpreter', name: 'Hermes', color: '#00e5ff' },
+      { role: 'innovator_architect', name: 'Ícaro', color: '#22c55e' },
+      { role: 'senior_architect', name: 'Hestia', color: '#00ff9d' },
+      { role: 'the_judge', name: 'Sphinx', color: '#ef4444' },
+      { role: 'devops_secops', name: 'Hefesto', color: '#ff8800' },
+      { role: 'diagrammer', name: 'Aracne', color: '#b347ff' },
+      { role: 'learning', name: 'Metis', color: '#1d4ed8' }
+    ]
+
+    const wrapper = mount(ParticleOrb, {
+      props: {
+        isDebating: true,
+        activeAgentColor: '#f59e0b',
+        activeAgents: eightAgents
+      }
+    })
+
+    expect(wrapper.exists()).toBe(true)
+    const glow1 = wrapper.find('#orbGlowCore1')
+    const glow2 = wrapper.find('#orbGlowCore2')
+    expect(glow1.attributes('style')).toContain('conic-gradient')
+    // Conic gradient includes colors beyond the first 4 (converted to rgba by browser/jsdom)
+    expect(glow1.attributes('style')).toMatch(/239,\s*68,\s*68|ef4444/)
+    expect(glow1.attributes('style')).toMatch(/179,\s*71,\s*255|b347ff/)
+    expect(glow1.attributes('style')).toMatch(/29,\s*78,\s*216|1d4ed8/)
+    expect(glow2.attributes('style')).toContain('conic-gradient')
+  })
 })

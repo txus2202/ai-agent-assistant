@@ -23,7 +23,7 @@ onMounted(async () => {
     <router-view />
   </div>
   <div v-else class="h-screen w-full bg-space-950 flex items-center justify-center text-neon-cyan font-mono text-sm tracking-widest animate-pulse">
-    INITIALIZING A.T.E.N.E.A...
+    INITIALIZING {{ store.projectName }}...
   </div>
 </template>
 

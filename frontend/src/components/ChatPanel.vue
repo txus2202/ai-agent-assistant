@@ -63,19 +63,55 @@ const agentsList = computed(() => {
   ]
 })
 
-const selectedAgent = ref(store.selectedAgent || 'supervisor')
+const selectedAgents = ref<string[]>(
+  store.selectedAgent && (!store.selectedAgents || !store.selectedAgents.includes(store.selectedAgent))
+    ? [store.selectedAgent]
+    : (Array.isArray(store.selectedAgents) && store.selectedAgents.length > 0
+        ? [...store.selectedAgents]
+        : [store.selectedAgent || 'supervisor'])
+)
 
-watch(() => store.selectedAgent, (newAgent) => {
-  if (newAgent) {
-    selectedAgent.value = newAgent
+const selectedAgent = computed({
+  get: () => selectedAgents.value[0] || 'supervisor',
+  set: (val: string) => {
+    selectedAgents.value = [val]
+    store.selectedAgent = val
+    store.selectedAgents = [val]
   }
 })
+
+watch(() => store.selectedAgent, (newAgent) => {
+  if (newAgent && (selectedAgents.value.length <= 1 || !selectedAgents.value.includes(newAgent))) {
+    selectedAgents.value = [newAgent]
+  }
+})
+
+watch(() => store.selectedAgents, (newAgents) => {
+  if (Array.isArray(newAgents) && newAgents.length > 0) {
+    selectedAgents.value = [...newAgents]
+  }
+}, { deep: true })
 
 const selectedFiles = ref<File[]>([])
 const isAgentDropdownOpen = ref(false)
 const agentDropdownRef = ref<HTMLElement | null>(null)
+
 const selectedAgentLabel = computed(() => {
-  return agentsList.value.find(a => a.value === selectedAgent.value)?.label || 'Atenea'
+  const count = selectedAgents.value.length
+  if (count === 0) return 'Seleccionar agente'
+  if (count === 1) {
+    const role = selectedAgents.value[0]
+    return agentsList.value.find(a => a.value === role)?.label || 'Atenea'
+  }
+  if (count === agentsList.value.length) {
+    return `Todos los agentes (${count})`
+  }
+  if (count === 2) {
+    const l1 = agentsList.value.find(a => a.value === selectedAgents.value[0])?.label || ''
+    const l2 = agentsList.value.find(a => a.value === selectedAgents.value[1])?.label || ''
+    return `${l1}, ${l2}`
+  }
+  return `${count} agentes seleccionados`
 })
 
 const toggleAgentDropdown = () => {
@@ -83,10 +119,37 @@ const toggleAgentDropdown = () => {
   isAgentDropdownOpen.value = !isAgentDropdownOpen.value
 }
 
+const toggleAgent = (role: string) => {
+  const index = selectedAgents.value.indexOf(role)
+  if (index >= 0) {
+    selectedAgents.value.splice(index, 1)
+    if (selectedAgents.value.length === 0) {
+      selectedAgents.value = ['supervisor']
+    }
+  } else {
+    // If only supervisor was selected and user clicks another agent, select that agent
+    if (selectedAgents.value.length === 1 && selectedAgents.value[0] === 'supervisor' && role !== 'supervisor') {
+      selectedAgents.value = [role]
+    } else {
+      selectedAgents.value.push(role)
+    }
+  }
+  store.selectedAgents = [...selectedAgents.value]
+  store.selectedAgent = selectedAgents.value[0] || 'supervisor'
+}
+
 const selectAgent = (value: string) => {
-  selectedAgent.value = value
-  store.selectedAgent = value
-  isAgentDropdownOpen.value = false
+  toggleAgent(value)
+}
+
+const selectAllAgents = () => {
+  if (selectedAgents.value.length === agentsList.value.length) {
+    selectedAgents.value = ['supervisor']
+  } else {
+    selectedAgents.value = agentsList.value.map(a => a.value)
+  }
+  store.selectedAgents = [...selectedAgents.value]
+  store.selectedAgent = selectedAgents.value[0] || 'supervisor'
 }
 
 const handleClickOutsideAgent = (event: MouseEvent) => {
@@ -110,9 +173,21 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutsideAgent)
 })
 
-// TTS Queue logic for gapless sentence-by-sentence playback
-let ttsTextQueue: string[] = []
-let ttsAudioQueue: ArrayBuffer[] = []
+// TTS Queue logic for gapless sentence-by-sentence playback with per-agent role tracking
+interface TtsTextItem {
+  id: string
+  text: string
+  role: string
+}
+
+interface TtsAudioItem {
+  id: string
+  audio: ArrayBuffer
+  role: string
+}
+
+let ttsTextQueue: TtsTextItem[] = []
+let ttsAudioQueue: TtsAudioItem[] = []
 let isPrefetching = false
 let isPlayingAudio = false
 
@@ -131,13 +206,23 @@ const queueTtsSentence = (sentence: string, role?: string) => {
   const clean = cleanTextForTts(sentence)
   if (!clean) return
 
+  const targetRole = role || store.activeTtsRole || 'supervisor'
   store.isTtsPlaying = true
-  if (role) {
-    store.activeTtsRole = role
+  if (!store.activeTtsRole) {
+    store.activeTtsRole = targetRole
+  }
+  if (typeof store.addReadingAgentRole === 'function') {
+    store.addReadingAgentRole(targetRole)
   }
 
   const chunks = splitTextIntoTtsChunks(clean)
-  ttsTextQueue.push(...chunks)
+  chunks.forEach(chunk => {
+    ttsTextQueue.push({
+      id: crypto.randomUUID(),
+      text: chunk,
+      role: targetRole
+    })
+  })
 
   if (!isPrefetching) {
     prefetchTtsQueue()
@@ -151,16 +236,24 @@ const playVoiceResponse = async (text: string, role?: string) => {
   const cleanText = cleanTextForTts(text)
   if (!cleanText) return
 
-  // Set store state
+  const targetRole = role || store.activeTtsRole || 'supervisor'
   store.isTtsPlaying = true
-  if (role) {
-    store.activeTtsRole = role
+  if (!store.activeTtsRole) {
+    store.activeTtsRole = targetRole
+  }
+  if (typeof store.addReadingAgentRole === 'function') {
+    store.addReadingAgentRole(targetRole)
   }
 
   // Split by punctuation (., ?, !, \n, ,, ;, :) for immediate low-latency Time-To-First-Audio
   const sentences = splitTextIntoTtsChunks(cleanText)
-
-  ttsTextQueue.push(...sentences)
+  sentences.forEach(sentence => {
+    ttsTextQueue.push({
+      id: crypto.randomUUID(),
+      text: sentence,
+      role: targetRole
+    })
+  })
 
   if (!isPrefetching) {
     prefetchTtsQueue()
@@ -174,13 +267,13 @@ const prefetchTtsQueue = async () => {
   }
   
   isPrefetching = true
-  const sentence = ttsTextQueue.shift()!
+  const item = ttsTextQueue.shift()!
   
   try {
     const response = await fetch('/api/audio/synthesize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: sentence, add_silence: false })
+      body: JSON.stringify({ text: item.text, add_silence: false })
     })
     
     if (response.ok) {
@@ -191,7 +284,11 @@ const prefetchTtsQueue = async () => {
       }
 
       const audioBuffer = await response.arrayBuffer()
-      ttsAudioQueue.push(audioBuffer)
+      ttsAudioQueue.push({
+        id: item.id,
+        audio: audioBuffer,
+        role: item.role
+      })
       
       // If audio player is idle, start playing immediately
       if (store.isTtsPlaying && !isPlayingAudio) {
@@ -224,16 +321,29 @@ const playNextAudio = async () => {
   if (!store.isTtsPlaying) return
   
   isPlayingAudio = true
-  const nextChunk = ttsAudioQueue.shift()!
+  const currentItem = ttsAudioQueue.shift()!
   
+  // Update speaking role so the active orb & UI reflect the speaking agent
+  store.activeTtsRole = currentItem.role
+
   try {
     if (store.playTtsAudioChunk) {
-      await store.playTtsAudioChunk(nextChunk)
+      await store.playTtsAudioChunk(currentItem.audio)
     }
   } catch (e) {
     console.error("Play error:", e)
   } finally {
     isPlayingAudio = false
+    
+    // Check if this agent finished all remaining audio and text in the queues
+    const stillHasAudio = ttsAudioQueue.some(a => a.role === currentItem.role)
+    const stillHasText = ttsTextQueue.some(t => t.role === currentItem.role)
+    if (!stillHasAudio && !stillHasText) {
+      if (typeof store.removeReadingAgentRole === 'function') {
+        store.removeReadingAgentRole(currentItem.role)
+      }
+    }
+
     if (store.isTtsPlaying) {
       playNextAudio()
     }
@@ -242,12 +352,15 @@ const playNextAudio = async () => {
 
 watch(() => props.messages.length, (newLen, oldLen) => {
   if (newLen > oldLen) {
-    const lastMsg = props.messages[newLen - 1]
-    if (newLen === oldLen + 1 && lastMsg && lastMsg.role === 'assistant' && !store.streamingMessageId && !lastMsg.isStreaming) {
-      // Determine the agent role for TTS voice synthesis (from agentRole or agentName)
-      const match = lastMsg.content.match(/^\[(.*?)\]\s/)
-      const role = lastMsg.agentRole || lastMsg.agentName || (match ? match[1] : undefined) || 'supervisor'
-      playVoiceResponse(lastMsg.content, role)
+    const startIndex = Math.max(0, oldLen)
+    for (let i = startIndex; i < newLen; i++) {
+      const msg = props.messages[i]
+      if (msg && msg.role === 'assistant' && !store.streamingMessageId && !msg.isStreaming) {
+        // Determine the agent role for TTS voice synthesis (from agentRole or agentName)
+        const match = msg.content.match(/^\[(.*?)\]\s/)
+        const role = msg.agentRole || msg.agentName || (match ? match[1] : undefined) || 'supervisor'
+        playVoiceResponse(msg.content, role)
+      }
     }
   }
 })
@@ -374,7 +487,10 @@ const onSubmit = async () => {
     attachmentParam = attachmentUrls
   }
 
-  store.startDebate(store.draftMessage, selectedAgent.value, attachmentParam)
+  const targetForDebate = selectedAgents.value.length > 1 
+    ? selectedAgents.value 
+    : (selectedAgents.value[0] || 'supervisor')
+  store.startDebate(store.draftMessage, targetForDebate, attachmentParam)
   
   store.draftMessage = ''
   selectedFiles.value = []
@@ -427,14 +543,10 @@ defineExpose({
   <div class="flex flex-col h-full bg-[#060a11] border-r border-space-800 font-sans">
     <!-- Context Header -->
     <div class="p-3.5 md:p-5 border-b border-space-800/50 relative">
-      <div class="absolute left-3.5 md:left-4 top-5 md:top-6 w-2 h-2 rounded-full bg-neon-cyan glow-cyan"></div>
-      <div class="pl-5 flex justify-between items-start gap-2">
-        <div class="min-w-0">
+      <div class="flex justify-between items-center gap-2">
+        <div class="min-w-0 flex items-center space-x-2">
+          <div class="w-2 h-2 rounded-full bg-neon-cyan glow-cyan shrink-0"></div>
           <h2 class="font-bold text-white text-xs md:text-[13px] tracking-wider font-mono">CONVERSACIÓN</h2>
-          <div class="flex items-center space-x-2 mt-1">
-            <span class="w-1.5 h-1.5 rounded-full bg-neon-green shrink-0"></span>
-            <span class="text-[9px] text-neon-cyan/70 font-mono tracking-widest uppercase truncate">MODO CONSULTA MULTI-AGENTE</span>
-          </div>
         </div>
         <div class="flex items-center space-x-1.5 md:space-x-2 shrink-0">
           <!-- Learn Button -->
@@ -550,7 +662,7 @@ defineExpose({
               >
                 <Bot class="w-3 h-3" />
               </div>
-              <span class="text-[11px] font-bold text-white tracking-widest font-mono">A.T.E.N.E.A.</span>
+              <span class="text-[11px] font-bold text-white tracking-widest font-mono">{{ store.projectName }}</span>
               <span 
                 class="px-2 py-0.5 border text-[8px] font-mono uppercase tracking-widest rounded shadow-sm transition-colors"
                 :style="msg.colorHex ? { borderColor: `${msg.colorHex}4d`, backgroundColor: `${msg.colorHex}1a`, color: msg.colorHex } : {}"
@@ -630,7 +742,7 @@ defineExpose({
           <div class="w-5 h-5 rounded-full border border-neon-green/50 flex items-center justify-center bg-neon-green/10 text-neon-green">
             <Bot class="w-3 h-3" />
           </div>
-          <span class="text-[11px] font-bold text-white tracking-widest font-mono">A.T.E.N.E.A.</span>
+          <span class="text-[11px] font-bold text-white tracking-widest font-mono">{{ store.projectName }}</span>
         </div>
         <div class="bg-[#030509] border border-neon-green/40 rounded-xl rounded-tl-none px-5 py-3 shadow-[0_0_15px_-3px_rgba(0,255,157,0.1)]">
           <div class="flex space-x-1 items-center h-4">
@@ -747,51 +859,65 @@ defineExpose({
 
       <form @submit.prevent="onSubmit" class="flex flex-col gap-2.5 md:gap-3 relative">
         <div class="flex items-center gap-2">
-          <!-- Custom Agent Dropdown -->
+          <!-- Custom Multi-Agent Dropdown Selector -->
           <div class="relative" ref="agentDropdownRef">
             <button 
               type="button"
               @click="toggleAgentDropdown"
               :disabled="isDebating && !store.isHitlRequired"
               data-test="agent-dropdown-btn"
-              class="flex items-center justify-between w-40 min-h-[36px] md:min-h-0 bg-[#030509] border border-cyan-900/50 hover:border-neon-cyan/80 rounded px-3 py-1.5 text-[11px] font-mono text-cyan-50 shadow-[0_0_10px_-2px_rgba(0,229,255,0.1)] transition-all disabled:opacity-50"
+              class="flex items-center justify-between min-w-[140px] max-w-[210px] min-h-[36px] md:min-h-0 bg-[#030509] border border-cyan-900/50 hover:border-neon-cyan/80 rounded px-3 py-1.5 text-[11px] font-mono text-cyan-50 shadow-[0_0_10px_-2px_rgba(0,229,255,0.1)] transition-all disabled:opacity-50"
             >
               <span class="truncate">{{ selectedAgentLabel }}</span>
-              <ChevronDown class="w-3 h-3 text-neon-cyan ml-2 shrink-0" />
+              <ChevronDown class="w-3 h-3 text-neon-cyan ml-2 shrink-0 transition-transform" :class="{ 'rotate-180': isAgentDropdownOpen }" />
             </button>
             
             <div 
               v-if="isAgentDropdownOpen"
-              class="absolute bottom-full left-0 mb-2 w-48 bg-space-950 border border-neon-cyan/50 rounded shadow-[0_0_15px_rgba(0,229,255,0.15)] overflow-hidden z-50 font-mono text-xs"
+              class="absolute bottom-full left-0 mb-2 w-56 bg-space-950 border border-neon-cyan/50 rounded shadow-[0_0_15px_rgba(0,229,255,0.15)] overflow-hidden z-50 font-mono text-xs"
             >
-              <div class="px-3 py-1.5 bg-space-900 text-neon-cyan/70 text-[9px] uppercase tracking-wider border-b border-neon-cyan/30">
-                Seleccionar Agente
+              <div class="px-3 py-1.5 bg-space-900 text-neon-cyan/70 text-[9px] uppercase tracking-wider border-b border-neon-cyan/30 flex items-center justify-between">
+                <span>Agentes ({{ selectedAgents.length }})</span>
+                <button
+                  type="button"
+                  @click.stop="selectAllAgents"
+                  class="text-[9px] text-neon-cyan hover:underline uppercase tracking-wider cursor-pointer"
+                >
+                  {{ selectedAgents.length === agentsList.length ? 'Solo Atenea' : 'Todos' }}
+                </button>
               </div>
-              <div class="max-h-[200px] overflow-y-auto custom-scrollbar">
+              <div class="max-h-[220px] overflow-y-auto custom-scrollbar">
                 <button 
                   v-for="agent in agentsList" 
                   :key="agent.value"
                   type="button"
-                  @click="selectAgent(agent.value)"
+                  @click.stop="toggleAgent(agent.value)"
                   data-test="agent-option"
-                  class="w-full text-left px-3 py-2.5 md:py-2 transition-colors flex items-center justify-between"
-                  :class="selectedAgent === agent.value ? 'bg-neon-cyan/10 text-neon-cyan' : 'text-slate-300 hover:bg-space-800 hover:text-cyan-200'"
+                  :data-selected="selectedAgents.includes(agent.value)"
+                  class="w-full text-left px-3 py-2 transition-colors flex items-center justify-between cursor-pointer"
+                  :class="selectedAgents.includes(agent.value) ? 'bg-neon-cyan/10 text-neon-cyan' : 'text-slate-300 hover:bg-space-800 hover:text-cyan-200'"
                 >
-                  <span class="flex items-center space-x-2">
+                  <span class="flex items-center space-x-2 min-w-0">
+                    <span 
+                      class="w-3.5 h-3.5 rounded-sm border flex items-center justify-center shrink-0 transition-colors"
+                      :class="selectedAgents.includes(agent.value) ? 'border-neon-cyan bg-neon-cyan/20 text-neon-cyan' : 'border-slate-700 bg-space-900'"
+                    >
+                      <Check v-if="selectedAgents.includes(agent.value)" class="w-2.5 h-2.5 stroke-[3]" />
+                    </span>
                     <span 
                       class="w-1.5 h-1.5 rounded-full shrink-0" 
                       :style="agent.colorHex ? { backgroundColor: agent.colorHex } : {}"
                     ></span>
-                    <span class="font-bold text-[10px] md:text-[11px]">{{ agent.label }}</span>
+                    <span class="font-bold text-[10px] md:text-[11px] truncate">{{ agent.label }}</span>
                   </span>
-                  <span v-if="selectedAgent === agent.value" class="w-1.5 h-1.5 rounded-full bg-neon-cyan glow-cyan"></span>
+                  <span v-if="selectedAgents.includes(agent.value)" class="w-1.5 h-1.5 rounded-full bg-neon-cyan glow-cyan shrink-0 ml-1"></span>
                 </button>
               </div>
             </div>
           </div>
 
           <label 
-            v-if="selectedAgent === 'learning'" 
+            v-if="selectedAgents.includes('learning')" 
             for="chat-file-upload" 
             class="cursor-pointer text-space-400 hover:text-neon-cyan transition-colors flex items-center justify-center px-3 py-1.5 min-h-[36px] md:min-h-0 border border-cyan-900/50 rounded bg-[#030509] hover:bg-space-800 shadow-[0_0_10px_-2px_rgba(0,229,255,0.05)] hover:border-neon-cyan/50" 
             title="Adjuntar PDF, Markdown o Imagen para Metis"

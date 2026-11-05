@@ -132,6 +132,19 @@ html.light .text-neon-amber {
   color: #b45309 !important;
 }
 
+html.light .bg-amber-900\/30 {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+}
+
+html.light .hover\:text-amber-200:hover,
+html.light .hover\:text-amber-400:hover {
+  color: #b45309 !important;
+}
+
+html.light .hover\:border-amber-800\/60:hover {
+  border-color: rgba(180, 83, 9, 0.4) !important;
+}
+
 /* High-contrast crisp borders */
 html.light .border-space-800,
 html.light .border-space-700,

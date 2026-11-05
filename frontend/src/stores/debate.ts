@@ -225,7 +225,7 @@ export const useDebateStore = defineStore('debate', () => {
       return true
     })
     const ag = findAgent(role) || (norm === 'supervisor' ? findAgent('supervisor') : undefined)
-    if (ag && ag.state === 'ACTIVE' && !isDebating.value) {
+    if (ag?.state === 'ACTIVE' && !isDebating.value) {
       ag.state = 'COMPLETED'
     }
     if (activeTtsRole.value) {
@@ -242,7 +242,7 @@ export const useDebateStore = defineStore('debate', () => {
     if (!isDebating.value) {
       wasReading.forEach(role => {
         const ag = findAgent(role) || (normalizeAgentRole(role) === 'supervisor' ? findAgent('supervisor') : undefined)
-        if (ag && ag.state === 'ACTIVE') {
+        if (ag?.state === 'ACTIVE') {
           ag.state = 'COMPLETED'
         }
       })
@@ -725,7 +725,7 @@ export const useDebateStore = defineStore('debate', () => {
     // If a delegated agent starts, transition supervisor to standby (her presence remains in the orb)
     if (agent.role !== 'supervisor') {
       const sup = findAgent('supervisor')
-      if (sup && sup.state === 'ACTIVE') {
+      if (sup?.state === 'ACTIVE') {
         sup.state = 'STANDBY'
       }
     }

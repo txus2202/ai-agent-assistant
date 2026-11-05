@@ -106,6 +106,48 @@ const isHitl = computed(() => {
 const isDocs = computed(() => {
   return props.canIngestDocuments ?? agentConfig.value.can_ingest_documents ?? false
 })
+
+const cardStyle = computed(() => {
+  if (isGlowActive.value) {
+    return { borderColor: agentColor.value, boxShadow: `0 0 20px ${agentColor.value}40, inset 0 0 15px ${agentColor.value}1a` }
+  }
+  if (props.state === 'ERROR') {
+    return { borderColor: '#ef4444', boxShadow: '0 0 15px rgba(239, 68, 68, 0.2)' }
+  }
+  return {}
+})
+
+const statusDotClass = computed(() => {
+  if (props.state === 'ACTIVE') return 'animate-pulse'
+  if (props.state === 'ERROR') return 'bg-rose-500 border border-rose-400'
+  return 'bg-slate-300 dark:bg-slate-700/80 border border-slate-400 dark:border-slate-600/50'
+})
+
+const statusDotStyle = computed(() => {
+  if (props.state === 'ACTIVE') {
+    return { backgroundColor: agentColor.value, boxShadow: `0 0 10px ${agentColor.value}` }
+  }
+  if (props.state === 'ERROR') {
+    return { backgroundColor: '#ef4444', boxShadow: '0 0 8px #ef4444' }
+  }
+  return {}
+})
+
+const statusTagClass = computed(() => {
+  if (props.state === 'ACTIVE') {
+    return 'bg-cyan-500/15 text-cyan-300 border-cyan-500/40 animate-pulse'
+  }
+  if (props.state === 'ERROR') {
+    return 'bg-rose-500/20 text-rose-400 border-rose-500/50'
+  }
+  return 'bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700/60'
+})
+
+const statusTagText = computed(() => {
+  if (props.state === 'ACTIVE') return 'ACTIVE CO-EXEC'
+  if (props.state === 'ERROR') return 'ERROR'
+  return props.state
+})
 </script>
 
 <template>
@@ -116,7 +158,7 @@ const isDocs = computed(() => {
       isGlowActive ? (glowClass || '') : '',
       state === 'ERROR' ? 'border-rose-500/60 bg-rose-950/20' : ''
     ]"
-    :style="isGlowActive ? { borderColor: agentColor, boxShadow: `0 0 20px ${agentColor}40, inset 0 0 15px ${agentColor}1a` } : (state === 'ERROR' ? { borderColor: '#ef4444', boxShadow: '0 0 15px rgba(239, 68, 68, 0.2)' } : {})"
+    :style="cardStyle"
   >
     <!-- Top Section: Header & Badges -->
     <div>
@@ -125,10 +167,8 @@ const isDocs = computed(() => {
         <div class="flex items-center space-x-2 min-w-0">
           <div 
             class="h-2.5 w-2.5 shrink-0 rounded-full transition-all duration-300"
-            :class="[
-              state === 'ACTIVE' ? 'animate-pulse' : (state === 'ERROR' ? 'bg-rose-500 border border-rose-400' : 'bg-slate-300 dark:bg-slate-700/80 border border-slate-400 dark:border-slate-600/50')
-            ]"
-            :style="state === 'ACTIVE' ? { backgroundColor: agentColor, boxShadow: `0 0 10px ${agentColor}` } : (state === 'ERROR' ? { backgroundColor: '#ef4444', boxShadow: '0 0 8px #ef4444' } : {})"
+            :class="statusDotClass"
+            :style="statusDotStyle"
           ></div>
           <h3 
             class="font-mono text-xs font-bold tracking-wider truncate" 
@@ -143,13 +183,9 @@ const isDocs = computed(() => {
         <!-- Status Tag -->
         <span 
           class="shrink-0 text-[9px] font-mono px-2 py-0.5 rounded uppercase tracking-wider font-semibold border"
-          :class="state === 'ACTIVE' 
-            ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/40 animate-pulse' 
-            : (state === 'ERROR' 
-                ? 'bg-rose-500/20 text-rose-400 border-rose-500/50' 
-                : 'bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700/60')"
+          :class="statusTagClass"
         >
-          {{ state === 'ACTIVE' ? 'ACTIVE CO-EXEC' : (state === 'ERROR' ? 'ERROR' : state) }}
+          {{ statusTagText }}
         </span>
       </div>
 

@@ -110,7 +110,7 @@ const resizeCanvas = () => {
   if (!parent) return
   const rect = parent.getBoundingClientRect()
   const fallbackW = typeof window !== 'undefined' ? window.innerWidth : 800
-  const fallbackH = typeof window !== 'undefined' ? (window.innerHeight ? window.innerHeight - 112 : 560) : 560
+  const fallbackH = typeof window !== 'undefined' && window.innerHeight ? window.innerHeight - 112 : 560
   orbWidth = canvas.width = (rect && rect.width > 50) ? Math.floor(rect.width) : fallbackW
   orbHeight = canvas.height = (rect && rect.height > 50) ? Math.floor(rect.height) : fallbackH
   const minDimension = Math.min(orbWidth, orbHeight)
@@ -468,14 +468,16 @@ const ring1Style = computed(() => {
 const ring2Style = computed(() => {
   if (!props.isDebating) return ''
   const agents = resolvedActiveAgents.value
-  const color = agents.length > 1 ? agents[1]!.color : (agents.length > 0 ? agents[0]!.color : props.activeAgentColor)
+  const targetAgent = agents[1] || agents[0]
+  const color = targetAgent ? targetAgent.color : props.activeAgentColor
   return `border-color: ${color}60`
 })
 
 const ring3Style = computed(() => {
   if (!props.isDebating) return ''
   const agents = resolvedActiveAgents.value
-  const color = agents.length > 2 ? agents[2]!.color : (agents.length > 0 ? agents[0]!.color : props.activeAgentColor)
+  const targetAgent = agents[2] || agents[0]
+  const color = targetAgent ? targetAgent.color : props.activeAgentColor
   return `border-color: ${color}20`
 })
 </script>

@@ -64,7 +64,7 @@ const agentsList = computed(() => {
 })
 
 const getInitialSelectedAgents = (): string[] => {
-  if (store.selectedAgent && (!store.selectedAgents || !store.selectedAgents.includes(store.selectedAgent))) {
+  if (store.selectedAgent && !store.selectedAgents?.includes(store.selectedAgent)) {
     return [store.selectedAgent]
   }
   if (Array.isArray(store.selectedAgents) && store.selectedAgents.length > 0) {
@@ -220,7 +220,7 @@ const queueTtsSentence = (sentence: string, role?: string) => {
   }
 }
 
-const playVoiceResponse = async (text: string, role?: string) => {
+const playVoiceResponse = (text: string, role?: string) => {
   if (!store.isVoiceOutputEnabled || !text) return
 
   // Clean text from diagrams and markdown for natural voice synthesis
@@ -354,13 +354,11 @@ watch(() => props.messages.length, (newLen, oldLen) => {
     const startIndex = Math.max(0, oldLen)
     for (let i = startIndex; i < newLen; i++) {
       const msg = props.messages[i]
-      if (msg && msg.role === 'assistant' && !store.streamingMessageId && !msg.isStreaming) {
+      if (msg?.role === 'assistant' && !store.streamingMessageId && !msg.isStreaming) {
         // Determine the agent role for TTS voice synthesis (from agentRole or agentName)
-        const match = msg.content.match(/^\[(.*?)\]\s/)
+        const match = /^\[(.*?)\]\s/.exec(msg.content)
         const role = msg.agentRole || msg.agentName || (match ? match[1] : undefined) || 'supervisor'
-        playVoiceResponse(msg.content, role).catch(err => {
-          console.error("Error playing voice response for message:", err)
-        })
+        playVoiceResponse(msg.content, role)
       }
     }
   }

@@ -63,14 +63,14 @@ const provider = computed({
     if (selectedProvider && selectedProvider.models.length > 0) {
       defaultModel = selectedProvider.models[0]?.id || ''
     }
-    store.updateAgentConfig(props.role, val, defaultModel)
+    void store.updateAgentConfig(props.role, val, defaultModel)
   }
 })
 
 const modelName = computed({
   get: () => agentConfig.value.model_name,
   set: (val) => {
-    store.updateAgentConfig(props.role, provider.value, val)
+    void store.updateAgentConfig(props.role, provider.value, val)
   }
 })
 

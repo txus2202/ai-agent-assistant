@@ -96,9 +96,13 @@ function computeSparkline(data: number[], height = 24, width = 100) {
 const cpuSparkline = computed(() => computeSparkline(cpuHistory.value))
 const memorySparkline = computed(() => computeSparkline(memoryHistory.value))
 
-onMounted(() => {
-  fetchStats()
-  pollTimer = setInterval(fetchStats, 3000)
+onMounted(async () => {
+  await fetchStats()
+  pollTimer = setInterval(() => {
+    fetchStats().catch((err) => {
+      console.error('Error polling stats:', err)
+    })
+  }, 3000)
   tickTimer = setInterval(() => {
     nowTick.value = Date.now()
   }, 200)

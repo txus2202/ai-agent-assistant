@@ -61,10 +61,10 @@ const renderDiagram = async () => {
 
 watch(
   () => [props.isOpen, props.code],
-  ([newOpen]) => {
+  async ([newOpen]) => {
     if (newOpen) {
       zoomLevel.value = 1
-      renderDiagram()
+      await renderDiagram()
     }
   },
   { immediate: true }

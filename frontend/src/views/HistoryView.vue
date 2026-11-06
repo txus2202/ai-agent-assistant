@@ -48,8 +48,8 @@ const deleteDebate = async (id: string, event: Event) => {
   }
 }
 
-onMounted(() => {
-  fetchDebates()
+onMounted(async () => {
+  await fetchDebates()
 })
 
 const getDebatePrompt = (debate: DebateRecord): string => {
@@ -182,9 +182,9 @@ const formatRelativeTime = (dateString: string) => {
   }
 }
 
-const restoreDebate = (debate: DebateRecord) => {
+const restoreDebate = async (debate: DebateRecord) => {
   store.loadDebate(debate)
-  router.push('/')
+  await router.push('/')
 }
 </script>
 

@@ -214,7 +214,9 @@ const queueTtsSentence = (sentence: string, role?: string) => {
   })
 
   if (!isPrefetching) {
-    prefetchTtsQueue()
+    prefetchTtsQueue().catch(err => {
+      console.error('Error prefetching TTS queue:', err)
+    })
   }
 }
 
@@ -245,7 +247,9 @@ const playVoiceResponse = async (text: string, role?: string) => {
   })
 
   if (!isPrefetching) {
-    prefetchTtsQueue()
+    prefetchTtsQueue().catch(err => {
+      console.error('Error prefetching TTS queue:', err)
+    })
   }
 }
 
@@ -281,7 +285,9 @@ const prefetchTtsQueue = async () => {
       
       // If audio player is idle, start playing immediately
       if (store.isTtsPlaying && !isPlayingAudio) {
-        playNextAudio()
+        playNextAudio().catch(err => {
+          console.error("Error starting audio playback:", err)
+        })
       }
     }
   } catch (e) {
@@ -290,7 +296,9 @@ const prefetchTtsQueue = async () => {
   
   // Fetch next sentence immediately
   if (store.isTtsPlaying) {
-    prefetchTtsQueue()
+    prefetchTtsQueue().catch(err => {
+      console.error("Error prefetching next sentence:", err)
+    })
   } else {
     isPrefetching = false
   }
@@ -334,7 +342,9 @@ const playNextAudio = async () => {
     }
 
     if (store.isTtsPlaying) {
-      playNextAudio()
+      playNextAudio().catch(err => {
+        console.error("Error playing next audio chunk:", err)
+      })
     }
   }
 }
@@ -348,7 +358,9 @@ watch(() => props.messages.length, (newLen, oldLen) => {
         // Determine the agent role for TTS voice synthesis (from agentRole or agentName)
         const match = msg.content.match(/^\[(.*?)\]\s/)
         const role = msg.agentRole || msg.agentName || (match ? match[1] : undefined) || 'supervisor'
-        playVoiceResponse(msg.content, role)
+        playVoiceResponse(msg.content, role).catch(err => {
+          console.error("Error playing voice response for message:", err)
+        })
       }
     }
   }
@@ -433,17 +445,16 @@ const handleHitlReject = () => {
   selectedTargetAgents.value = []
 }
 
-const focusRefineInput = () => {
+const focusRefineInput = async () => {
   store.stopTts()
-  nextTick(() => {
-    chatInputRef.value?.focus()
-  })
+  await nextTick()
+  chatInputRef.value?.focus()
 }
 
 const onSubmit = async () => {
   if (store.isHitlRequired) {
     if (!store.draftMessage.trim()) {
-      focusRefineInput()
+      await focusRefineInput()
       return
     }
     store.submitHitlDecision('refine', store.draftMessage.trim(), selectedTargetAgents.value)

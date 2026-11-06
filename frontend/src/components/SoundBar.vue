@@ -142,7 +142,9 @@ const startSilenceDetection = (stream: MediaStream) => {
         silenceTimeout = setTimeout(() => {
           if (isRecording.value) {
             console.log("Silence detected, auto-submitting...")
-            toggleRecording()
+            toggleRecording().catch(err => {
+              console.error("Error toggling recording on silence:", err)
+            })
           }
         }, 2000)
       }
@@ -269,7 +271,9 @@ const animateWaveform = () => {
 
 watch(() => store.isWakeWordTriggered, (triggered) => {
   if (props.listenWakeWord && triggered && !isRecording.value) {
-    toggleRecording()
+    toggleRecording().catch(err => {
+      console.error("Error toggling recording on wake word:", err)
+    })
   }
 })
 

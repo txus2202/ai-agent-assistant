@@ -70,4 +70,82 @@ flowchart TD
   it('returns empty array when content is empty', () => {
     expect(parseMessageContent('')).toEqual([])
   })
+
+  it('parses code blocks with language and proper file extension', () => {
+    const text = `Aquí está el código en Go:
+\`\`\`go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Hello Olimpo")
+}
+\`\`\`
+Y este es el componente en Vue:
+\`\`\`vue
+<template><div>Dédalo</div></template>
+\`\`\``
+
+    const blocks = parseMessageContent(text)
+    expect(blocks).toHaveLength(4)
+    expect(blocks[0]!.type).toBe('text')
+    expect(blocks[1]!.type).toBe('code')
+    expect(blocks[1]!.language).toBe('go')
+    expect(blocks[1]!.extension).toBe('go')
+    expect(blocks[1]!.content).toContain('package main')
+
+    expect(blocks[2]!.type).toBe('text')
+    expect(blocks[3]!.type).toBe('code')
+    expect(blocks[3]!.language).toBe('vue')
+    expect(blocks[3]!.extension).toBe('vue')
+  })
+
+  it('parses markdown images properly', () => {
+    const text = `Diseño de Fidias:
+![Landing Mockup](https://example.com/mockup.png)
+¿Qué te parece?`
+
+    const blocks = parseMessageContent(text)
+    expect(blocks).toHaveLength(3)
+    expect(blocks[0]!.type).toBe('text')
+    expect(blocks[1]!.type).toBe('image')
+    expect(blocks[1]!.alt).toBe('Landing Mockup')
+    expect(blocks[1]!.content).toBe('https://example.com/mockup.png')
+    expect(blocks[2]!.type).toBe('text')
+  })
+
+  it('parses fenced markdown block as document type with extracted title', () => {
+    const text = `Documentación de Calíope:
+\`\`\`markdown
+# Especificación del Sistema
+## 1. Alcance
+Contenido de la especificación técnica.
+\`\`\`
+Fin del documento.`
+
+    const blocks = parseMessageContent(text)
+    expect(blocks).toHaveLength(3)
+    expect(blocks[0]!.type).toBe('text')
+    expect(blocks[1]!.type).toBe('document')
+    expect(blocks[1]!.title).toBe('Especificación del Sistema')
+    expect(blocks[1]!.content).toContain('## 1. Alcance')
+    expect(blocks[2]!.type).toBe('text')
+  })
+
+  it('separates preamble and document block for document agents when raw markdown is emitted without backticks', () => {
+    const text = `Soy Calíope, redactora elocuente. A continuación presento la documentación:
+
+# Proyecto Agentes
+## 1. Resumen
+Este es el documento oficial sin bloques delimitados.`
+
+    const blocks = parseMessageContent(text, { isDocumentAgent: true })
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0]!.type).toBe('text')
+    expect(blocks[0]!.content).toBe('Soy Calíope, redactora elocuente. A continuación presento la documentación:')
+    expect(blocks[1]!.type).toBe('document')
+    expect(blocks[1]!.title).toBe('Proyecto Agentes')
+    expect(blocks[1]!.content).toBe('# Proyecto Agentes\n## 1. Resumen\nEste es el documento oficial sin bloques delimitados.')
+  })
 })

@@ -16,6 +16,7 @@ asyncio.to_thread() here so the event loop is not blocked.
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -25,6 +26,7 @@ from src.domain.agents.sub_agent_profiles import format_team_roster, get_profile
 from src.domain.ports.document_store import IDocumentStore
 from src.domain.ports.llm_provider import ILLMProvider
 from src.domain.value_objects.document_chunk import DocumentChunk
+from src.infrastructure.image_generation.service import ImageGenerationService
 
 
 @dataclass
@@ -122,6 +124,46 @@ class SubAgentRunner:
         chat_history_block = format_chat_history(chat_history)
         if chat_history_block:
             parts.append(chat_history_block)
+
+        # Dynamic directive for Fidias depending on IMAGE_GENERATION_PROVIDER
+        image_provider = ImageGenerationService.get_provider_name()
+        if profile.id in ("fidias", "fídias"):
+            if image_provider:
+                parts.append(
+                    f"## DIRECTIVA DE GENERACIÓN VISUAL (MOTOR {image_provider.upper()} ACTIVO)\n"
+                    f"Tienes activo el motor de generación de imágenes '{image_provider}'.\n"
+                    "Cuando el usuario solicite diseñar o generar una imagen, recurso gráfico, logotipo, ilustración o concepto visual de interfaz:\n"
+                    "1. Proporciona una breve explicación técnica y estética de tu propuesta en español.\n"
+                    "2. Incluye obligatoriamente en una línea independiente la directiva para generar la imagen real:\n"
+                    "[GENERATE_IMAGE: <detailed English visual prompt describing the interface or graphic with style, composition, colors, and 8k quality>]\n"
+                    "El sistema interceptará esta directiva, generará el archivo de imagen real mediante dicho motor y lo presentará al usuario."
+                )
+            else:
+                parts.append(
+                    "## DIRECTIVA DE MAQUETACIÓN VISUAL (MODO SIN GENERADOR DE IMÁGENES)\n"
+                    "No hay ningún motor de generación de imágenes rasterizadas (PNG/JPG) activo en el entorno.\n"
+                    "Por lo tanto, ante cualquier solicitud de diseño de interfaz, mockup, dashboard, landing page o concepto visual:\n"
+                    "Debes realizar obligatoriamente una maquetación en HTML5 completa, rica y visualmente impactante entregada dentro de un único bloque de código:\n"
+                    "```html\n"
+                    "<!DOCTYPE html>\n"
+                    "<html lang=\"es\">\n"
+                    "<head>\n"
+                    "  <meta charset=\"UTF-8\">\n"
+                    "  <style>\n"
+                    "    /* CSS moderno completo: Flexbox/Grid, sombras elegantes, paleta armónica, tipografías y responsive */\n"
+                    "  </style>\n"
+                    "</head>\n"
+                    "<body>\n"
+                    "  <!-- Estructura HTML5 semántica y visualmente terminada -->\n"
+                    "  <script>\n"
+                    "    /* Vanilla JS para interactividad básica si aplica */\n"
+                    "  </script>\n"
+                    "</body>\n"
+                    "</html>\n"
+                    "```\n"
+                    "Bajo ningún concepto generes enlaces de imagen ficticios ni intentes generar archivos binarios. La entrega visual debe ser la maquetación HTML5/CSS completa para su previsualización y descarga mediante la herramienta de código."
+                )
+
         parts.append(f"## User Request\n{user_request}")
 
         prompt = "\n\n".join(parts)
@@ -130,6 +172,36 @@ class SubAgentRunner:
         start_time = time.perf_counter()
         content = await asyncio.to_thread(llm_provider.complete, prompt, model_name)
         latency = round(time.perf_counter() - start_time, 2)
+
+        # ── 4. Post-processing for Fidias image generation ───────────────
+        if profile.id in ("fidias", "fídias") and image_provider:
+            match = re.search(r"\[GENERATE_IMAGE:\s*(.+?)\]", content, flags=re.DOTALL)
+            if not match:
+                match = re.search(r"<!--\s*generate_image:\s*(.+?)\s*-->", content, flags=re.DOTALL)
+
+            if match:
+                gen_prompt = match.group(1).strip()
+                try:
+                    _, img_url = await ImageGenerationService.generate_and_save(gen_prompt, provider=image_provider)
+                    clean_alt = re.sub(r'[\r\n]+', ' ', gen_prompt)[:45].strip()
+                    replacement = f"![{clean_alt}]({img_url})"
+                    content = content[:match.start()] + replacement + content[match.end():]
+                except Exception as exc:
+                    content = content[:match.start()] + f"\n\n> ⚠️ *No se pudo generar la imagen con {image_provider}: {exc}*\n\n" + content[match.end():]
+            else:
+                # Fallback: check if the model attempted to produce a markdown image link with a placeholder URL
+                img_match = re.search(r"!\[(.*?)\]\((https?://[^\s\)]+|[^\s\)]+placeholder[^\s\)]*)\)", content)
+                if img_match:
+                    alt_text = img_match.group(1) or "diseño visual"
+                    try:
+                        _, img_url = await ImageGenerationService.generate_and_save(alt_text, provider=image_provider)
+                        content = content[:img_match.start()] + f"![{alt_text}]({img_url})" + content[img_match.end():]
+                    except Exception:
+                        pass
+        elif profile.id in ("fidias", "fídias") and not image_provider:
+            # Strip any stray image generation directives if present
+            content = re.sub(r"\[GENERATE_IMAGE:\s*.+?\]", "", content, flags=re.DOTALL)
+            content = re.sub(r"<!--\s*generate_image:\s*.+?\s*-->", "", content, flags=re.DOTALL)
 
         usage: dict[str, int] = {}
         if hasattr(llm_provider, "get_last_usage"):

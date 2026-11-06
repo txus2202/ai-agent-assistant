@@ -20,6 +20,7 @@ export interface Agent {
   supports_hitl?: boolean
   can_ingest_documents?: boolean
   topology_roles?: string[]
+  tools?: string[]
 }
 
 export interface ChatMessage {
@@ -939,7 +940,20 @@ export const useDebateStore = defineStore('debate', () => {
       }
     })
 
-    messages.value.push({ role: 'assistant', content: `Error: ${event.content}` })
+    const errorContent = `Error: ${event.content}`
+    const lastMsg = messages.value[messages.value.length - 1]
+    if (lastMsg && lastMsg.role === 'assistant' && (lastMsg.content === errorContent || lastMsg.content === event.content)) {
+      return
+    }
+
+    const { agentRole, agentName, colorHex } = resolveAgentDisplay(event.role || 'supervisor')
+    messages.value.push({
+      role: 'assistant',
+      content: errorContent,
+      agentRole,
+      agentName,
+      colorHex
+    })
   }
 
   function handleMessage(event: SupervisorEvent) {

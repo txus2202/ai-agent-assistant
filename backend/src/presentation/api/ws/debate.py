@@ -256,12 +256,22 @@ class DebateWebSocketHandler:
             ):
                 await self.send_event(event)
         except Exception as e:
+            logger.exception("Error during supervisor debate execution")
             if self.debate_record:
                 self.debate_repo.update_status(self.debate_record.id, "error")
+            if self.current_trace:
+                try:
+                    self.observability.end_trace(
+                        trace_context=self.current_trace,
+                        status="ERROR",
+                        output=str(e),
+                    )
+                except Exception:
+                    pass
+                self.current_trace = None
             await self.send_event(SupervisorEvent(
                 type=EventType.ERROR, role="supervisor", content=str(e)
             ))
-            raise
         finally:
             try:
                 from src.presentation.api.ws.wake_word import wake_word_service
@@ -511,12 +521,23 @@ class DebateWebSocketHandler:
             await self.websocket.close(code=1003)
             return None
         except Exception as e:
+            logger.exception("Error during sub-agent execution: %s", agent_role)
             if self.debate_record:
                 self.debate_repo.update_status(self.debate_record.id, "error")
+            if self.current_trace:
+                try:
+                    self.observability.end_trace(
+                        trace_context=self.current_trace,
+                        status="ERROR",
+                        output=str(e),
+                    )
+                except Exception:
+                    pass
+                self.current_trace = None
             await self.send_event(SupervisorEvent(
                 type=EventType.ERROR, role=agent_role, content=str(e)
             ))
-            raise
+            return None
 
     def _init_session_and_trace(self, session_id: str | None, user_request: str, target_agent: str) -> None:
         existing_record = self.debate_repo.find_by_id(session_id) if session_id else None

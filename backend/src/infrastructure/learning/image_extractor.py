@@ -18,7 +18,7 @@ Analiza exhaustivamente la imagen proporcionada (diagrama, arquitectura o esquem
 2. Resumen general de la arquitectura o flujo representado.
 3. Listado detallado de componentes, subsistemas y actores identificados.
 4. Conexiones, flujos de datos y protocolos indicados en el diagrama.
-5. Reconstrucción textual o en sintaxis Mermaid si aplica.
+5. Reconstrucción fiel y completa en sintaxis Mermaid dentro de un bloque de código (```mermaid ... ```). Es obligatorio traducir el esquema gráfico a un diagrama Mermaid válido (flowchart TD/LR, sequenceDiagram, etc.) que refleje con exactitud todos los nodos, etiquetas y relaciones de la imagen.
 
 Devuelve únicamente la descripción técnica estructurada en Markdown.
 """

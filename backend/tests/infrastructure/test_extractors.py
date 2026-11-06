@@ -200,6 +200,9 @@ class TestImageExtractor:
         result = ImageExtractor.extract(img_file, mock_llm, model_name="gemini-2.5-flash")
         assert "Diagrama de Arquitectura" in result
         mock_llm.complete_image.assert_called_once()
+        # Verify vision prompt instructs Mermaid diagram generation
+        prompt_arg = mock_llm.complete_image.call_args[0][0]
+        assert "mermaid" in prompt_arg.lower()
 
     def test_extract_falls_back_to_complete_if_no_complete_image(self, tmp_path):
         from src.infrastructure.learning.image_extractor import ImageExtractor

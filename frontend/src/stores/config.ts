@@ -11,6 +11,7 @@ export interface AgentConfig {
   supports_hitl?: boolean
   can_ingest_documents?: boolean
   topology_roles?: string[]
+  tools?: string[]
 }
 
 export interface ModelConfig {

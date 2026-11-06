@@ -562,6 +562,91 @@ describe('ChatPanel.vue', () => {
     expect(wrapper.find('[data-test="diagram-modal-backdrop"]').exists()).toBe(true)
   })
 
+  it('renders code card and opens CodeModal when clicking Ver button', async () => {
+    const messages = [
+      {
+        role: 'assistant' as const,
+        content: 'Aquí está la implementación de Dédalo:\n```go\npackage main\n\nfunc main() {}\n```',
+        agentName: 'Dédalo'
+      }
+    ]
+
+    const wrapper = mount(ChatPanel, {
+      props: { messages, isDebating: false }
+    })
+
+    expect(wrapper.find('[data-test="code-modal-backdrop"]').exists()).toBe(false)
+    const codeCard = wrapper.find('[data-test="chat-code-card"]')
+    expect(codeCard.exists()).toBe(true)
+
+    const viewBtn = wrapper.find('[data-test="chat-code-view-btn"]')
+    expect(viewBtn.exists()).toBe(true)
+    await viewBtn.trigger('click')
+
+    expect(wrapper.find('[data-test="code-modal-backdrop"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('package main')
+  })
+
+  it('renders image card and opens ImageModal when clicking preview or Ver button', async () => {
+    const messages = [
+      {
+        role: 'assistant' as const,
+        content: 'Diseño visual de Fidias:\n![Mockup Landing](https://example.com/fidias.png)',
+        agentName: 'Fidias'
+      }
+    ]
+
+    const wrapper = mount(ChatPanel, {
+      props: { messages, isDebating: false }
+    })
+
+    expect(wrapper.find('[data-test="image-modal-backdrop"]').exists()).toBe(false)
+    const imageCard = wrapper.find('[data-test="chat-image-card"]')
+    expect(imageCard.exists()).toBe(true)
+
+    const viewBtn = wrapper.find('[data-test="chat-image-view-btn"]')
+    expect(viewBtn.exists()).toBe(true)
+    await viewBtn.trigger('click')
+
+    expect(wrapper.find('[data-test="image-modal-backdrop"]').exists()).toBe(true)
+  })
+
+  it('renders document card for Caliope with internal scroll and opens DocumentModal when clicking Ver', async () => {
+    const messages = [
+      {
+        role: 'assistant' as const,
+        content: 'Soy Calíope, redactora elocuente.\n\n# Manual de Integración\nDocumentación técnica generada por Calíope.',
+        agentName: 'Calíope'
+      }
+    ]
+
+    const wrapper = mount(ChatPanel, {
+      props: { messages, isDebating: false }
+    })
+
+    const docCard = wrapper.find('[data-test="chat-document-card"]')
+    expect(docCard.exists()).toBe(true)
+    expect(docCard.text()).toContain('Manual de Integración')
+    expect(docCard.text()).not.toContain('Soy Calíope, redactora elocuente')
+    expect(wrapper.text()).toContain('Soy Calíope, redactora elocuente')
+
+    expect(wrapper.find('[data-test="chat-doc-copy-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="chat-doc-download-md-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="chat-doc-export-pdf-btn"]').exists()).toBe(true)
+
+    // Initially modal is closed
+    expect(wrapper.find('[data-test="document-modal-backdrop"]').exists()).toBe(false)
+
+    // Click view button
+    const viewBtn = wrapper.find('[data-test="chat-doc-view-btn"]')
+    expect(viewBtn.exists()).toBe(true)
+    await viewBtn.trigger('click')
+
+    // Modal is now open
+    expect(wrapper.find('[data-test="document-modal-backdrop"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Manual de Integración')
+  })
+
   it('filters out mermaid diagram syntax from TTS audio synthesis', async () => {
     mockStore.isVoiceOutputEnabled = true
     mockStore.playTtsAudioChunk = vi.fn().mockResolvedValue(undefined)

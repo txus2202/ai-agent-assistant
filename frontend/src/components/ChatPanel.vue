@@ -63,13 +63,17 @@ const agentsList = computed(() => {
   ]
 })
 
-const selectedAgents = ref<string[]>(
-  store.selectedAgent && (!store.selectedAgents || !store.selectedAgents.includes(store.selectedAgent))
-    ? [store.selectedAgent]
-    : (Array.isArray(store.selectedAgents) && store.selectedAgents.length > 0
-        ? [...store.selectedAgents]
-        : [store.selectedAgent || 'supervisor'])
-)
+const getInitialSelectedAgents = (): string[] => {
+  if (store.selectedAgent && (!store.selectedAgents || !store.selectedAgents.includes(store.selectedAgent))) {
+    return [store.selectedAgent]
+  }
+  if (Array.isArray(store.selectedAgents) && store.selectedAgents.length > 0) {
+    return [...store.selectedAgents]
+  }
+  return [store.selectedAgent || 'supervisor']
+}
+
+const selectedAgents = ref<string[]>(getInitialSelectedAgents())
 
 watch(() => store.selectedAgent, (newAgent) => {
   if (newAgent && (selectedAgents.value.length <= 1 || !selectedAgents.value.includes(newAgent))) {
@@ -117,13 +121,11 @@ const toggleAgent = (role: string) => {
     if (selectedAgents.value.length === 0) {
       selectedAgents.value = ['supervisor']
     }
-  } else {
+  } else if (selectedAgents.value.length === 1 && selectedAgents.value[0] === 'supervisor' && role !== 'supervisor') {
     // If only supervisor was selected and user clicks another agent, select that agent
-    if (selectedAgents.value.length === 1 && selectedAgents.value[0] === 'supervisor' && role !== 'supervisor') {
-      selectedAgents.value = [role]
-    } else {
-      selectedAgents.value.push(role)
-    }
+    selectedAgents.value = [role]
+  } else {
+    selectedAgents.value.push(role)
   }
   store.selectedAgents = [...selectedAgents.value]
   store.selectedAgent = selectedAgents.value[0] || 'supervisor'
@@ -517,7 +519,6 @@ watch(() => props.messages.length, async (newLen) => {
 })
 
 const setActiveTab = (_tab: 'chat' | 'observability') => {
-  void _tab
   // Observability is now located in the right column alongside AgentTopology
 }
 

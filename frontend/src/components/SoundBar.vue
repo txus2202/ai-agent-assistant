@@ -176,6 +176,78 @@ const stopSilenceDetection = () => {
   analyser = null
 }
 
+const getActiveAudioSource = (isLight: boolean): { activeAnalyser: AnalyserNode | null; waveColor: string } => {
+  if (isRecording.value && analyser) {
+    return {
+      activeAnalyser: analyser,
+      waveColor: isLight ? '#1e293b' : '#ffffff'
+    }
+  }
+  if (store.isTtsPlaying && store.globalAnalyser) {
+    return {
+      activeAnalyser: store.globalAnalyser,
+      waveColor: props.activeAgentColor
+    }
+  }
+  return {
+    activeAnalyser: null,
+    waveColor: isLight ? '#334155' : '#ffffff'
+  }
+}
+
+const drawActiveWaveform = (
+  wCtx: CanvasRenderingContext2D,
+  activeAnalyser: AnalyserNode,
+  width: number,
+  height: number,
+  waveColor: string
+) => {
+  const dataArray = new Uint8Array(activeAnalyser.frequencyBinCount)
+  activeAnalyser.getByteTimeDomainData(dataArray)
+
+  wCtx.strokeStyle = waveColor
+  wCtx.lineWidth = 2
+  wCtx.beginPath()
+
+  const sliceWidth = (width * 1.0) / activeAnalyser.frequencyBinCount
+  let x = 0
+
+  for (let i = 0; i < activeAnalyser.frequencyBinCount; i++) {
+    const v = dataArray[i]! / 128.0
+    const y = (v * height) / 2
+
+    if (i === 0) {
+      wCtx.moveTo(x, y)
+    } else {
+      wCtx.lineTo(x, y)
+    }
+    x += sliceWidth
+  }
+  wCtx.stroke()
+}
+
+const drawIdleWaveform = (
+  wCtx: CanvasRenderingContext2D,
+  width: number,
+  centerY: number,
+  isLight: boolean
+) => {
+  wCtx.strokeStyle = isLight ? 'rgba(100, 116, 139, 0.45)' : 'rgba(255, 255, 255, 0.25)'
+  wCtx.lineWidth = 1.2
+  wCtx.beginPath()
+  wCtx.moveTo(0, centerY)
+  wCtx.lineTo(width, centerY)
+  wCtx.stroke()
+
+  const pulseX = (waveOffset * 30) % width
+  wCtx.beginPath()
+  wCtx.arc(pulseX, centerY, 2.5, 0, Math.PI * 2)
+  wCtx.fillStyle = isLight ? '#0f172a' : '#ffffff'
+  wCtx.fill()
+
+  waveOffset += 0.08
+}
+
 const animateWaveform = () => {
   if (!waveformCanvasRef.value) return
   const wCanvas = waveformCanvasRef.value
@@ -183,61 +255,13 @@ const animateWaveform = () => {
   if (!wCtx) return
 
   wCtx.clearRect(0, 0, wCanvas.width, wCanvas.height)
-  const width = wCanvas.width
-  const height = wCanvas.height
-  const centerY = height / 2
-
-  let activeAnalyser: AnalyserNode | null = null
   const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
-  let waveColor = isLight ? '#334155' : '#ffffff'
-
-  if (isRecording.value && analyser) {
-    activeAnalyser = analyser
-    waveColor = isLight ? '#1e293b' : '#ffffff'
-  } else if (store.isTtsPlaying && store.globalAnalyser) {
-    activeAnalyser = store.globalAnalyser
-    waveColor = props.activeAgentColor
-  }
+  const { activeAnalyser, waveColor } = getActiveAudioSource(isLight)
 
   if (activeAnalyser) {
-    const dataArray = new Uint8Array(activeAnalyser.frequencyBinCount)
-    activeAnalyser.getByteTimeDomainData(dataArray)
-
-    wCtx.strokeStyle = waveColor
-    wCtx.lineWidth = 2
-    wCtx.beginPath()
-
-    const sliceWidth = width * 1.0 / activeAnalyser.frequencyBinCount
-    let x = 0
-
-    for (let i = 0; i < activeAnalyser.frequencyBinCount; i++) {
-      const v = dataArray[i]! / 128.0
-      const y = (v * height) / 2
-
-      if (i === 0) {
-        wCtx.moveTo(x, y)
-      } else {
-        wCtx.lineTo(x, y)
-      }
-      x += sliceWidth
-    }
-    wCtx.stroke()
+    drawActiveWaveform(wCtx, activeAnalyser, wCanvas.width, wCanvas.height, waveColor)
   } else {
-    // Idle flat line & pulsing dot
-    wCtx.strokeStyle = isLight ? 'rgba(100, 116, 139, 0.45)' : 'rgba(255, 255, 255, 0.25)'
-    wCtx.lineWidth = 1.2
-    wCtx.beginPath()
-    wCtx.moveTo(0, centerY)
-    wCtx.lineTo(width, centerY)
-    wCtx.stroke()
-
-    const pulseX = (waveOffset * 30) % width
-    wCtx.beginPath()
-    wCtx.arc(pulseX, centerY, 2.5, 0, Math.PI * 2)
-    wCtx.fillStyle = isLight ? '#0f172a' : '#ffffff'
-    wCtx.fill()
-
-    waveOffset += 0.08
+    drawIdleWaveform(wCtx, wCanvas.width, wCanvas.height / 2, isLight)
   }
 
   waveAnimationFrameId = requestAnimationFrame(animateWaveform)

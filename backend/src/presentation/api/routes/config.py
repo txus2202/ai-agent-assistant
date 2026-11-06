@@ -17,7 +17,7 @@ class AgentConfigUpdate(BaseModel):
 def get_config_repo(settings: Annotated[Settings, Depends(get_settings)]) -> SqliteAgentConfigRepository:
     return SqliteAgentConfigRepository(str(settings.sqlite_db_path))
 
-def _extract_topology_roles(profile: Any, top: Any, role_value: str) -> list[str]:
+def _extract_topology_roles(profile: Any, top: Any) -> list[str]:
     top_roles: list[str] = []
     identifiers = {profile.display_name, profile.id}
 
@@ -61,7 +61,7 @@ def _build_agent_item(
         "uses_rag": profile.uses_rag,
         "supports_hitl": profile.supports_hitl,
         "can_ingest_documents": profile.can_ingest_documents,
-        "topology_roles": _extract_topology_roles(profile, top, role_value),
+        "topology_roles": _extract_topology_roles(profile, top),
     }
 
 

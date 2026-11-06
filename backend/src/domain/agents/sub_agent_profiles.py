@@ -47,6 +47,7 @@ class SubAgentProfile:
     supports_hitl: bool = True
     is_supervisor: bool = False
     can_ingest_documents: bool = False
+    tools: tuple[str, ...] = ()
 
     @property
     def name(self) -> str:
@@ -118,6 +119,7 @@ def _parse_profile(entry: Any, index: int) -> SubAgentProfile:
         supports_hitl=bool(entry.get("supports_hitl", True)),
         is_supervisor=bool(entry.get("is_supervisor", False)),
         can_ingest_documents=bool(entry.get("can_ingest_documents", False)),
+        tools=tuple(str(t) for t in entry.get("tools") or ()),
     )
 
 

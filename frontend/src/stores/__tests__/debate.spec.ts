@@ -427,6 +427,14 @@ describe('useDebateStore', () => {
     expect(store.messages).toHaveLength(2)
     expect(store.messages[1]!.content).toContain('Error: Connection lost with agent')
 
+    // duplicate error event should be ignored
+    store.handleSupervisorEvent({
+      type: 'error',
+      role: 'supervisor',
+      content: 'Connection lost with agent'
+    })
+    expect(store.messages).toHaveLength(2)
+
     // done event
     store.handleSupervisorEvent({
       type: 'done',

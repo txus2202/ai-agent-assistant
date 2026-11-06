@@ -62,6 +62,7 @@ def _build_agent_item(
         "supports_hitl": profile.supports_hitl,
         "can_ingest_documents": profile.can_ingest_documents,
         "topology_roles": _extract_topology_roles(profile, top),
+        "tools": list(getattr(profile, "tools", ())),
     }
 
 

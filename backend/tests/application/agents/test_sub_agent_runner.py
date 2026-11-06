@@ -237,3 +237,116 @@ class TestSubAgentRunner:
             assert any("MIEMBROS OFICIALES DEL CONSEJO TÉCNICO" in p for p in llm.received_prompts)
         finally:
             unregister_profile("test_sup")
+
+    @pytest.mark.anyio
+    async def test_fidias_without_image_provider_injects_html5_directive(self, monkeypatch):
+        from src.domain.agents.sub_agent_profiles import SubAgentProfile, register_profile, unregister_profile
+
+        fidias_profile = SubAgentProfile(
+            id="fidias",
+            display_name="Fídias",
+            description="UX/UI designer",
+            color_hex="#ffe600",
+            system_prompt="You are Fidias.",
+        )
+        register_profile(fidias_profile)
+        try:
+            monkeypatch.delenv("IMAGE_GENERATION_PROVIDER", raising=False)
+            monkeypatch.delenv("IMAGE_PROVIDER", raising=False)
+
+            llm = FakeLLM("```html\n<!DOCTYPE html><html><body><h1>Mockup</h1></body></html>\n```")
+            response = await SubAgentRunner.run(
+                role="Fídias",
+                user_request="Diseña un dashboard oscuro",
+                llm_provider=llm,
+                document_store=InMemoryDocumentStore(),
+                model_name="gemini-3.6-flash",
+            )
+
+            assert any("DIRECTIVA DE MAQUETACIÓN VISUAL (MODO SIN GENERADOR DE IMÁGENES)" in p for p in llm.received_prompts)
+            assert "<!DOCTYPE html>" in response.content
+        finally:
+            unregister_profile("fidias")
+
+    @pytest.mark.anyio
+    async def test_fidias_with_image_provider_generates_image_and_replaces_directive(self, monkeypatch):
+        from src.domain.agents.sub_agent_profiles import SubAgentProfile, register_profile, unregister_profile
+        from src.infrastructure.image_generation.service import ImageGenerationService
+
+        fidias_profile = SubAgentProfile(
+            id="fidias",
+            display_name="Fídias",
+            description="UX/UI designer",
+            color_hex="#ffe600",
+            system_prompt="You are Fidias.",
+        )
+        register_profile(fidias_profile)
+        try:
+            monkeypatch.setenv("IMAGE_GENERATION_PROVIDER", "pollinations")
+
+            async def fake_generate_and_save(prompt, provider=None):
+                return "fidias_test123.png", "/api/images/fidias_test123.png"
+
+            monkeypatch.setattr(ImageGenerationService, "generate_and_save", fake_generate_and_save)
+
+            llm = FakeLLM(
+                "Aquí tienes el concepto visual del dashboard.\n\n"
+                "[GENERATE_IMAGE: Futuristic dark cybersecurity dashboard with cyan neon glowing cards, 8k]\n\n"
+                "He priorizado el contraste y la claridad de métricas."
+            )
+
+            response = await SubAgentRunner.run(
+                role="Fídias",
+                user_request="Genera una imagen para un dashboard",
+                llm_provider=llm,
+                document_store=InMemoryDocumentStore(),
+                model_name="gemini-3.6-flash",
+            )
+
+            assert any("DIRECTIVA DE GENERACIÓN VISUAL (MOTOR POLLINATIONS ACTIVO)" in p for p in llm.received_prompts)
+            assert "![Futuristic dark cybersecurity dashboard" in response.content
+            assert "/api/images/fidias_test123.png" in response.content
+            assert "[GENERATE_IMAGE:" not in response.content
+        finally:
+            unregister_profile("fidias")
+
+    @pytest.mark.anyio
+    async def test_fidias_with_image_provider_failure_replaces_with_warning(self, monkeypatch):
+        from src.domain.agents.sub_agent_profiles import SubAgentProfile, register_profile, unregister_profile
+        from src.infrastructure.image_generation.service import ImageGenerationService
+
+        fidias_profile = SubAgentProfile(
+            id="fidias",
+            display_name="Fídias",
+            description="UX/UI designer",
+            color_hex="#ffe600",
+            system_prompt="You are Fidias.",
+        )
+        register_profile(fidias_profile)
+        try:
+            monkeypatch.setenv("IMAGE_GENERATION_PROVIDER", "imagen")
+
+            async def fake_fail(prompt, provider=None):
+                raise RuntimeError("API quota exceeded")
+
+            monkeypatch.setattr(ImageGenerationService, "generate_and_save", fake_fail)
+
+            llm = FakeLLM(
+                "Propuesta visual:\n"
+                "[GENERATE_IMAGE: Neon login page, minimalist]\n"
+                "Listo para revisión."
+            )
+
+            response = await SubAgentRunner.run(
+                role="Fídias",
+                user_request="Crea una imagen de login",
+                llm_provider=llm,
+                document_store=InMemoryDocumentStore(),
+                model_name="gemini-3.6-flash",
+            )
+
+            assert "No se pudo generar la imagen con imagen: API quota exceeded" in response.content
+            assert "[GENERATE_IMAGE:" not in response.content
+        finally:
+            unregister_profile("fidias")
+

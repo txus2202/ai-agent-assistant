@@ -609,6 +609,28 @@ def test_multi_agent_sequential_dispatch_in_arrival_order(ws_client, monkeypatch
     assert any(h.get("agent") == "Sphinx" and h.get("content") == "Análisis de Sphinx" for h in call_order[1][1])
 
 
+def test_supervisor_exception_emits_single_error_event(ws_client, monkeypatch):
+    from src.presentation.api.ws import debate
+
+    async def _failing_generator(*args, **kwargs):
+        raise RuntimeError("LLM rate limit exceeded on agent Ícaro")
+        if False:
+            yield
+
+    monkeypatch.setattr(debate.SupervisorAgent, "run", _failing_generator)
+
+    with ws_client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({
+            "type": "start",
+            "user_request": "Diseña una arquitectura",
+            "provider": "gemini"
+        })
+        err_event = websocket.receive_json()
+        assert err_event["type"] == "error"
+        assert err_event["role"] == "supervisor"
+        assert "LLM rate limit exceeded on agent Ícaro" in err_event["content"]
+
+
 
 
 

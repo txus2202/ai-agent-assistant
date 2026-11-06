@@ -50,6 +50,8 @@ generate a well-structured Markdown document strictly following this format:
 
 5. Use concise, factual language. No filler text, no meta-commentary about the document.
 
+6. Diagram Preservation: If the raw text contains Mermaid diagram code blocks (```mermaid ... ```) or visual architecture schemas, you MUST preserve the complete Mermaid diagram block intact within a dedicated section (e.g. ## Diagrama de Arquitectura / Flujo) so the visual representation is persisted and can be rendered.
+
 Return ONLY the Markdown document. Do not add any extra explanation.
 """
 

@@ -401,5 +401,36 @@ class TestLearnFromSource:
         assert "proyecto" in content
         assert "tfm" in content
 
+    def test_learn_from_source_preserves_mermaid_diagrams(self, tmp_path: Path):
+        from src.application.services.learn_from_source import LearnFromSource, SourceType
+
+        class MermaidLLM(ILLMProvider):
+            def list_models(self) -> list[dict[str, str]]:
+                return [{"id": "test", "name": "Test"}]
+
+            def complete(self, prompt: str, model_name: str) -> str:
+                # Check system prompt includes mermaid preservation rule
+                assert "mermaid" in prompt.lower()
+                return (
+                    "---\ntype: note\ntags: [diagram, architecture]\n---\n\n"
+                    "# Diagrama de Sistema\n\n"
+                    "```mermaid\ngraph TD\n  A[Frontend] --> B[Backend]\n```\n"
+                )
+
+        result = LearnFromSource.run(
+            source="Arquitectura con Frontend y Backend.",
+            source_type=SourceType.TEXT,
+            llm_provider=MermaidLLM(),
+            document_store=InMemoryDocumentStore(),
+            vault_root=tmp_path,
+        )
+
+        assert result.errors == []
+        assert result.generated_file is not None
+        content = result.generated_file.read_text(encoding="utf-8")
+        assert "```mermaid" in content
+        assert "A[Frontend] --> B[Backend]" in content
+
+
 
 

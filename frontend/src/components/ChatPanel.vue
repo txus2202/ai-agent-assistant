@@ -1,10 +1,38 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
-import { SendHorizontal, Paperclip, Check, User, Bot, ChevronDown, Copy, Eye, Brain, X, Edit3, GitFork, Flag } from '@lucide/vue'
+import { 
+  SendHorizontal, 
+  Paperclip, 
+  Check, 
+  User, 
+  Bot, 
+  ChevronDown, 
+  Copy, 
+  Eye, 
+  Brain, 
+  X, 
+  Edit3, 
+  GitFork, 
+  Flag,
+  Download,
+  Code2,
+  ImageIcon,
+  FileText,
+  Printer
+} from '@lucide/vue'
 import { useDebateStore, type ChatMessage } from '../stores/debate'
-import DiagramModal from './DiagramModal.vue'
+import DiagramModal from './tools/DiagramModal.vue'
+import CodeModal from './tools/CodeModal.vue'
+import ImageModal from './tools/ImageModal.vue'
+import DocumentModal from './tools/DocumentModal.vue'
 import { cleanTextForTts, splitTextIntoTtsChunks } from '../utils/ttsFilter'
-import { parseMessageContent } from '../utils/messageParser'
+import { parseMessageContent, getLanguageExtension } from '../utils/messageParser'
+import {
+  downloadMarkdownFile,
+  exportDocumentToPdf,
+  extractDocumentTitle,
+  renderMarkdownToHtml
+} from '../utils/markdownRenderer'
 
 const props = defineProps<{
   messages: ChatMessage[]
@@ -17,10 +45,69 @@ defineEmits<{
 
 const store = useDebateStore()
 const chatScroll = ref<HTMLElement | null>(null)
+
+// Diagram Modal State
 const isDiagramModalOpen = ref(false)
 const activeDiagramCode = ref('')
-const activeDiagramTitle = ref('Diagrama de Arquitectura')
+const activeDiagramTitle = ref('Diagrama')
 const copiedDiagramIndex = ref<number | null>(null)
+
+// Code Modal State
+const isCodeModalOpen = ref(false)
+const activeCode = ref('')
+const activeCodeLanguage = ref('code')
+const activeCodeExtension = ref('')
+const activeCodeTitle = ref('Visualizador de Código')
+const copiedCodeIndex = ref<number | null>(null)
+
+// Image Modal State
+const isImageModalOpen = ref(false)
+const activeImageUrl = ref('')
+const activeImageAlt = ref('Recurso visual')
+const activeImageTitle = ref('Visualizador de Imagen')
+
+// Document Modal State (Calíope / document_viewer)
+const isDocumentModalOpen = ref(false)
+const activeDocContent = ref('')
+const activeDocTitle = ref('Documento Técnico')
+const copiedDocIndex = ref<number | null>(null)
+
+const openDocumentModal = (content: string, title?: string) => {
+  activeDocContent.value = content
+  activeDocTitle.value = title || extractDocumentTitle(content, 'Documento Técnico')
+  isDocumentModalOpen.value = true
+}
+
+const closeDocumentModal = () => {
+  isDocumentModalOpen.value = false
+  activeDocContent.value = ''
+  activeDocTitle.value = 'Documento Técnico'
+}
+
+const agentHasDocumentViewer = (agentName?: string): boolean => {
+  if (!agentName) return false
+  const lower = agentName.toLowerCase()
+  if (lower.includes('caliope') || lower.includes('calíope')) return true
+  const agent = store.agents?.find(a => 
+    a.name?.toLowerCase() === lower || 
+    a.role?.toLowerCase() === lower
+  )
+  return agent?.tools?.includes('document_viewer') ?? false
+}
+
+const copyDocContent = async (content: string, index: number) => {
+  try {
+    await navigator.clipboard.writeText(content)
+    copiedDocIndex.value = index
+    setTimeout(() => {
+      if (copiedDocIndex.value === index) {
+        copiedDocIndex.value = null
+      }
+    }, 2000)
+  } catch (err) {
+    console.error('Failed to copy document content:', err)
+  }
+}
 
 const openDiagramModal = (code: string, title?: string) => {
   activeDiagramCode.value = code
@@ -30,6 +117,82 @@ const openDiagramModal = (code: string, title?: string) => {
 
 const closeDiagramModal = () => {
   isDiagramModalOpen.value = false
+}
+
+const openCodeModal = (code: string, language?: string, extension?: string, title?: string) => {
+  activeCode.value = code
+  activeCodeLanguage.value = language || 'code'
+  activeCodeExtension.value = extension || getLanguageExtension(language)
+  activeCodeTitle.value = title || 'Visualizador de Código'
+  isCodeModalOpen.value = true
+}
+
+const closeCodeModal = () => {
+  isCodeModalOpen.value = false
+}
+
+const openImageModal = (imageUrl: string, alt?: string, title?: string) => {
+  activeImageUrl.value = imageUrl
+  activeImageAlt.value = alt || 'Recurso visual'
+  activeImageTitle.value = title || 'Visualizador de Imagen'
+  isImageModalOpen.value = true
+}
+
+const closeImageModal = () => {
+  isImageModalOpen.value = false
+}
+
+const copyChatCode = async (code: string, blockIndex: number) => {
+  try {
+    await navigator.clipboard.writeText(code)
+    copiedCodeIndex.value = blockIndex
+    setTimeout(() => {
+      if (copiedCodeIndex.value === blockIndex) {
+        copiedCodeIndex.value = null
+      }
+    }, 2000)
+  } catch (err) {
+    console.error('Failed to copy code snippet:', err)
+  }
+}
+
+const downloadChatCode = (code: string, extension?: string, title?: string) => {
+  try {
+    const ext = extension || 'txt'
+    const safeTitle = (title || 'codigo')
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '_')
+      .slice(0, 30)
+    const filename = `${safeTitle}_${Date.now()}.${ext}`
+    const blob = new Blob([code], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    console.error('Failed to download chat code:', err)
+  }
+}
+
+const downloadChatImage = (imageUrl: string, title?: string) => {
+  try {
+    const safeTitle = (title || 'recurso_visual')
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '_')
+      .slice(0, 30)
+    const link = document.createElement('a')
+    link.href = imageUrl
+    link.download = `${safeTitle}_${Date.now()}.png`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  } catch (err) {
+    console.error('Failed to download chat image:', err)
+  }
 }
 
 const copyChatDiagramCode = async (code: string, blockIndex: number) => {
@@ -685,7 +848,7 @@ defineExpose({
               :style="msg.colorHex ? { borderColor: `${msg.colorHex}4d`, boxShadow: `0 0 15px -3px ${msg.colorHex}1a` } : {}"
               :class="!msg.colorHex ? 'border-neon-green/40 shadow-[0_0_15px_-3px_rgba(0,255,157,0.1)]' : ''"
             >
-              <template v-for="(block, blockIdx) in parseMessageContent(msg.content)" :key="blockIdx">
+              <template v-for="(block, blockIdx) in parseMessageContent(msg.content, { isDocumentAgent: agentHasDocumentViewer(msg.agentName) })" :key="blockIdx">
                 <!-- Text block -->
                 <div v-if="block.type === 'text'" class="whitespace-pre-wrap leading-relaxed break-words [overflow-wrap:break-word] min-w-0 max-w-full">
                   {{ block.content }}
@@ -700,33 +863,287 @@ defineExpose({
                   <!-- Card Header with Actions -->
                   <div class="flex items-center justify-end px-3.5 py-2 bg-[#081120] border-b border-cyan-500/30 gap-2">
                     <!-- Copy Button -->
+                    <button
+                      type="button"
+                      @click="copyChatDiagramCode(block.content, i * 100 + blockIdx)"
+                      data-test="chat-diagram-copy-btn"
+                      class="relative group p-1.5 rounded-lg bg-[#030509] border border-cyan-500/40 hover:border-neon-cyan text-cyan-200 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
+                      :title="copiedDiagramIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar al portapapeles'"
+                      :aria-label="copiedDiagramIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar al portapapeles'"
+                    >
+                      <Check v-if="copiedDiagramIndex === (i * 100 + blockIdx)" class="w-3.5 h-3.5 text-emerald-400" />
+                      <Copy v-else class="w-3.5 h-3.5" />
+                      <!-- Hover Tooltip -->
+                      <span
+                        class="pointer-events-none absolute top-full mt-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono text-cyan-200 border border-cyan-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+                      >
+                        {{ copiedDiagramIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar' }}
+                      </span>
+                    </button>
+
+                    <!-- Open Modal Button -->
+                    <button
+                      type="button"
+                      @click="openDiagramModal(block.content, `Diagrama de ${msg.agentName || 'Arquitectura'}`)"
+                      data-test="chat-diagram-view-btn"
+                      class="relative group p-1.5 rounded-lg bg-neon-cyan/15 hover:bg-neon-cyan/25 border border-neon-cyan text-neon-cyan shadow-[0_0_10px_rgba(0,229,255,0.2)] transition-all cursor-pointer flex items-center justify-center"
+                      title="Ver diagrama"
+                      aria-label="Ver diagrama"
+                    >
+                      <Eye class="w-3.5 h-3.5" />
+                      <!-- Hover Tooltip -->
+                      <span
+                        class="pointer-events-none absolute top-full mt-1.5 right-0 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono font-bold text-neon-cyan border border-neon-cyan/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+                      >
+                        Ver
+                      </span>
+                    </button>
+                  </div>
+
+                  <!-- Code snippet preview -->
+                  <pre class="p-3.5 bg-[#020408] font-mono text-xs text-cyan-200/90 overflow-x-auto custom-scrollbar max-h-48 border-t border-space-900/50"><code>{{ block.content }}</code></pre>
+                </div>
+
+                <!-- Code Block Card (Dédalo / Fidias / Development) -->
+                <div 
+                  v-else-if="block.type === 'code'"
+                  data-test="chat-code-card"
+                  class="my-2 bg-[#050a14] border border-cyan-500/30 rounded-xl overflow-hidden shadow-[0_0_20px_rgba(0,229,255,0.08)]"
+                >
+                  <!-- Card Header with Actions -->
+                  <div class="flex items-center justify-between px-3.5 py-2 bg-[#081120] border-b border-cyan-500/30">
+                    <div class="flex items-center gap-2">
+                      <Code2 class="w-3.5 h-3.5 text-neon-cyan" />
+                      <span class="text-[10px] font-mono font-bold uppercase tracking-wider text-neon-cyan">
+                        {{ block.language || 'code' }}
+                      </span>
+                      <span class="text-[10px] font-mono text-slate-400">
+                        .{{ block.extension }}
+                      </span>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                      <!-- Copy Button -->
                       <button
                         type="button"
-                        @click="copyChatDiagramCode(block.content, i * 100 + blockIdx)"
-                        data-test="chat-diagram-copy-btn"
-                        class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#030509] border border-cyan-500/40 hover:border-neon-cyan text-[11px] font-mono text-cyan-200 hover:text-white transition-colors cursor-pointer"
-                        title="Copiar al portapapeles"
+                        @click="copyChatCode(block.content, i * 100 + blockIdx)"
+                        data-test="chat-code-copy-btn"
+                        class="relative group p-1.5 rounded-lg bg-[#030509] border border-cyan-500/40 hover:border-neon-cyan text-cyan-200 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
+                        :title="copiedCodeIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar al portapapeles'"
+                        :aria-label="copiedCodeIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar al portapapeles'"
                       >
-                        <Check v-if="copiedDiagramIndex === (i * 100 + blockIdx)" class="w-3 h-3 text-emerald-400" />
-                        <Copy v-else class="w-3 h-3" />
-                        <span>{{ copiedDiagramIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar' }}</span>
+                        <Check v-if="copiedCodeIndex === (i * 100 + blockIdx)" class="w-3.5 h-3.5 text-emerald-400" />
+                        <Copy v-else class="w-3.5 h-3.5" />
+                        <!-- Hover Tooltip -->
+                        <span
+                          class="pointer-events-none absolute top-full mt-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono text-cyan-200 border border-cyan-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+                        >
+                          {{ copiedCodeIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar' }}
+                        </span>
+                      </button>
+
+                      <!-- Download Button -->
+                      <button
+                        type="button"
+                        @click="downloadChatCode(block.content, block.extension, `codigo_${msg.agentName || 'desarrollo'}`)"
+                        data-test="chat-code-download-btn"
+                        class="relative group p-1.5 rounded-lg bg-[#030509] border border-cyan-500/40 hover:border-neon-cyan text-cyan-200 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
+                        title="Descargar archivo"
+                        aria-label="Descargar archivo"
+                      >
+                        <Download class="w-3.5 h-3.5" />
+                        <!-- Hover Tooltip -->
+                        <span
+                          class="pointer-events-none absolute top-full mt-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono text-cyan-200 border border-cyan-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+                        >
+                          Descargar
+                        </span>
                       </button>
 
                       <!-- Open Modal Button -->
                       <button
                         type="button"
-                        @click="openDiagramModal(block.content, `Diagrama de ${msg.agentName || 'Arquitectura'}`)"
-                        data-test="chat-diagram-view-btn"
-                        class="flex items-center gap-1.5 px-3 py-1 rounded bg-neon-cyan/15 hover:bg-neon-cyan/25 border border-neon-cyan text-[11px] font-mono font-bold text-neon-cyan shadow-[0_0_10px_rgba(0,229,255,0.2)] transition-all cursor-pointer"
-                        title="Ver diagrama"
+                        @click="openCodeModal(block.content, block.language, block.extension, `Código de ${msg.agentName || 'Desarrollo'}`)"
+                        data-test="chat-code-view-btn"
+                        class="relative group p-1.5 rounded-lg bg-neon-cyan/15 hover:bg-neon-cyan/25 border border-neon-cyan text-neon-cyan shadow-[0_0_10px_rgba(0,229,255,0.2)] transition-all cursor-pointer flex items-center justify-center"
+                        title="Abrir en pantalla completa"
+                        aria-label="Abrir en pantalla completa"
                       >
-                        <Eye class="w-3 h-3" />
-                        <span>Ver</span>
+                        <Eye class="w-3.5 h-3.5" />
+                        <!-- Hover Tooltip -->
+                        <span
+                          class="pointer-events-none absolute top-full mt-1.5 right-0 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono font-bold text-neon-cyan border border-neon-cyan/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+                        >
+                          Ver
+                        </span>
                       </button>
                     </div>
+                  </div>
 
                   <!-- Code snippet preview -->
-                  <pre class="p-3.5 bg-[#020408] font-mono text-xs text-cyan-200/90 overflow-x-auto custom-scrollbar max-h-48 border-t border-space-900/50"><code>{{ block.content }}</code></pre>
+                  <pre class="p-3.5 bg-[#020408] font-mono text-xs text-cyan-100 overflow-x-auto custom-scrollbar max-h-48 border-t border-space-900/50"><code>{{ block.content }}</code></pre>
+                </div>
+
+                <!-- Image Card (Fidias / Visual Resources / Mockups) -->
+                <div 
+                  v-else-if="block.type === 'image'"
+                  data-test="chat-image-card"
+                  class="my-2 bg-[#050a14] border border-pink-500/30 rounded-xl overflow-hidden shadow-[0_0_20px_rgba(236,72,153,0.1)]"
+                >
+                  <!-- Card Header with Actions -->
+                  <div class="flex items-center justify-between px-3.5 py-2 bg-[#120818] border-b border-pink-500/30">
+                    <div class="flex items-center gap-2">
+                      <ImageIcon class="w-3.5 h-3.5 text-pink-400" />
+                      <span class="text-[10px] font-mono font-bold uppercase tracking-wider text-pink-300">
+                        {{ block.alt || 'Recurso Visual' }}
+                      </span>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                      <!-- Download Button -->
+                      <button
+                        type="button"
+                        @click="downloadChatImage(block.content, block.alt || 'recurso')"
+                        data-test="chat-image-download-btn"
+                        class="relative group p-1.5 rounded-lg bg-[#030509] border border-pink-500/40 hover:border-pink-400 text-pink-200 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
+                        title="Descargar imagen"
+                        aria-label="Descargar imagen"
+                      >
+                        <Download class="w-3.5 h-3.5" />
+                        <!-- Hover Tooltip -->
+                        <span
+                          class="pointer-events-none absolute top-full mt-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono text-pink-300 border border-pink-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+                        >
+                          Descargar
+                        </span>
+                      </button>
+
+                      <!-- Open Modal Button -->
+                      <button
+                        type="button"
+                        @click="openImageModal(block.content, block.alt, `Recurso de ${msg.agentName || 'Diseño'}`)"
+                        data-test="chat-image-view-btn"
+                        class="relative group p-1.5 rounded-lg bg-pink-500/15 hover:bg-pink-500/25 border border-pink-500 text-pink-300 shadow-[0_0_10px_rgba(236,72,153,0.2)] transition-all cursor-pointer flex items-center justify-center"
+                        title="Ver en pantalla completa"
+                        aria-label="Ver en pantalla completa"
+                      >
+                        <Eye class="w-3.5 h-3.5" />
+                        <!-- Hover Tooltip -->
+                        <span
+                          class="pointer-events-none absolute top-full mt-1.5 right-0 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono font-bold text-pink-300 border border-pink-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+                        >
+                          Ver
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Image preview -->
+                  <div class="p-3 bg-[#020408] flex items-center justify-center border-t border-space-900/50">
+                    <img
+                      :src="block.content"
+                      :alt="block.alt"
+                      data-test="chat-image-preview"
+                      class="max-h-60 rounded object-contain cursor-pointer hover:opacity-95 transition-opacity"
+                      @click="openImageModal(block.content, block.alt, `Recurso de ${msg.agentName || 'Diseño'}`)"
+                    />
+                  </div>
+                </div>
+
+                <!-- Document Card (Calíope / Technical Documentation) -->
+                <div 
+                  v-else-if="block.type === 'document'"
+                  data-test="chat-document-card"
+                  class="my-2 bg-[#050a14] border border-pink-500/40 rounded-xl overflow-hidden shadow-[0_0_20px_rgba(236,72,153,0.12)]"
+                >
+                  <!-- Card Header with Actions -->
+                  <div class="flex items-center justify-between px-3.5 py-2 bg-[#0e0816] border-b border-pink-500/30">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <FileText class="w-3.5 h-3.5 text-pink-400 shrink-0" />
+                      <span class="text-[10px] font-mono font-bold uppercase tracking-wider text-pink-300 truncate">
+                        {{ block.title || 'Documento Técnico' }}
+                      </span>
+                      <span class="text-[10px] font-mono text-pink-400/70 shrink-0">
+                        .md / .pdf
+                      </span>
+                    </div>
+
+                    <div class="flex items-center gap-1.5 shrink-0">
+                      <!-- Copy Button -->
+                      <button
+                        type="button"
+                        @click="copyDocContent(block.content, i * 100 + blockIdx)"
+                        data-test="chat-doc-copy-btn"
+                        class="relative group p-1.5 rounded-lg bg-[#030509] border border-pink-500/40 hover:border-pink-400 text-pink-200 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
+                        :title="copiedDocIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar Markdown al portapapeles'"
+                        :aria-label="copiedDocIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar Markdown al portapapeles'"
+                      >
+                        <Check v-if="copiedDocIndex === (i * 100 + blockIdx)" class="w-3.5 h-3.5 text-emerald-400" />
+                        <Copy v-else class="w-3.5 h-3.5" />
+                        <span
+                          class="pointer-events-none absolute top-full mt-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono text-pink-300 border border-pink-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+                        >
+                          {{ copiedDocIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar' }}
+                        </span>
+                      </button>
+
+                      <!-- Download .md Button -->
+                      <button
+                        type="button"
+                        @click="downloadMarkdownFile(block.content, block.title || 'documento')"
+                        data-test="chat-doc-download-md-btn"
+                        class="relative group p-1.5 rounded-lg bg-[#030509] border border-pink-500/40 hover:border-pink-400 text-pink-200 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
+                        title="Descargar archivo Markdown (.md)"
+                        aria-label="Descargar archivo Markdown (.md)"
+                      >
+                        <Download class="w-3.5 h-3.5" />
+                        <span
+                          class="pointer-events-none absolute top-full mt-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono font-bold text-pink-300 border border-pink-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+                        >
+                          Descargar .md
+                        </span>
+                      </button>
+
+                      <!-- Export PDF Button -->
+                      <button
+                        type="button"
+                        @click="exportDocumentToPdf(block.content, block.title || 'documento')"
+                        data-test="chat-doc-export-pdf-btn"
+                        class="relative group p-1.5 rounded-lg bg-pink-500/15 hover:bg-pink-500/25 border border-pink-500 text-pink-300 transition-colors cursor-pointer flex items-center justify-center"
+                        title="Descargar / Imprimir en PDF"
+                        aria-label="Descargar / Imprimir en PDF"
+                      >
+                        <Printer class="w-3.5 h-3.5" />
+                        <span
+                          class="pointer-events-none absolute top-full mt-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono font-bold text-pink-300 border border-pink-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+                        >
+                          Descargar .pdf
+                        </span>
+                      </button>
+
+                      <!-- Open Modal Button -->
+                      <button
+                        type="button"
+                        @click="openDocumentModal(block.content, block.title || 'Documento Técnico')"
+                        data-test="chat-doc-view-btn"
+                        class="relative group p-1.5 rounded-lg bg-pink-500/15 hover:bg-pink-500/25 border border-pink-500 text-pink-300 shadow-[0_0_10px_rgba(236,72,153,0.2)] transition-all cursor-pointer flex items-center justify-center"
+                        title="Ver Documento en pantalla completa"
+                        aria-label="Ver Documento en pantalla completa"
+                      >
+                        <Eye class="w-3.5 h-3.5" />
+                        <span
+                          class="pointer-events-none absolute top-full mt-1.5 right-0 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono font-bold text-pink-300 border border-pink-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+                        >
+                          Ver
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Document preview with internal scrollbar -->
+                  <div class="p-4 bg-[#02050a] text-slate-200 text-xs leading-relaxed max-h-56 overflow-y-auto custom-scrollbar border-t border-space-900/50 selection:bg-pink-500/30">
+                    <div class="doc-body font-sans max-w-none" v-html="renderMarkdownToHtml(block.content)"></div>
+                  </div>
                 </div>
               </template>
             </div>
@@ -969,6 +1386,33 @@ defineExpose({
       :code="activeDiagramCode"
       :title="activeDiagramTitle"
       @close="closeDiagramModal"
+    />
+
+    <!-- Code Modal Visualizer (Dédalo / Fidias) -->
+    <CodeModal
+      :is-open="isCodeModalOpen"
+      :code="activeCode"
+      :language="activeCodeLanguage"
+      :extension="activeCodeExtension"
+      :title="activeCodeTitle"
+      @close="closeCodeModal"
+    />
+
+    <!-- Image Modal Visualizer (Fidias) -->
+    <ImageModal
+      :is-open="isImageModalOpen"
+      :image-url="activeImageUrl"
+      :alt="activeImageAlt"
+      :title="activeImageTitle"
+      @close="closeImageModal"
+    />
+
+    <!-- Document Modal Visualizer (Calíope) -->
+    <DocumentModal
+      :is-open="isDocumentModalOpen"
+      :content="activeDocContent"
+      :title="activeDocTitle"
+      @close="closeDocumentModal"
     />
   </div>
 </template>

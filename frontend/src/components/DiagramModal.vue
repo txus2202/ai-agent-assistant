@@ -200,17 +200,23 @@ onUnmounted(() => {
               type="button"
               @click="copyCode"
               data-test="diagram-modal-copy-btn"
-              class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono transition-all cursor-pointer"
+              class="relative group p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-center"
               :class="
                 isCopied
                   ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300'
                   : 'bg-[#030509] border-cyan-500/40 hover:border-neon-cyan text-cyan-200 hover:text-white'
               "
-              title="Copiar al portapapeles"
+              :title="isCopied ? 'Copiado al portapapeles' : 'Copiar al portapapeles'"
+              :aria-label="isCopied ? 'Copiado al portapapeles' : 'Copiar al portapapeles'"
             >
-              <Check v-if="isCopied" class="w-3.5 h-3.5 text-emerald-400" />
-              <Copy v-else class="w-3.5 h-3.5" />
-              <span>{{ isCopied ? 'Copiado' : 'Copiar' }}</span>
+              <Check v-if="isCopied" class="w-4 h-4 text-emerald-400" />
+              <Copy v-else class="w-4 h-4" />
+              <!-- Hover Tooltip -->
+              <span
+                class="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono text-cyan-200 border border-cyan-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+              >
+                {{ isCopied ? 'Copiado' : 'Copiar' }}
+              </span>
             </button>
 
             <!-- Close Button -->
@@ -218,10 +224,17 @@ onUnmounted(() => {
               type="button"
               @click="emit('close')"
               data-test="diagram-modal-close-btn"
-              class="p-1.5 rounded-lg bg-[#030509] border border-space-700 hover:border-red-500/50 hover:bg-red-950/30 text-slate-400 hover:text-red-400 transition-colors ml-1 cursor-pointer"
+              class="relative group p-2 rounded-lg bg-[#030509] border border-space-700 hover:border-red-500/50 hover:bg-red-950/30 text-slate-400 hover:text-red-400 transition-colors ml-1 cursor-pointer flex items-center justify-center"
               title="Cerrar (Esc)"
+              aria-label="Cerrar"
             >
               <X class="w-4 h-4" />
+              <!-- Hover Tooltip -->
+              <span
+                class="pointer-events-none absolute top-full mt-2 right-0 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono text-slate-300 border border-space-700 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+              >
+                Cerrar (Esc)
+              </span>
             </button>
           </div>
         </div>

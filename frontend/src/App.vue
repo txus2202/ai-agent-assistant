@@ -14,7 +14,7 @@ onMounted(async () => {
     configStore.loadProviders(),
     configStore.loadAgentsConfig()
   ])
-  store.loadAgents()
+  await store.loadAgents()
 })
 </script>
 

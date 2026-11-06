@@ -58,10 +58,8 @@ watch(
     const activeIndex = displayedAgents.value.findIndex(a => isAgentActive(a.role, a.state))
     if (activeIndex !== -1) {
       await nextTick()
-      const activeEl = listContainer.value?.children[activeIndex] as HTMLElement
-      if (activeEl && activeEl.scrollIntoView) {
-        activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      }
+      const activeEl = listContainer.value?.children[activeIndex] as HTMLElement | undefined
+      activeEl?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
     }
   },
   { deep: true }

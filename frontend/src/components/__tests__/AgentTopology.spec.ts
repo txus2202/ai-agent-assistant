@@ -118,7 +118,7 @@ describe('AgentTopology.vue', () => {
     })
 
     const cards = wrapper.findAllComponents({ name: 'AgentCard' })
-    expect(cards.length).toBe(2)
+    expect(cards).toHaveLength(2)
     // Supervisor card is the first card and should be ACTIVE
     expect(cards[0]?.props('state')).toBe('ACTIVE')
     expect(cards[1]?.props('state')).toBe('STANDBY')

@@ -22,26 +22,24 @@ describe('ObservabilityPanel.vue', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders system observability title and healthy status', () => {
+  it.each([
+    {
+      description: 'system observability title and healthy status',
+      expectedTexts: ['SYSTEM OBSERVABILITY', 'HEALTHY']
+    },
+    {
+      description: 'circular cluster audit gauge and hardware metrics',
+      expectedTexts: ['CLUSTER', 'AUDIT ONLINE', 'CPU LOAD', 'MEMORY USAGE']
+    },
+    {
+      description: 'agent latency benchmarks and progress bars',
+      expectedTexts: ['AGENT LATENCY BENCHMARKS', 'Interpreter', '0.48s', 'The Judge']
+    }
+  ])('renders $description', ({ expectedTexts }) => {
     const wrapper = mount(ObservabilityPanel)
-    expect(wrapper.text()).toContain('SYSTEM OBSERVABILITY')
-    expect(wrapper.text()).toContain('HEALTHY')
-  })
-
-  it('renders circular cluster audit gauge and hardware metrics', () => {
-    const wrapper = mount(ObservabilityPanel)
-    expect(wrapper.text()).toContain('CLUSTER')
-    expect(wrapper.text()).toContain('AUDIT ONLINE')
-    expect(wrapper.text()).toContain('CPU LOAD')
-    expect(wrapper.text()).toContain('MEMORY USAGE')
-  })
-
-  it('renders agent latency benchmarks and progress bars', () => {
-    const wrapper = mount(ObservabilityPanel)
-    expect(wrapper.text()).toContain('AGENT LATENCY BENCHMARKS')
-    expect(wrapper.text()).toContain('Interpreter')
-    expect(wrapper.text()).toContain('0.48s')
-    expect(wrapper.text()).toContain('The Judge')
+    for (const text of expectedTexts) {
+      expect(wrapper.text()).toContain(text)
+    }
   })
 
   it('renders context cache efficiency and logs event stream', () => {

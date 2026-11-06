@@ -35,17 +35,52 @@ const isOrbDebating = computed(() => {
   return store.isDebating || store.isTtsPlaying || Boolean(store.readingAgentRoles && store.readingAgentRoles.length > 0)
 })
 
+function getAgentRoleNorm(role: string): string {
+  return (store.normalizeAgentRole ? store.normalizeAgentRole(role) : role).toLowerCase()
+}
+
+function resolveAgentItem(role: string, ateneaColor: string): ActiveAgentItem {
+  const ag = store.findAgent ? store.findAgent(role) : store.agents.find(a => a.role === role)
+  const norm = getAgentRoleNorm(role)
+  const isAtenea = norm === 'supervisor' || norm === 'atenea'
+
+  return {
+    role,
+    name: ag?.name || (isAtenea ? 'Atenea' : role),
+    color: ag?.color_hex || (isAtenea ? ateneaColor : DEFAULT_COLOR)
+  }
+}
+
+function appendAgentIfMissing(list: ActiveAgentItem[], item: ActiveAgentItem) {
+  const normTarget = getAgentRoleNorm(item.role)
+  const exists = list.some(r => getAgentRoleNorm(r.role) === normTarget)
+  if (!exists) {
+    list.push(item)
+  }
+}
+
+function appendRoleIfMissing(list: ActiveAgentItem[], role: string, ateneaColor: string) {
+  appendAgentIfMissing(list, resolveAgentItem(role, ateneaColor))
+}
+
+function appendRolesIfMissing(list: ActiveAgentItem[], roles: string[] | undefined, ateneaColor: string) {
+  if (!roles || roles.length === 0) return
+  for (const role of roles) {
+    appendRoleIfMissing(list, role, ateneaColor)
+  }
+}
+
 const activeAgentsList = computed<ActiveAgentItem[]>(() => {
   // If waiting at HITL and no one is speaking TTS, orb is in idle mode
   if (store.isHitlRequired && !store.isTtsPlaying) {
     return []
   }
 
-  const result: ActiveAgentItem[] = []
   const supervisorAgent = store.findAgent ? store.findAgent('supervisor') : store.agents.find(a => a.role === 'supervisor')
   const ateneaColor = supervisorAgent?.color_hex || '#f59e0b'
+  const isDebatingOrTts = store.isDebating || store.isTtsPlaying || Boolean(store.readingAgentRoles?.length)
 
-  const isDebatingOrTts = store.isDebating || store.isTtsPlaying || Boolean(store.readingAgentRoles && store.readingAgentRoles.length > 0)
+  const result: ActiveAgentItem[] = []
 
   // In an Atenea debate flow, Atenea is the overarching supervisor delegating to council agents,
   // so she is ALWAYS present in the active orb deliberation alongside delegated specialists.
@@ -58,73 +93,24 @@ const activeAgentsList = computed<ActiveAgentItem[]>(() => {
   }
   
   if (store.activeTtsRole) {
-    const ttsAgent = store.findAgent ? store.findAgent(store.activeTtsRole) : store.agents.find(a => a.role === store.activeTtsRole)
-    const normTts = store.normalizeAgentRole ? store.normalizeAgentRole(store.activeTtsRole) : store.activeTtsRole
-    const isAteneaSpeaking = normTts === 'supervisor' || normTts.toLowerCase() === 'atenea'
-    const color = ttsAgent?.color_hex || (isAteneaSpeaking ? ateneaColor : DEFAULT_COLOR)
-    const name = ttsAgent?.name || (isAteneaSpeaking ? 'Atenea' : store.activeTtsRole)
-
-    const alreadyInList = result.some(r => {
-      const normR = store.normalizeAgentRole ? store.normalizeAgentRole(r.role) : r.role
-      return normR === normTts
-    })
-    if (!alreadyInList) {
-      result.push({ role: store.activeTtsRole, name, color })
-    }
+    appendRoleIfMissing(result, store.activeTtsRole, ateneaColor)
   }
 
   // Include any agents currently reading their messages
-  if (store.readingAgentRoles && store.readingAgentRoles.length > 0) {
-    for (const role of store.readingAgentRoles) {
-      const ag = store.findAgent ? store.findAgent(role) : store.agents.find(a => a.role === role)
-      const normR = store.normalizeAgentRole ? store.normalizeAgentRole(role) : role
-      const isAtenea = normR === 'supervisor' || normR.toLowerCase() === 'atenea'
-      const color = ag?.color_hex || (isAtenea ? ateneaColor : DEFAULT_COLOR)
-      const name = ag?.name || (isAtenea ? 'Atenea' : role)
-
-      const alreadyInList = result.some(r => {
-        const normExisting = store.normalizeAgentRole ? store.normalizeAgentRole(r.role) : r.role
-        return normExisting === normR
-      })
-      if (!alreadyInList) {
-        result.push({ role, name, color })
-      }
-    }
-  }
+  appendRolesIfMissing(result, store.readingAgentRoles, ateneaColor)
 
   // If multiple agents were chosen in the multi-agent selector, keep all selected agents active on the orb
   if (isDebatingOrTts && store.selectedAgents && store.selectedAgents.length > 1) {
-    for (const role of store.selectedAgents) {
-      const ag = store.findAgent ? store.findAgent(role) : store.agents.find(a => a.role === role)
-      const normR = store.normalizeAgentRole ? store.normalizeAgentRole(role) : role
-      const isAtenea = normR === 'supervisor' || normR.toLowerCase() === 'atenea'
-      const color = ag?.color_hex || (isAtenea ? ateneaColor : DEFAULT_COLOR)
-      const name = ag?.name || (isAtenea ? 'Atenea' : role)
-
-      const alreadyInList = result.some(r => {
-        const normExisting = store.normalizeAgentRole ? store.normalizeAgentRole(r.role) : r.role
-        return normExisting === normR
-      })
-      if (!alreadyInList) {
-        result.push({ role, name, color })
-      }
-    }
+    appendRolesIfMissing(result, store.selectedAgents, ateneaColor)
   }
 
   for (const agent of store.agents) {
     if (agent.state === 'ACTIVE') {
-      const normA = store.normalizeAgentRole ? store.normalizeAgentRole(agent.role) : agent.role
-      const isAlreadyAdded = result.some(r => {
-        const normR = store.normalizeAgentRole ? store.normalizeAgentRole(r.role) : r.role
-        return normR === normA
+      appendAgentIfMissing(result, {
+        role: agent.role,
+        name: agent.name || agent.role,
+        color: agent.color_hex || DEFAULT_COLOR
       })
-      if (!isAlreadyAdded) {
-        result.push({
-          role: agent.role,
-          name: agent.name || agent.role,
-          color: agent.color_hex || DEFAULT_COLOR
-        })
-      }
     }
   }
 

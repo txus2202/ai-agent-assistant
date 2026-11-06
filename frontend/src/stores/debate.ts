@@ -915,7 +915,7 @@ export const useDebateStore = defineStore('debate', () => {
       }
       streamingMessageId.value = null
       flushTtsStreamingBuffer(event.role || undefined)
-    } else if (event.content && event.content.trim()) {
+    } else if (event.content?.trim()) {
       pushAgentMessage(event.content, event.role)
     }
     recordExecutionTrail('Atenea')
@@ -1021,7 +1021,7 @@ export const useDebateStore = defineStore('debate', () => {
         decision,
         feedback: feedback || ''
       }
-      if (effectiveTargets && effectiveTargets.length > 0) {
+      if (effectiveTargets?.length) {
         payload.target_agents = effectiveTargets
       }
       ws.send(JSON.stringify(payload))

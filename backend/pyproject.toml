@@ -20,7 +20,7 @@ dependencies = [
     "langfuse==2.60.10",
     "multidict>=6.9.1",
     "oauthlib>=4.0.0",
-    "openai==3.24.0",
+    "openai==3.45.0",
     "pyasn1>=0.6.5",
     "pydantic-settings==2.15.0",
     "PyMuPDF==1.28.2",

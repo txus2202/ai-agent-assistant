@@ -42,7 +42,7 @@
     "npm-run-all2": "^9.0.3",
     "oxlint": "~1.82.0",
     "prettier": "3.9.6",
-    "tailwindcss": "^4.0.0",
+    "tailwindcss": "^4.3.4",
     "typescript": "~6.0.0",
     "typescript-eslint": "^8.71.1",
     "vite": "^8.2.2",

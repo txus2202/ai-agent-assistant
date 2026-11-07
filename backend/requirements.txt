@@ -28,7 +28,7 @@ aiofiles==25.1.0              # required for async file IO
 faster-whisper==1.2.1
 kokoro-onnx==0.4.7
 soundfile==0.14.0
-vosk==0.3.44
+vosk==0.3.45
 
 # Phase 6: Observability
 langfuse==2.60.10

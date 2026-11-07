@@ -32,7 +32,7 @@ dependencies = [
     "torch",
     "urllib3>=2.8.0",
     "uvicorn[standard]==0.52.4",
-    "vosk==0.3.44",
+    "vosk==0.3.45",
 ]
 
 [project.optional-dependencies]

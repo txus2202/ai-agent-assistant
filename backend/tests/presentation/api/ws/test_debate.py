@@ -609,6 +609,77 @@ def test_multi_agent_sequential_dispatch_in_arrival_order(ws_client, monkeypatch
     assert any(h.get("agent") == "Sphinx" and h.get("content") == "Análisis de Sphinx" for h in call_order[1][1])
 
 
+def test_debate_observability_enriched_trace_and_hitl_scoring(ws_client, monkeypatch):
+    from unittest.mock import MagicMock
+    from src.presentation.api.ws import debate
+    from src.domain.ports.observability_port import TraceContext
+
+    mock_obs = MagicMock()
+    mock_trace = TraceContext(
+        trace_id="tr-test-langfuse-999",
+        session_id="ses-123",
+        name="debate_supervisor",
+        user_id="local_user",
+        tags=["agent:supervisor", "flow:supervisor_debate", "has:hitl"],
+        metadata={"target_agent": "supervisor"},
+    )
+    mock_obs.start_trace.return_value = mock_trace
+    monkeypatch.setattr(debate, "get_observability_service", lambda: mock_obs)
+
+    with ws_client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({
+            "type": "start",
+            "user_request": "Diseña una pasarela de pagos con Stripe",
+            "provider": "gemini",
+            "target_agent": "supervisor",
+        })
+
+        ev1 = websocket.receive_json()
+        assert ev1["type"] == EventType.AGENT_STARTED.value
+        # Trace ID is propagated in event metadata
+        assert ev1["metadata"]["trace_id"] == "tr-test-langfuse-999"
+
+        # Check start_trace call arguments
+        mock_obs.start_trace.assert_called_once()
+        _, kwargs = mock_obs.start_trace.call_args
+        assert kwargs["input_data"] == "Diseña una pasarela de pagos con Stripe"
+        assert kwargs["user_id"] == "local_user"
+        assert "flow:supervisor_debate" in kwargs["tags"]
+        assert "has:hitl" in kwargs["tags"]
+
+        # HITL 1: approve
+        ev2 = websocket.receive_json()
+        assert ev2["type"] == EventType.HITL_REQUIRED.value
+        websocket.send_json({"type": "hitl_response", "decision": "approve"})
+
+        # HITL 2: approve
+        ev3 = websocket.receive_json()
+        assert ev3["type"] == EventType.HITL_REQUIRED.value
+        websocket.send_json({"type": "hitl_response", "decision": "approve", "selected_options": ["Option-1"]})
+
+        # HITL 3: refine
+        ev4 = websocket.receive_json()
+        assert ev4["type"] == EventType.HITL_REQUIRED.value
+        websocket.send_json({"type": "hitl_response", "decision": "refine", "feedback": "Por favor añade redis"})
+
+        # Final DONE
+        ev5 = websocket.receive_json()
+        assert ev5["type"] == EventType.DONE.value
+
+        # Check that score_trace was called for the HITL decisions
+        mock_obs.score_trace.assert_called()
+        score_calls = [c.kwargs for c in mock_obs.score_trace.call_args_list]
+        hitl_scores = [c for c in score_calls if c.get("name") == "hitl_decision"]
+        assert len(hitl_scores) >= 3
+        # First decision was approve (1.0)
+        assert hitl_scores[0]["value"] == 1.0
+        assert "approve" in hitl_scores[0]["comment"].lower()
+        # Third decision was refine (0.5)
+        assert hitl_scores[2]["value"] == 0.5
+        assert "refine" in hitl_scores[2]["comment"].lower()
+        assert "redis" in hitl_scores[2]["comment"].lower()
+
+
 def test_supervisor_exception_emits_single_error_event(ws_client, monkeypatch):
     from src.presentation.api.ws import debate
 
@@ -629,6 +700,7 @@ def test_supervisor_exception_emits_single_error_event(ws_client, monkeypatch):
         assert err_event["type"] == "error"
         assert err_event["role"] == "supervisor"
         assert "LLM rate limit exceeded on agent Ícaro" in err_event["content"]
+
 
 
 

@@ -69,29 +69,81 @@ class LangfuseObservabilityAdapter(IObservabilityService):
         self,
         name: str,
         session_id: str,
+        user_id: str | None = None,
+        input_data: Any = None,
+        tags: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> TraceContext:
         meta = metadata or {}
         if not self._is_enabled or self._client is None:
-            return self._fallback.start_trace(name, session_id, meta)
-
-        try:
-            lf_trace = self._client.trace(
+            return self._fallback.start_trace(
                 name=name,
                 session_id=session_id,
+                user_id=user_id,
+                input_data=input_data,
+                tags=tags,
                 metadata=meta,
             )
+
+        try:
+            trace_kwargs: dict[str, Any] = {
+                "name": name,
+                "session_id": session_id,
+                "metadata": meta,
+            }
+            if user_id:
+                trace_kwargs["user_id"] = user_id
+            if input_data is not None:
+                trace_kwargs["input"] = input_data
+            if tags:
+                trace_kwargs["tags"] = tags
+
+            lf_trace = self._client.trace(**trace_kwargs)
             trace_id = getattr(lf_trace, "id", str(uuid.uuid4()))
             self._active_traces[trace_id] = lf_trace
             return TraceContext(
                 trace_id=trace_id,
                 session_id=session_id,
                 name=name,
+                user_id=user_id,
+                tags=list(tags or []),
                 metadata=meta,
             )
         except Exception as exc:
             logger.warning("Failed to start Langfuse trace: %s", exc)
-            return self._fallback.start_trace(name, session_id, meta)
+            return self._fallback.start_trace(
+                name=name,
+                session_id=session_id,
+                user_id=user_id,
+                input_data=input_data,
+                tags=tags,
+                metadata=meta,
+            )
+
+    def score_trace(
+        self,
+        trace_context: TraceContext,
+        name: str,
+        value: float,
+        comment: str | None = None,
+    ) -> None:
+        if not self._is_enabled or self._client is None:
+            return
+
+        try:
+            lf_trace = self._active_traces.get(trace_context.trace_id)
+            score_kwargs: dict[str, Any] = {"name": name, "value": value}
+            if comment:
+                score_kwargs["comment"] = comment
+
+            if lf_trace and hasattr(lf_trace, "score"):
+                lf_trace.score(**score_kwargs)
+            elif hasattr(self._client, "score"):
+                self._client.score(trace_id=trace_context.trace_id, **score_kwargs)
+        except Exception as exc:
+            logger.warning("Failed to score Langfuse trace: %s", exc)
+
+        self._flush_client()
 
     def end_trace(
         self,

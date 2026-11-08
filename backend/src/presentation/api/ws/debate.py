@@ -217,6 +217,10 @@ class DebateWebSocketHandler:
     async def send_event(self, event: SupervisorEvent) -> None:
         """Helper to send event to WS, append to SQLite, and stream observability spans."""
         event_dict = event_to_dict(event)
+        if self.current_trace:
+            if "metadata" not in event_dict or not isinstance(event_dict["metadata"], dict):
+                event_dict["metadata"] = {}
+            event_dict["metadata"]["trace_id"] = self.current_trace.trace_id
         await self.websocket.send_json(event_dict)
         self._persist_event(event_dict, event)
         self._track_event_observability(event)
@@ -229,6 +233,28 @@ class DebateWebSocketHandler:
         """
         raw_resp = await self.websocket.receive_json()
         hitl_resp = dict_to_hitl_response(raw_resp)
+
+        if self.current_trace:
+            decision_val = (
+                hitl_resp.decision.value
+                if hasattr(hitl_resp.decision, "value")
+                else str(hitl_resp.decision)
+            )
+            score_map = {
+                HITLDecision.APPROVE: 1.0,
+                HITLDecision.REFINE: 0.5,
+                HITLDecision.DIVERT: 0.5,
+                HITLDecision.FINISH: 1.0,
+                HITLDecision.REJECT: 0.0,
+            }
+            score_val = score_map.get(hitl_resp.decision, 0.5)
+            self.observability.score_trace(
+                trace_context=self.current_trace,
+                name="hitl_decision",
+                value=score_val,
+                comment=f"Decision: {decision_val}. Feedback: {hitl_resp.feedback or 'None'}",
+            )
+
         if hitl_resp.decision == HITLDecision.REFINE and hitl_resp.feedback and self.debate_record:
             refine_event_dict = {
                 "type": "user_message",
@@ -549,7 +575,32 @@ class DebateWebSocketHandler:
             await self._handle_sub_agent_exception(agent_role, e)
             return None
 
-    def _init_session_and_trace(self, session_id: str | None, user_request: str, target_agent: str) -> None:
+    @staticmethod
+    def _build_trace_tags(target_agent: str, attachments: list[Any] | None = None) -> list[str]:
+        tags = [f"agent:{target_agent}"]
+        try:
+            profile = get_profile(target_agent)
+            flow_tag = "flow:supervisor_debate" if profile.is_supervisor else "flow:sub_agent"
+            tags.append(flow_tag)
+            if profile.supports_hitl:
+                tags.append("has:hitl")
+            if profile.uses_rag or profile.can_ingest_documents:
+                tags.append("has:rag")
+        except KeyError:
+            tags.append("flow:sub_agent")
+
+        if attachments:
+            tags.append("has:attachments")
+        return tags
+
+    def _init_session_and_trace(
+        self,
+        session_id: str | None,
+        user_request: str,
+        target_agent: str,
+        user_id: str | None = None,
+        attachments: list[Any] | None = None,
+    ) -> None:
         existing_record = self.debate_repo.find_by_id(session_id) if session_id else None
 
         if existing_record:
@@ -574,11 +625,16 @@ class DebateWebSocketHandler:
         }
         self.debate_repo.append_event(self.debate_record.id, json.dumps(user_event_dict))
 
+        tags = self._build_trace_tags(target_agent, attachments)
+        effective_user = user_id or getattr(self.settings, "langfuse_default_user_id", "local_user")
+
         self.current_trace = self.observability.start_trace(
             name=f"debate_{target_agent}",
             session_id=self.debate_record.id,
+            user_id=effective_user,
+            input_data=user_request,
+            tags=tags,
             metadata={
-                "user_request": user_request,
                 "target_agent": target_agent,
             }
         )
@@ -682,8 +738,15 @@ class DebateWebSocketHandler:
         primary_target = target_agents[0] if target_agents else "supervisor"
         attachments = raw_start.get("attachments", [])
         chat_history = raw_start.get("history", [])
+        user_id = raw_start.get("user_id")
 
-        self._init_session_and_trace(raw_start.get("session_id"), user_request, primary_target)
+        self._init_session_and_trace(
+            raw_start.get("session_id"),
+            user_request,
+            primary_target,
+            user_id=user_id,
+            attachments=attachments,
+        )
 
         if len(target_agents) > 1:
             await self._dispatch_multi_agent(target_agents, user_request, chat_history)

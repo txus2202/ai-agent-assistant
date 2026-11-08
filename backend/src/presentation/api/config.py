@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     langfuse_secret_key: str = ""
     langfuse_host: str = "http://localhost:3000"
     langfuse_base_url: str = ""
+    langfuse_default_user_id: str = "local_user"
 
     @property
     def effective_langfuse_host(self) -> str:

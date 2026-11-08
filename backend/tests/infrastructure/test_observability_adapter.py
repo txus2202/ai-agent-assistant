@@ -64,12 +64,31 @@ def test_langfuse_adapter_with_active_mock_client():
 
     adapter = LangfuseObservabilityAdapter(client=mock_langfuse_client)
 
-    trace = adapter.start_trace("arch_debate", "session-1", metadata={"env": "test"})
+    trace = adapter.start_trace(
+        name="arch_debate",
+        session_id="session-1",
+        user_id="user-99",
+        input_data="Crear login",
+        tags=["flow:sub_agent", "agent:fidias"],
+        metadata={"env": "test"},
+    )
     assert trace.trace_id == "lf-trace-123"
+    assert trace.user_id == "user-99"
+    assert trace.tags == ["flow:sub_agent", "agent:fidias"]
     mock_langfuse_client.trace.assert_called_once_with(
         name="arch_debate",
         session_id="session-1",
+        user_id="user-99",
+        input="Crear login",
+        tags=["flow:sub_agent", "agent:fidias"],
         metadata={"env": "test"},
+    )
+
+    adapter.score_trace(trace, name="hitl_decision", value=1.0, comment="Aprobado por el usuario")
+    mock_trace.score.assert_called_once_with(
+        name="hitl_decision",
+        value=1.0,
+        comment="Aprobado por el usuario",
     )
 
     span = adapter.start_agent_span(trace, "innovator", "propose microservices", model_name="gemini-1.5-flash")
@@ -115,6 +134,8 @@ def test_langfuse_adapter_when_disabled():
     trace = adapter.start_trace("arch_debate", "session-disabled")
     assert isinstance(trace, TraceContext)
     mock_client.trace.assert_not_called()
+
+    adapter.score_trace(trace, name="hitl_decision", value=0.5)
 
     span = adapter.start_agent_span(trace, "innovator", "some prompt")
     assert isinstance(span, SpanContext)

@@ -21,7 +21,7 @@ beautifulsoup4==4.15.0        # HTML parsing for URL extractor
 fastapi==0.142.2
 uvicorn[standard]==0.52.4
 pydantic-settings==2.15.0
-python-multipart==0.0.32     # required by FastAPI for file upload (multipart/form-data)
+python-multipart==0.0.33     # required by FastAPI for file upload (multipart/form-data)
 aiofiles==25.1.0              # required for async file IO
 
 # Phase 5: Audio
@@ -35,11 +35,12 @@ langfuse==2.60.10
 
 # Security-patched dependencies (resolves critical/high CVEs in transitive dependencies)
 aiohttp>=3.14.5
-filelock>=4.2.1
+certifi>=2026.10.1
+filelock>=4.2.9
 multidict>=6.9.1
 oauthlib>=4.0.0
 pyasn1>=0.6.5
-setuptools>=84.1.0
+setuptools>=84.2.1
 urllib3>=2.8.0
 
 

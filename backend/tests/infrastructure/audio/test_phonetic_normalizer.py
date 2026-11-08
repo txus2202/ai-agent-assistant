@@ -62,3 +62,41 @@ class TestSpanishTechPhoneticNormalizer:
         assert normalizer.normalize("   ") == ""
         plain = "Buenos días, el sistema funciona correctamente."
         assert normalizer.normalize(plain) == plain
+
+    def test_strip_fenced_code_blocks_and_tools_from_speech(self, normalizer):
+        text = (
+            "He generado la maquetación solicitada:\n"
+            "```html\n"
+            "<!DOCTYPE html>\n"
+            "<html lang='es'>\n"
+            "<head><style>body { background: #000; }</style></head>\n"
+            "<body><div class='carousel'>Items</div></body>\n"
+            "</html>\n"
+            "```\n"
+            "¿Qué opinas del diseño visual?"
+        )
+        result = normalizer.normalize(text)
+        assert "<!DOCTYPE" not in result
+        assert "<style>" not in result
+        assert "carousel" not in result
+        assert "He generado la maquetación solicitada:" in result
+        assert "¿Qué opinas del diseño visual?" in result
+
+    def test_code_only_returns_voice_fallback(self, normalizer):
+        text = "```python\ndef calculate():\n    return 42\n```"
+        result = normalizer.normalize(text)
+        assert result == "He generado el código en pantalla."
+
+    def test_strip_image_tags_and_directives_from_speech(self, normalizer):
+        text = (
+            "Diseño preparado:\n"
+            "[GENERATE_IMAGE: Futuristic cyberpunk dashboard with neon violet, 8k]\n"
+            "![Mockup](/api/images/fidias_test.png)\n"
+            "Listo para revisión."
+        )
+        result = normalizer.normalize(text)
+        assert "GENERATE_IMAGE" not in result
+        assert "/api/images/" not in result
+        assert "Diseño preparado:" in result
+        assert "Listo para revisión." in result
+

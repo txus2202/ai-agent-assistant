@@ -50,6 +50,79 @@ Todos los diagramas han sido generados.`
     expect(result).toContain('Todos los diagramas han sido generados.')
   })
 
+  it('removes html code blocks from Fidias and speaks only conversational text', () => {
+    const input = `Entiendo perfectamente tu requerimiento visual. He preparado la maquetación solicitada:
+\`\`\`html
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <style>
+    body { background: #000; color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="carousel">Productos</div>
+</body>
+</html>
+\`\`\`
+¿Qué te parece la estructura propuesta?`
+
+    const result = cleanTextForTts(input)
+    expect(result).not.toContain('<!DOCTYPE html>')
+    expect(result).not.toContain('background')
+    expect(result).not.toContain('<style>')
+    expect(result).toContain('Entiendo perfectamente tu requerimiento visual. He preparado la maquetación solicitada:')
+    expect(result).toContain('¿Qué te parece la estructura propuesta?')
+  })
+
+  it('provides a natural spoken fallback if the message only contains an html/code block', () => {
+    const input = `\`\`\`html
+<!DOCTYPE html>
+<html><body><h1>Demo</h1></body></html>
+\`\`\``
+
+    const result = cleanTextForTts(input)
+    expect(result).toBe('He generado el código en pantalla.')
+  })
+
+  it('removes document blocks from Caliope and provides document fallback', () => {
+    const inputWithIntro = `A continuación presento la documentación técnica:
+\`\`\`markdown
+# Manual de Arquitectura
+## 1. Introducción
+Este es el contenido formal para exportación.
+\`\`\`
+Puedes descargarlo en los botones superiores.`
+
+    const resultWithIntro = cleanTextForTts(inputWithIntro)
+    expect(resultWithIntro).not.toContain('Manual de Arquitectura')
+    expect(resultWithIntro).not.toContain('Introducción')
+    expect(resultWithIntro).toContain('A continuación presento la documentación técnica:')
+    expect(resultWithIntro).toContain('Puedes descargarlo en los botones superiores.')
+
+    const inputOnlyDoc = `\`\`\`markdown
+# Acta de Reunión
+Detalle de participantes y acuerdos.
+\`\`\``
+    expect(cleanTextForTts(inputOnlyDoc)).toBe('He generado el documento técnico en pantalla.')
+  })
+
+  it('removes image tags and image generation directives from text', () => {
+    const input = `Propuesta de diseño:
+[GENERATE_IMAGE: Futuristic dark cybersecurity dashboard with cyan neon glowing cards, 8k]
+![Dashboard](/api/images/fidias_123.png)
+He seleccionado una paleta con alto contraste.`
+
+    const result = cleanTextForTts(input)
+    expect(result).not.toContain('GENERATE_IMAGE')
+    expect(result).not.toContain('/api/images/fidias_123.png')
+    expect(result).toContain('Propuesta de diseño:')
+    expect(result).toContain('He seleccionado una paleta con alto contraste.')
+
+    const inputOnlyImg = '![Logo](/api/images/fidias_logo.png)'
+    expect(cleanTextForTts(inputOnlyImg)).toBe('He generado la imagen en pantalla.')
+  })
+
   it('cleans markdown symbols from text for smooth speech synthesis', () => {
     const input = 'Revisa la **arquitectura** en el [enlace](http://example.com) y confirma los _requisitos_.'
     const result = cleanTextForTts(input)

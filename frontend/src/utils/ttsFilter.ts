@@ -1,35 +1,58 @@
 /**
- * Utility for sanitizing agent text before Kokoro TTS speech synthesis.
- * Strips technical Mermaid diagram code blocks to prevent reading code syntax aloud.
+ * Utility for sanitizing agent text before Kokoro TTS / Web Audio speech synthesis.
+ * Strips technical tools (code blocks, Mermaid diagrams, Markdown documents, image tags and directives)
+ * to ensure that only conversational speech is read aloud and no tool syntax/code is ever spoken.
  */
 
-const MERMAID_BLOCK_REGEX = /```(?:mermaid|diagram)[^\n`]*\n[^`]*```/gi
+// Matches any fenced code/document/diagram block (```lang ... ``` or ``` ... ```)
+const FENCED_TOOL_REGEX = /```[^\n`]*\n[\s\S]*?```/gi
+// Matches unclosed trailing code/document block (e.g., during streaming)
+const UNCLOSED_FENCE_REGEX = /```[^\n`]*\n?[\s\S]*$/gi
+// Matches image generation directives
+const IMAGE_DIRECTIVE_REGEX = /(?:\[GENERATE_IMAGE:\s*[\s\S]*?\]|<!--\s*generate_image:\s*[\s\S]*?-->)/gi
+// Matches Markdown images ![alt](url)
+const IMAGE_TAG_REGEX = /!\[[^\]]*\]\([^)]+\)/g
 
 export function cleanTextForTts(text: string): string {
   if (!text?.trim()) {
     return ''
   }
 
-  // Check if diagram blocks exist in the text
-  const hasDiagram = MERMAID_BLOCK_REGEX.test(text)
-  MERMAID_BLOCK_REGEX.lastIndex = 0
+  // Detect tool presence before stripping
+  const hasMermaid = /```(?:mermaid|diagram)/i.test(text)
+  const hasDocument = /```(?:markdown|md|doc)/i.test(text)
+  const hasCode = /```(?:html|js|javascript|ts|typescript|css|py|python|go|golang|java|json|bash|sh|sql|vue|jsx|tsx|cpp|c|rust|php|yaml|yml)/i.test(text) || (/```/i.test(text) && !hasMermaid && !hasDocument)
+  const hasImage = IMAGE_TAG_REGEX.test(text) || IMAGE_DIRECTIVE_REGEX.test(text)
 
-  // Strip diagram blocks
-  const textWithoutDiagrams = text.replace(MERMAID_BLOCK_REGEX, '').trim()
+  // Strip all tool blocks (code, diagrams, documents, image directives, markdown images)
+  const textWithoutTools = text
+    .replace(FENCED_TOOL_REGEX, '')
+    .replace(UNCLOSED_FENCE_REGEX, '')
+    .replace(IMAGE_DIRECTIVE_REGEX, '')
+    .replace(IMAGE_TAG_REGEX, '')
+    .trim()
 
-  // If the message was purely a diagram (or only diagrams), provide an informative voice fallback
-  if (!textWithoutDiagrams && hasDiagram) {
-    return 'He generado el diagrama arquitectónico en pantalla.'
-  }
-
-  if (!textWithoutDiagrams) {
+  // If the message was purely a tool or deliverable, provide a natural voice fallback
+  if (!textWithoutTools) {
+    if (hasMermaid) {
+      return 'He generado el diagrama arquitectónico en pantalla.'
+    }
+    if (hasDocument) {
+      return 'He generado el documento técnico en pantalla.'
+    }
+    if (hasCode) {
+      return 'He generado el código en pantalla.'
+    }
+    if (hasImage) {
+      return 'He generado la imagen en pantalla.'
+    }
     return ''
   }
 
   // Strip leading agent bracket tags or initial headers if present
-  const cleanTtsText = textWithoutDiagrams
+  const cleanTtsText = textWithoutTools
     .replace(/^\[[\w\s.-]+\]\s*/i, '')
-    .replace(/^##\s+(?:Interpretation|Ícaro|Icaro|Hermes|Hestia|Sphinx|the_judge|nl_interpreter|innovator_architect|senior_architect|atenea|supervisor)\s*\n+/i, '')
+    .replace(/^##\s+(?:Interpretation|Ícaro|Icaro|Hermes|Hestia|Sphinx|the_judge|nl_interpreter|innovator_architect|senior_architect|atenea|supervisor|fidias|fídias|dedalo|dédalo|caliope|calíope)\s*\n+/i, '')
     .trim()
 
   // Clean Markdown formatting:
@@ -55,7 +78,7 @@ export function splitTextIntoTtsChunks(text: string): string[] {
   const clean = text.trim()
   // Split matching sequences of characters ending with terminal (. ! ? \n) or clause (, ; :) punctuation
   const rawParts = clean.match(/[^.!?\n,:;]+[.!?\n,:;]*/g) || [clean]
-  
+
   const chunks: string[] = []
   let current = ''
 

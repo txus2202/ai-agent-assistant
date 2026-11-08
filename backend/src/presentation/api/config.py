@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     # Learning Agent file size limit (MB)
     max_learn_file_mb: int = 50
 
+    # Image Generation (Fidias - "imagen" | "")
+    image_generation_provider: str = ""
+
     # Audio Integration (Phase 5)
     whisper_model: str = "base"
     whisper_language: str = "es"

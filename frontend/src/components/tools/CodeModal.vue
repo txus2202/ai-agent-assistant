@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { Copy, Check, X, Download, Code2 } from '@lucide/vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { Copy, Check, X, Download, Code2, Eye } from '@lucide/vue'
 import { getLanguageExtension } from '../../utils/messageParser'
+import { getMimeTypeForExtension, prepareSandboxedHtml } from '../../utils/mimeHelper'
 
 const props = withDefaults(
   defineProps<{
@@ -29,12 +30,34 @@ const emit = defineEmits<{
 
 const isCopied = ref(false)
 
-const codeLines = computed(() => {
-  return props.code ? props.code.split('\n') : []
-})
-
 const effectiveExtension = computed(() => {
   return props.extension || getLanguageExtension(props.language)
+})
+
+const isHtml = computed(() => {
+  const ext = effectiveExtension.value.toLowerCase()
+  const lang = (props.language || '').toLowerCase()
+  return ext === 'html' || ext === 'htm' || lang === 'html' || lang === 'htm'
+})
+
+const activeTab = ref<'preview' | 'code'>('code')
+
+watch(
+  () => [props.isOpen, isHtml.value],
+  ([open, html]) => {
+    if (open) {
+      activeTab.value = html ? 'preview' : 'code'
+    }
+  },
+  { immediate: true }
+)
+
+const sandboxedHtml = computed(() => {
+  return isHtml.value ? prepareSandboxedHtml(props.code) : ''
+})
+
+const codeLines = computed(() => {
+  return props.code ? props.code.split('\n') : []
 })
 
 const copyCode = async () => {
@@ -59,7 +82,8 @@ const downloadCode = () => {
       .replace(/[^a-z0-9_-]+/g, '_')
       .slice(0, 30)
     const filename = `${safeTitle}_${Date.now()}.${ext}`
-    const blob = new Blob([props.code], { type: 'text/plain;charset=utf-8' })
+    const mimeType = getMimeTypeForExtension(ext)
+    const blob = new Blob([props.code], { type: mimeType })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -132,6 +156,39 @@ onUnmounted(() => {
                 Artefacto de Desarrollo & Layout
               </span>
             </div>
+
+            <!-- Tab Switcher (Visible only for HTML/HTM) -->
+            <div
+              v-if="isHtml"
+              data-test="code-modal-tabs"
+              class="flex items-center gap-1 bg-[#040810] p-1 rounded-lg border border-cyan-500/30 ml-4"
+            >
+              <button
+                type="button"
+                @click="activeTab = 'preview'"
+                data-test="code-tab-preview"
+                class="relative group px-2.5 py-1 rounded text-xs font-mono transition-colors flex items-center gap-1.5 cursor-pointer"
+                :class="activeTab === 'preview' ? 'bg-cyan-500/20 text-neon-cyan border border-cyan-500/40 shadow-[0_0_10px_rgba(0,229,255,0.2)]' : 'text-slate-400 hover:text-white'"
+                title="Ver maquetación interactiva en sandbox seguro"
+                aria-label="Vista Previa Interactiva"
+              >
+                <Eye class="w-3.5 h-3.5" />
+                <span class="hidden sm:inline">Vista Previa</span>
+              </button>
+
+              <button
+                type="button"
+                @click="activeTab = 'code'"
+                data-test="code-tab-code"
+                class="relative group px-2.5 py-1 rounded text-xs font-mono transition-colors flex items-center gap-1.5 cursor-pointer"
+                :class="activeTab === 'code' ? 'bg-cyan-500/20 text-neon-cyan border border-cyan-500/40 shadow-[0_0_10px_rgba(0,229,255,0.2)]' : 'text-slate-400 hover:text-white'"
+                title="Ver código fuente estructurado"
+                aria-label="Código Fuente"
+              >
+                <Code2 class="w-3.5 h-3.5" />
+                <span class="hidden sm:inline">Código</span>
+              </button>
+            </div>
           </div>
 
           <!-- Controls Toolbar -->
@@ -193,8 +250,27 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Code Viewer Body -->
-        <div class="flex-1 overflow-auto p-4 md:p-6 bg-[#03060c] font-mono text-xs custom-scrollbar">
+        <!-- Modal Body: Interactive Sandboxed Preview (Only for HTML) -->
+        <div
+          v-if="isHtml && activeTab === 'preview'"
+          data-test="code-modal-preview-container"
+          class="flex-1 bg-white p-2 md:p-3 overflow-hidden flex flex-col"
+        >
+          <iframe
+            :srcdoc="sandboxedHtml"
+            sandbox="allow-scripts"
+            data-test="code-modal-preview-iframe"
+            class="w-full h-full border-0 rounded-lg bg-white shadow-inner"
+            title="Vista Previa de Maquetación HTML"
+          ></iframe>
+        </div>
+
+        <!-- Modal Body: Code Viewer (Numbered Lines) -->
+        <div
+          v-else
+          data-test="code-modal-code-container"
+          class="flex-1 overflow-auto p-4 md:p-6 bg-[#03060c] font-mono text-xs custom-scrollbar"
+        >
           <div class="table w-full">
             <div
               v-for="(line, idx) in codeLines"
@@ -216,4 +292,3 @@ onUnmounted(() => {
     </dialog>
   </Teleport>
 </template>
-

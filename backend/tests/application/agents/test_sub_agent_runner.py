@@ -251,8 +251,13 @@ class TestSubAgentRunner:
         )
         register_profile(fidias_profile)
         try:
-            monkeypatch.delenv("IMAGE_GENERATION_PROVIDER", raising=False)
+            monkeypatch.setenv("IMAGE_GENERATION_PROVIDER", "")
             monkeypatch.delenv("IMAGE_PROVIDER", raising=False)
+            try:
+                from src.presentation.api.config import get_settings
+                monkeypatch.setattr(get_settings(), "image_generation_provider", "")
+            except Exception:
+                pass
 
             llm = FakeLLM("```html\n<!DOCTYPE html><html><body><h1>Mockup</h1></body></html>\n```")
             response = await SubAgentRunner.run(
@@ -282,7 +287,7 @@ class TestSubAgentRunner:
         )
         register_profile(fidias_profile)
         try:
-            monkeypatch.setenv("IMAGE_GENERATION_PROVIDER", "pollinations")
+            monkeypatch.setenv("IMAGE_GENERATION_PROVIDER", "imagen")
 
             async def fake_generate_and_save(prompt, provider=None):
                 return "fidias_test123.png", "/api/images/fidias_test123.png"
@@ -303,7 +308,7 @@ class TestSubAgentRunner:
                 model_name="gemini-3.6-flash",
             )
 
-            assert any("DIRECTIVA DE GENERACIÓN VISUAL (MOTOR POLLINATIONS ACTIVO)" in p for p in llm.received_prompts)
+            assert any("DIRECTIVA DE GENERACIÓN VISUAL (MOTOR IMAGEN ACTIVO)" in p for p in llm.received_prompts)
             assert "![Futuristic dark cybersecurity dashboard" in response.content
             assert "/api/images/fidias_test123.png" in response.content
             assert "[GENERATE_IMAGE:" not in response.content

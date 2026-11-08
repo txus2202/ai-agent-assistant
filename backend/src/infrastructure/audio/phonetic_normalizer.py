@@ -100,13 +100,17 @@ class SpanishTechPhoneticNormalizer:
         ]
 
     def strip_markdown(self, text: str) -> str:
-        """Remove Markdown formatting that should not be spoken aloud."""
-        # Remove fenced code blocks
+        """Remove Markdown formatting and tool blocks that should not be spoken aloud."""
+        # Remove fenced code/document/diagram blocks
         text = re.sub(r"```[\s\S]*?```", "", text)
+        text = re.sub(r"```[\s\S]*$", "", text)
+        # Remove image generation directives
+        text = re.sub(r"\[GENERATE_IMAGE:\s*[\s\S]*?\]", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"<!--\s*generate_image:\s*[\s\S]*?-->", "", text, flags=re.IGNORECASE)
+        # Remove markdown images completely: ![alt](url) -> ""
+        text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)
         # Inline code
         text = re.sub(r"`([^`]+)`", r"\1", text)
-        # Images: ![alt](url) -> alt
-        text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
         # Links: [text](url) -> text
         text = re.sub(r"\[([^\]]*)\]\([^)]+\)", r"\1", text)
         # Headers: ## Header -> Header
@@ -128,8 +132,19 @@ class SpanishTechPhoneticNormalizer:
         if not text or not text.strip():
             return ""
 
-        # Step 1: Strip Markdown structure
+        # Step 1: Strip Markdown structure and tools
         cleaned = self.strip_markdown(text)
+        if not cleaned:
+            # Fallback if text was purely a tool deliverable
+            if "```mermaid" in text.lower() or "```diagram" in text.lower():
+                return "He generado el diagrama arquitectónico en pantalla."
+            if "```markdown" in text.lower() or "```md" in text.lower() or "```doc" in text.lower():
+                return "He generado el documento técnico en pantalla."
+            if "```" in text:
+                return "He generado el código en pantalla."
+            if "![" in text or "generate_image" in text.lower():
+                return "He generado la imagen en pantalla."
+            return ""
 
         # Step 2: Replace multi-word technical phrases
         for pattern, replacement in self._compiled_phrases:

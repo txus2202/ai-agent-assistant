@@ -2,8 +2,7 @@
 Infrastructure: Image Generation Package.
 
 Provides connectors for image generation:
-- Pollinations (Flux model, free tier / public API)
-- Google Imagen 3 (via google-genai SDK)
+- Google Imagen 3 (via google-genai SDK, enterprise grade and private)
 """
 from src.infrastructure.image_generation.service import ImageGenerationService
 

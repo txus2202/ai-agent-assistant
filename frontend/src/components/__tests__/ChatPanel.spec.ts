@@ -618,7 +618,7 @@ describe('ChatPanel.vue', () => {
     await downloadBtn.trigger('click')
 
     expect(capturedBlob).not.toBeNull()
-    expect(capturedBlob?.type).toBe('text/html;charset=utf-8')
+    expect((capturedBlob as Blob | null)?.type).toBe('text/html;charset=utf-8')
 
     global.Blob = originalBlob
   })

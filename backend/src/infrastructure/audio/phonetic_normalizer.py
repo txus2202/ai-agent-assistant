@@ -104,9 +104,9 @@ class SpanishTechPhoneticNormalizer:
         # Remove fenced code/document/diagram blocks
         text = re.sub(r"```[\s\S]*?```", "", text)
         text = re.sub(r"```[\s\S]*$", "", text)
-        # Remove image generation directives
-        text = re.sub(r"\[GENERATE_IMAGE:\s*[\s\S]*?\]", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"<!--\s*generate_image:\s*[\s\S]*?-->", "", text, flags=re.IGNORECASE)
+        # Remove image generation directives without backtracking
+        text = re.sub(r"\[GENERATE_IMAGE:[^\]]*\]", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"<!--\s*generate_image:[^-]*-->", "", text, flags=re.IGNORECASE)
         # Remove markdown images completely: ![alt](url) -> ""
         text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)
         # Inline code
@@ -125,6 +125,20 @@ class SpanishTechPhoneticNormalizer:
         # Collapse multiple spaces and strip
         return re.sub(r"[ \t]+", " ", text).strip()
 
+    @staticmethod
+    def _get_fallback_speech(raw_text: str) -> str:
+        """Provide a clean spoken summary if the message consisted solely of a tool deliverable."""
+        lowered = raw_text.lower()
+        if "```mermaid" in lowered or "```diagram" in lowered:
+            return "He generado el diagrama arquitectónico en pantalla."
+        if any(marker in lowered for marker in ("```markdown", "```md", "```doc")):
+            return "He generado el documento técnico en pantalla."
+        if "```" in raw_text:
+            return "He generado el código en pantalla."
+        if "![" in raw_text or "generate_image" in lowered:
+            return "He generado la imagen en pantalla."
+        return ""
+
     def normalize(self, text: str) -> str:
         """
         Normalize Markdown and technical terminology in `text` for Spanish speech synthesis.
@@ -135,16 +149,7 @@ class SpanishTechPhoneticNormalizer:
         # Step 1: Strip Markdown structure and tools
         cleaned = self.strip_markdown(text)
         if not cleaned:
-            # Fallback if text was purely a tool deliverable
-            if "```mermaid" in text.lower() or "```diagram" in text.lower():
-                return "He generado el diagrama arquitectónico en pantalla."
-            if "```markdown" in text.lower() or "```md" in text.lower() or "```doc" in text.lower():
-                return "He generado el documento técnico en pantalla."
-            if "```" in text:
-                return "He generado el código en pantalla."
-            if "![" in text or "generate_image" in text.lower():
-                return "He generado la imagen en pantalla."
-            return ""
+            return self._get_fallback_speech(text)
 
         # Step 2: Replace multi-word technical phrases
         for pattern, replacement in self._compiled_phrases:

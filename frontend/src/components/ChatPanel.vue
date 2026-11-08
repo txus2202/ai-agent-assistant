@@ -173,7 +173,7 @@ const downloadChatCode = (code: string, extension?: string, title?: string) => {
     link.download = filename
     document.body.appendChild(link)
     link.click()
-    document.body.removeChild(link)
+    link.remove()
     URL.revokeObjectURL(url)
   } catch (err) {
     console.error('Failed to download chat code:', err)
@@ -191,7 +191,7 @@ const downloadChatImage = (imageUrl: string, title?: string) => {
     link.download = `${safeTitle}_${Date.now()}.png`
     document.body.appendChild(link)
     link.click()
-    document.body.removeChild(link)
+    link.remove()
   } catch (err) {
     console.error('Failed to download chat image:', err)
   }

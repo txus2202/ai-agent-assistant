@@ -10,6 +10,8 @@ from __future__ import annotations
 import mimetypes
 import re
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
@@ -17,9 +19,14 @@ from src.infrastructure.image_generation.service import ImageGenerationService
 
 router = APIRouter(tags=["images"])
 
+IMAGE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: {"description": "Invalid filename format"},
+    404: {"description": "Image not found"},
+}
 
-@router.get("/images/{filename}")
-@router.get("/api/images/{filename}")
+
+@router.get("/images/{filename}", responses=IMAGE_RESPONSES)
+@router.get("/api/images/{filename}", responses=IMAGE_RESPONSES)
 async def get_generated_image(filename: str):
     """Serve a generated image file safely."""
     if not re.match(r"^[a-zA-Z0-9_\-\.]+$", filename):

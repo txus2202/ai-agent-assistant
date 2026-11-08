@@ -460,6 +460,55 @@ class DebateWebSocketHandler:
             type=EventType.DONE, role=learn_role, content=content, metadata=learn_meta
         ))
 
+    def _resolve_agent_llm(self, profile: SubAgentProfile, agent_role: str) -> tuple[ILLMProvider, str]:
+        config = self.agent_config_repo.find_by_role(profile.id)
+        if not config:
+            config = self.agent_config_repo.find_by_role(agent_role)
+        prov_name = config.provider if config else self.settings.default_provider
+        mod_name = config.model_name if config else self.settings.default_model
+        return get_llm_provider(prov_name), mod_name
+
+    async def _emit_sub_agent_completion(
+        self, agent_role: str, resp: SubAgentResponse, mod_name: str, emit_message: bool, emit_done: bool
+    ) -> None:
+        sub_meta = {
+            "model": resp.model_name or mod_name,
+            "prompt_tokens": str(resp.tokens.get("input", 0)),
+            "completion_tokens": str(resp.tokens.get("output", 0)),
+            "total_tokens": str(resp.tokens.get("total", 0)),
+            "latency_seconds": str(resp.latency),
+            "tokens": str(resp.tokens.get("total", 0)),
+        }
+        if emit_message:
+            await self.send_event(SupervisorEvent(
+                type=EventType.MESSAGE, role=agent_role, content=resp.content
+            ))
+        await self.send_event(SupervisorEvent(
+            type=EventType.AGENT_COMPLETED, role=agent_role, content=resp.content, metadata=sub_meta
+        ))
+        if emit_done:
+            await self.send_event(SupervisorEvent(
+                type=EventType.DONE, role=agent_role, content=resp.content, metadata=sub_meta
+            ))
+
+    async def _handle_sub_agent_exception(self, agent_role: str, exc: Exception) -> None:
+        logger.exception("Error during sub-agent execution: %s", agent_role)
+        if self.debate_record:
+            self.debate_repo.update_status(self.debate_record.id, "error")
+        if self.current_trace:
+            try:
+                self.observability.end_trace(
+                    trace_context=self.current_trace,
+                    status="ERROR",
+                    output=str(exc),
+                )
+            except Exception:
+                pass
+            self.current_trace = None
+        await self.send_event(SupervisorEvent(
+            type=EventType.ERROR, role=agent_role, content=str(exc)
+        ))
+
     async def _handle_sub_agent(
         self,
         target_agent: str,
@@ -475,14 +524,8 @@ class DebateWebSocketHandler:
             await self.send_event(SupervisorEvent(
                 type=EventType.AGENT_STARTED, role=agent_role, content=""
             ))
-            
-            config = self.agent_config_repo.find_by_role(profile.id)
-            if not config:
-                config = self.agent_config_repo.find_by_role(agent_role)
-            prov_name = config.provider if config else self.settings.default_provider
-            mod_name = config.model_name if config else self.settings.default_model
-            llm_prov = get_llm_provider(prov_name)
-            
+
+            llm_prov, mod_name = self._resolve_agent_llm(profile, agent_role)
             runner_kwargs = {"chat_history": chat_history} if chat_history else {}
             resp = await SubAgentRunner.run(
                 role=agent_role,
@@ -492,28 +535,10 @@ class DebateWebSocketHandler:
                 model_name=mod_name,
                 **runner_kwargs,
             )
-            
-            sub_meta = {
-                "model": resp.model_name or mod_name,
-                "prompt_tokens": str(resp.tokens.get("input", 0)),
-                "completion_tokens": str(resp.tokens.get("output", 0)),
-                "total_tokens": str(resp.tokens.get("total", 0)),
-                "latency_seconds": str(resp.latency),
-                "tokens": str(resp.tokens.get("total", 0)),
-            }
-            if emit_message:
-                await self.send_event(SupervisorEvent(
-                    type=EventType.MESSAGE, role=agent_role, content=resp.content
-                ))
-            await self.send_event(SupervisorEvent(
-                type=EventType.AGENT_COMPLETED, role=agent_role, content=resp.content, metadata=sub_meta
-            ))
-            if emit_done:
-                await self.send_event(SupervisorEvent(
-                    type=EventType.DONE, role=agent_role, content=resp.content, metadata=sub_meta
-                ))
+
+            await self._emit_sub_agent_completion(agent_role, resp, mod_name, emit_message, emit_done)
             return resp.content
-            
+
         except KeyError:
             if self.debate_record:
                 self.debate_repo.update_status(self.debate_record.id, "aborted")
@@ -521,22 +546,7 @@ class DebateWebSocketHandler:
             await self.websocket.close(code=1003)
             return None
         except Exception as e:
-            logger.exception("Error during sub-agent execution: %s", agent_role)
-            if self.debate_record:
-                self.debate_repo.update_status(self.debate_record.id, "error")
-            if self.current_trace:
-                try:
-                    self.observability.end_trace(
-                        trace_context=self.current_trace,
-                        status="ERROR",
-                        output=str(e),
-                    )
-                except Exception:
-                    pass
-                self.current_trace = None
-            await self.send_event(SupervisorEvent(
-                type=EventType.ERROR, role=agent_role, content=str(e)
-            ))
+            await self._handle_sub_agent_exception(agent_role, e)
             return None
 
     def _init_session_and_trace(self, session_id: str | None, user_request: str, target_agent: str) -> None:

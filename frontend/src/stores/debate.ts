@@ -826,89 +826,98 @@ export const useDebateStore = defineStore('debate', () => {
     ttsChunkCallbacks.push(callback)
   }
 
+  function emitTtsText(text: string, role?: string) {
+    if (!text) return
+    for (const cb of ttsChunkCallbacks) {
+      cb(text, role)
+    }
+    hasSpokenInCurrentMessage = true
+  }
+
+  function getToolSpokenFallback(fenceType: string): string {
+    if (/mermaid|diagram/.test(fenceType)) {
+      return 'He generado el diagrama arquitectónico en pantalla.'
+    }
+    if (/markdown|md|doc/.test(fenceType)) {
+      return 'He generado el documento técnico en pantalla.'
+    }
+    return 'He generado el código en pantalla.'
+  }
+
+  function handleOpenFenceInStream(fenceIdx: number, role?: string) {
+    const textBefore = ttsStreamBuffer.slice(0, fenceIdx).trim()
+    if (textBefore) {
+      emitTtsText(textBefore, role)
+    }
+    isInsideCodeFence = true
+    ttsStreamBuffer = ttsStreamBuffer.slice(fenceIdx + 3)
+    const newlineIdx = ttsStreamBuffer.indexOf('\n')
+    if (newlineIdx !== -1) {
+      codeFenceType = ttsStreamBuffer.slice(0, newlineIdx).trim().toLowerCase()
+      ttsStreamBuffer = ttsStreamBuffer.slice(newlineIdx + 1)
+    }
+  }
+
+  function findSentenceSplitIndex(buffer: string): number {
+    const terminalMatch = /[.!?\n]/.exec(buffer)
+    if (terminalMatch) {
+      return terminalMatch.index
+    }
+    if (buffer.length >= 20) {
+      const clauseMatch = /[,:;]/.exec(buffer.slice(20))
+      if (clauseMatch) {
+        return 20 + clauseMatch.index
+      }
+    }
+    return -1
+  }
+
+  function processOutsideFenceChunk(role?: string): boolean {
+    const fenceIdx = ttsStreamBuffer.indexOf('```')
+    if (fenceIdx !== -1) {
+      handleOpenFenceInStream(fenceIdx, role)
+      return true
+    }
+
+    const splitIdx = findSentenceSplitIndex(ttsStreamBuffer)
+    if (splitIdx !== -1) {
+      const sentence = ttsStreamBuffer.slice(0, splitIdx + 1).trim()
+      ttsStreamBuffer = ttsStreamBuffer.slice(splitIdx + 1)
+      emitTtsText(sentence, role)
+      return true
+    }
+    return false
+  }
+
+  function processInsideFenceChunk(role?: string): boolean {
+    const closeFenceIdx = ttsStreamBuffer.indexOf('```')
+    if (closeFenceIdx !== -1) {
+      isInsideCodeFence = false
+      ttsStreamBuffer = ttsStreamBuffer.slice(closeFenceIdx + 3)
+      if (!hasSpokenInCurrentMessage) {
+        emitTtsText(getToolSpokenFallback(codeFenceType), role)
+      }
+      codeFenceType = ''
+      return true
+    }
+
+    if (ttsStreamBuffer.length > 10) {
+      ttsStreamBuffer = ttsStreamBuffer.slice(-4)
+    }
+    return false
+  }
+
   function feedTtsStreamingChunk(chunk: string, role?: string) {
     if (!isVoiceOutputEnabled.value) return
     ttsStreamBuffer += chunk
 
     while (ttsStreamBuffer.length > 0) {
-      if (!isInsideCodeFence) {
-        // Check for opening fence of a tool/code/diagram/document block
-        const fenceIdx = ttsStreamBuffer.indexOf('```')
-        if (fenceIdx !== -1) {
-          const textBefore = ttsStreamBuffer.slice(0, fenceIdx).trim()
-          if (textBefore) {
-            for (const cb of ttsChunkCallbacks) {
-              cb(textBefore, role)
-            }
-            hasSpokenInCurrentMessage = true
-          }
-          isInsideCodeFence = true
-          ttsStreamBuffer = ttsStreamBuffer.slice(fenceIdx + 3)
-          // Extract language tag if available
-          const newlineIdx = ttsStreamBuffer.indexOf('\n')
-          if (newlineIdx !== -1) {
-            codeFenceType = ttsStreamBuffer.slice(0, newlineIdx).trim().toLowerCase()
-            ttsStreamBuffer = ttsStreamBuffer.slice(newlineIdx + 1)
-          }
-          continue
-        }
+      const advanced = !isInsideCodeFence
+        ? processOutsideFenceChunk(role)
+        : processInsideFenceChunk(role)
 
-        // If no code fence, check for terminal punctuation (. ! ? \n) or clause delimiters (, ; :) after >= 20 characters
-        const terminalMatch = /[.!?\n]/.exec(ttsStreamBuffer)
-        let splitIdx = -1
-
-        if (terminalMatch) {
-          splitIdx = terminalMatch.index
-        } else if (ttsStreamBuffer.length >= 20) {
-          const clauseMatch = /[,:;]/.exec(ttsStreamBuffer.slice(20))
-          if (clauseMatch) {
-            splitIdx = 20 + clauseMatch.index
-          }
-        }
-
-        if (splitIdx !== -1) {
-          const sentence = ttsStreamBuffer.slice(0, splitIdx + 1).trim()
-          ttsStreamBuffer = ttsStreamBuffer.slice(splitIdx + 1)
-          if (sentence) {
-            for (const cb of ttsChunkCallbacks) {
-              cb(sentence, role)
-            }
-            hasSpokenInCurrentMessage = true
-          }
-        } else {
-          // No complete sentence yet and no fence
-          break
-        }
-      } else {
-        // Currently inside a tool/code block: suppress speaking all code/syntax
-        const closeFenceIdx = ttsStreamBuffer.indexOf('```')
-        if (closeFenceIdx !== -1) {
-          // Code block completed!
-          isInsideCodeFence = false
-          // Discard all code content before closing fence
-          ttsStreamBuffer = ttsStreamBuffer.slice(closeFenceIdx + 3)
-          if (!hasSpokenInCurrentMessage) {
-            let fallback = 'He generado el código en pantalla.'
-            if (/mermaid|diagram/.test(codeFenceType)) {
-              fallback = 'He generado el diagrama arquitectónico en pantalla.'
-            } else if (/markdown|md|doc/.test(codeFenceType)) {
-              fallback = 'He generado el documento técnico en pantalla.'
-            }
-            for (const cb of ttsChunkCallbacks) {
-              cb(fallback, role)
-            }
-            hasSpokenInCurrentMessage = true
-          }
-          codeFenceType = ''
-          continue
-        } else {
-          // Still inside code block: do not emit anything to TTS.
-          // Keep at most trailing 4 characters to catch '```' split across streaming chunks
-          if (ttsStreamBuffer.length > 10) {
-            ttsStreamBuffer = ttsStreamBuffer.slice(-4)
-          }
-          break
-        }
+      if (!advanced) {
+        break
       }
     }
   }
@@ -918,24 +927,10 @@ export const useDebateStore = defineStore('debate', () => {
     if (!isInsideCodeFence) {
       const remaining = ttsStreamBuffer.trim()
       ttsStreamBuffer = ''
-      if (remaining) {
-        for (const cb of ttsChunkCallbacks) {
-          cb(remaining, role)
-        }
-        hasSpokenInCurrentMessage = true
-      }
+      emitTtsText(remaining, role)
     } else {
       if (!hasSpokenInCurrentMessage) {
-        let fallback = 'He generado el código en pantalla.'
-        if (/mermaid|diagram/.test(codeFenceType)) {
-          fallback = 'He generado el diagrama arquitectónico en pantalla.'
-        } else if (/markdown|md|doc/.test(codeFenceType)) {
-          fallback = 'He generado el documento técnico en pantalla.'
-        }
-        for (const cb of ttsChunkCallbacks) {
-          cb(fallback, role)
-        }
-        hasSpokenInCurrentMessage = true
+        emitTtsText(getToolSpokenFallback(codeFenceType), role)
       }
       ttsStreamBuffer = ''
       isInsideCodeFence = false

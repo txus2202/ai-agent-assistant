@@ -9,7 +9,7 @@ export interface MessageBlock {
   alt?: string
 }
 
-const FENCED_CODE_REGEX = /```([a-zA-Z0-9_#+-]*)[^\n`]*\n([\s\S]*?)```/g
+const FENCED_CODE_REGEX = /```([a-zA-Z0-9_#+-]+)?(?:[ \t][^\n]*)?\n([\s\S]*?)```/g
 const IMAGE_REGEX = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g
 
 const LANGUAGE_EXTENSION_MAP: Record<string, string> = {
@@ -99,6 +99,55 @@ export interface ParseOptions {
   isDocumentAgent?: boolean
 }
 
+function createFencedBlock(langRaw: string, codeContent: string): MessageBlock {
+  if (langRaw === 'mermaid' || langRaw === 'diagram') {
+    return {
+      type: 'mermaid',
+      content: codeContent
+    }
+  }
+  if (['markdown', 'md', 'doc', 'document'].includes(langRaw)) {
+    return {
+      type: 'document',
+      content: codeContent,
+      title: extractDocumentTitle(codeContent, 'Documento Técnico'),
+      language: 'markdown',
+      extension: 'md'
+    }
+  }
+  return {
+    type: 'code',
+    content: codeContent,
+    language: langRaw || 'code',
+    extension: getLanguageExtension(langRaw)
+  }
+}
+
+function handleDocumentAgentFallback(rawContent: string): MessageBlock[] | null {
+  const matchHeading = /(?:^|\n)(#[ \t]+[^\n]+)/.exec(rawContent)
+  if (!matchHeading || matchHeading.index === undefined) {
+    return null
+  }
+  const headingPos = matchHeading.index + (matchHeading[0].startsWith('\n') ? 1 : 0)
+  const preamble = rawContent.slice(0, headingPos).trim()
+  const docContent = rawContent.slice(headingPos).trim()
+  if (!docContent) {
+    return null
+  }
+  const result: MessageBlock[] = []
+  if (preamble) {
+    result.push(...parseTextAndImages(preamble))
+  }
+  result.push({
+    type: 'document',
+    content: docContent,
+    title: extractDocumentTitle(docContent, 'Documento Técnico'),
+    language: 'markdown',
+    extension: 'md'
+  })
+  return result
+}
+
 /**
  * Parses message markdown content into a sequential list of text blocks,
  * Mermaid diagram blocks, fenced code blocks, documents, and images for specialized tool rendering.
@@ -130,28 +179,7 @@ export function parseMessageContent(rawContent: string, options?: ParseOptions):
     const codeContent = (match[2] || '').trim()
 
     if (codeContent) {
-      if (langRaw === 'mermaid' || langRaw === 'diagram') {
-        blocks.push({
-          type: 'mermaid',
-          content: codeContent
-        })
-      } else if (langRaw === 'markdown' || langRaw === 'md' || langRaw === 'doc' || langRaw === 'document') {
-        blocks.push({
-          type: 'document',
-          content: codeContent,
-          title: extractDocumentTitle(codeContent, 'Documento Técnico'),
-          language: 'markdown',
-          extension: 'md'
-        })
-      } else {
-        const ext = getLanguageExtension(langRaw)
-        blocks.push({
-          type: 'code',
-          content: codeContent,
-          language: langRaw || 'code',
-          extension: ext
-        })
-      }
+      blocks.push(createFencedBlock(langRaw, codeContent))
     }
 
     lastIndex = matchEnd
@@ -167,25 +195,9 @@ export function parseMessageContent(rawContent: string, options?: ParseOptions):
 
   // Fallback for document agents (e.g. Calíope) emitting raw markdown without fenced code blocks
   if (options?.isDocumentAgent && !blocks.some(b => b.type === 'document' || b.type === 'code')) {
-    const matchHeading = /(?:^|\n)(#[ \t]+[^\n]+)/.exec(rawContent)
-    if (matchHeading && matchHeading.index !== undefined) {
-      const headingPos = matchHeading.index + (matchHeading[0].startsWith('\n') ? 1 : 0)
-      const preamble = rawContent.slice(0, headingPos).trim()
-      const docContent = rawContent.slice(headingPos).trim()
-      if (docContent) {
-        const result: MessageBlock[] = []
-        if (preamble) {
-          result.push(...parseTextAndImages(preamble))
-        }
-        result.push({
-          type: 'document',
-          content: docContent,
-          title: extractDocumentTitle(docContent, 'Documento Técnico'),
-          language: 'markdown',
-          extension: 'md'
-        })
-        return result
-      }
+    const fallbackResult = handleDocumentAgentFallback(rawContent)
+    if (fallbackResult) {
+      return fallbackResult
     }
   }
 

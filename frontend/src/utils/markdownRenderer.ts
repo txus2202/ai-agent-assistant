@@ -5,11 +5,11 @@
 
 function escapeHtml(text: string): string {
   return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
 }
 
 export function extractDocumentTitle(markdown: string, fallback: string = 'Documento'): string {
@@ -27,12 +27,9 @@ export function extractDocumentTitle(markdown: string, fallback: string = 'Docum
   return fallback
 }
 
-export function renderMarkdownToHtml(markdown: string): string {
-  if (!markdown) return ''
-
-  // Pre-process fenced code blocks so their contents aren't modified by inline rules
+function extractCodeBlocks(markdown: string): { processed: string; codeBlocks: string[] } {
   const codeBlocks: string[] = []
-  let text = markdown.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
+  const processed = markdown.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
     const safeLang = escapeHtml(lang || '')
     const safeCode = escapeHtml(code.trimEnd())
     const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`
@@ -41,38 +38,63 @@ export function renderMarkdownToHtml(markdown: string): string {
     )
     return placeholder
   })
+  return { processed, codeBlocks }
+}
 
-  // Process tables
-  text = text.replace(/((?:\|[^\n]+\|\n?)+)/g, (tableBlock) => {
-    const rawLines = tableBlock.trim().split('\n').filter(l => l.trim().startsWith('|'))
-    const firstLine = rawLines[0]
-    const secondLine = rawLines[1]
-    if (!firstLine || !secondLine) return tableBlock
-    
-    // Check if line 2 is divider |---|---|
-    const isDivider = /^\|(?:\s*:?-+:?\s*\|)+$/.test(secondLine.trim())
-    if (!isDivider) return tableBlock
+function renderTableBlock(tableBlock: string): string {
+  const rawLines = tableBlock.trim().split('\n').filter(l => l.trim().startsWith('|'))
+  const firstLine = rawLines[0]
+  const secondLine = rawLines[1]
+  if (!firstLine || !secondLine) return tableBlock
 
-    const headerCols = firstLine
+  const isDivider = /^\|(?:\s*:?-+:?\s*\|)+$/.test(secondLine.trim())
+  if (!isDivider) return tableBlock
+
+  const headerCols = firstLine
+    .split('|')
+    .slice(1, -1)
+    .map(c => `<th>${escapeHtml(c.trim())}</th>`)
+    .join('')
+
+  const bodyRows = rawLines.slice(2).map(row => {
+    const cols = row
       .split('|')
       .slice(1, -1)
-      .map(c => `<th>${escapeHtml(c.trim())}</th>`)
+      .map(c => `<td>${escapeHtml(c.trim())}</td>`)
       .join('')
-    
-    const bodyRows = rawLines.slice(2).map(row => {
-      const cols = row
-        .split('|')
-        .slice(1, -1)
-        .map(c => `<td>${escapeHtml(c.trim())}</td>`)
-        .join('')
-      return `<tr>${cols}</tr>`
-    }).join('')
+    return `<tr>${cols}</tr>`
+  }).join('')
 
-    return `<table class="doc-table"><thead><tr>${headerCols}</tr></thead><tbody>${bodyRows}</tbody></table>`
-  })
+  return `<table class="doc-table"><thead><tr>${headerCols}</tr></thead><tbody>${bodyRows}</tbody></table>`
+}
 
-  // Process line by line
-  const lines = text.split('\n')
+function renderMarkdownTables(text: string): string {
+  return text.replace(/((?:\|[^\n]+\|\n?)+)/g, renderTableBlock)
+}
+
+function getHeadingHtml(trimmed: string): string | null {
+  if (trimmed.startsWith('# ')) {
+    return `<h1 class="doc-h1">${formatInline(trimmed.slice(2))}</h1>`
+  }
+  if (trimmed.startsWith('## ')) {
+    return `<h2 class="doc-h2">${formatInline(trimmed.slice(3))}</h2>`
+  }
+  if (trimmed.startsWith('### ')) {
+    return `<h3 class="doc-h3">${formatInline(trimmed.slice(4))}</h3>`
+  }
+  if (trimmed.startsWith('#### ')) {
+    return `<h4 class="doc-h4">${formatInline(trimmed.slice(5))}</h4>`
+  }
+  return null
+}
+
+export function renderMarkdownToHtml(markdown: string): string {
+  if (!markdown) return ''
+
+  const { processed, codeBlocks } = extractCodeBlocks(markdown)
+  const textWithTables = renderMarkdownTables(processed)
+
+  const lines = textWithTables.split('\n')
   const output: string[] = []
   let inUl = false
   let inOl = false
@@ -99,7 +121,6 @@ export function renderMarkdownToHtml(markdown: string): string {
   for (const line of lines) {
     const trimmed = (line || '').trim()
 
-    // Placeholders for code blocks
     if (trimmed.startsWith('__CODE_BLOCK_') && trimmed.endsWith('__')) {
       closeLists()
       closeBlockquote()
@@ -107,7 +128,6 @@ export function renderMarkdownToHtml(markdown: string): string {
       continue
     }
 
-    // Table HTML lines
     if (trimmed.startsWith('<table class="doc-table">') || trimmed.startsWith('</table>') || trimmed.startsWith('<thead>') || trimmed.startsWith('<tbody>') || trimmed.startsWith('<tr>')) {
       closeLists()
       closeBlockquote()
@@ -115,14 +135,12 @@ export function renderMarkdownToHtml(markdown: string): string {
       continue
     }
 
-    // Empty line
     if (!trimmed) {
       closeLists()
       closeBlockquote()
       continue
     }
 
-    // Blockquote
     if (trimmed.startsWith('> ')) {
       closeLists()
       if (!inBlockquote) {
@@ -131,40 +149,22 @@ export function renderMarkdownToHtml(markdown: string): string {
       }
       output.push(`<p>${formatInline(trimmed.slice(2))}</p>`)
       continue
-    } else {
-      closeBlockquote()
     }
+    closeBlockquote()
 
-    // Headings
-    if (trimmed.startsWith('# ')) {
+    const headingHtml = getHeadingHtml(trimmed)
+    if (headingHtml) {
       closeLists()
-      output.push(`<h1 class="doc-h1">${formatInline(trimmed.slice(2))}</h1>`)
-      continue
-    }
-    if (trimmed.startsWith('## ')) {
-      closeLists()
-      output.push(`<h2 class="doc-h2">${formatInline(trimmed.slice(3))}</h2>`)
-      continue
-    }
-    if (trimmed.startsWith('### ')) {
-      closeLists()
-      output.push(`<h3 class="doc-h3">${formatInline(trimmed.slice(4))}</h3>`)
-      continue
-    }
-    if (trimmed.startsWith('#### ')) {
-      closeLists()
-      output.push(`<h4 class="doc-h4">${formatInline(trimmed.slice(5))}</h4>`)
+      output.push(headingHtml)
       continue
     }
 
-    // Horizontal Rule
     if (/^(\*\*\*|---|___)$/.test(trimmed)) {
       closeLists()
       output.push('<hr class="doc-hr" />')
       continue
     }
 
-    // Unordered List
     if (/^[-*+]\s+/.test(trimmed)) {
       if (inOl) {
         output.push('</ol>')
@@ -174,12 +174,10 @@ export function renderMarkdownToHtml(markdown: string): string {
         output.push('<ul class="doc-ul">')
         inUl = true
       }
-      const itemContent = trimmed.replace(/^[-*+]\s+/, '')
-      output.push(`<li>${formatInline(itemContent)}</li>`)
+      output.push(`<li>${formatInline(trimmed.replace(/^[-*+]\s+/, ''))}</li>`)
       continue
     }
 
-    // Ordered List
     if (/^\d+\.\s+/.test(trimmed)) {
       if (inUl) {
         output.push('</ul>')
@@ -189,12 +187,10 @@ export function renderMarkdownToHtml(markdown: string): string {
         output.push('<ol class="doc-ol">')
         inOl = true
       }
-      const itemContent = trimmed.replace(/^\d+\.\s+/, '')
-      output.push(`<li>${formatInline(itemContent)}</li>`)
+      output.push(`<li>${formatInline(trimmed.replace(/^\d+\.\s+/, ''))}</li>`)
       continue
     }
 
-    // Regular paragraph
     closeLists()
     output.push(`<p class="doc-p">${formatInline(trimmed)}</p>`)
   }
@@ -203,10 +199,8 @@ export function renderMarkdownToHtml(markdown: string): string {
   closeBlockquote()
 
   let finalHtml = output.join('\n')
-
-  // Restore code blocks
   codeBlocks.forEach((block, index) => {
-    finalHtml = finalHtml.replace(`__CODE_BLOCK_${index}__`, block)
+    finalHtml = finalHtml.replaceAll(`__CODE_BLOCK_${index}__`, block)
   })
 
   return finalHtml

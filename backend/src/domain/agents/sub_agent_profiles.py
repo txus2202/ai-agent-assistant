@@ -50,6 +50,11 @@ class SubAgentProfile:
     tools: tuple[str, ...] = ()
 
     @property
+    def supports_image_generation(self) -> bool:
+        """Return True if this profile supports visual/image design generation."""
+        return "image_viewer" in self.tools or self.id in ("fidias", "fídias")
+
+    @property
     def name(self) -> str:
         """The canonical name of the agent (matches display_name)."""
         return self.display_name

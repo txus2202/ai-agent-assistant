@@ -73,8 +73,134 @@ def format_chat_history(chat_history: list[dict[str, Any]] | None, max_messages:
 class SubAgentRunner:
     """Stateless async runner for a single sub-agent invocation."""
 
-    @staticmethod
+    @classmethod
+    def _retrieve_rag_context(
+        cls, profile: SubAgentProfile, user_request: str, document_store: IDocumentStore
+    ) -> tuple[list[DocumentChunk], str]:
+        if not profile.uses_rag:
+            return [], ""
+        chunks = QueryVault.run(
+            query=user_request,
+            document_store=document_store,
+            filter=profile.rag_filter,
+        )
+        return chunks, QueryVault.chunks_to_context(chunks)
+
+    @classmethod
+    def _build_visual_directive(cls, image_provider: str | None) -> str:
+        if image_provider:
+            return (
+                f"## DIRECTIVA DE GENERACIÓN VISUAL (MOTOR {image_provider.upper()} ACTIVO)\n"
+                f"Tienes activo el motor de generación de imágenes '{image_provider}'.\n"
+                "Cuando el usuario solicite diseñar o generar una imagen, recurso gráfico, logotipo, ilustración o concepto visual de interfaz:\n"
+                "1. Proporciona una breve explicación técnica y estética de tu propuesta en español.\n"
+                "2. Incluye obligatoriamente en una línea independiente la directiva para generar la imagen real:\n"
+                "[GENERATE_IMAGE: <detailed English visual prompt describing the interface or graphic with style, composition, colors, and 8k quality>]\n"
+                "El sistema interceptará esta directiva, generará el archivo de imagen real mediante dicho motor y lo presentará al usuario."
+            )
+        return (
+            "## DIRECTIVA DE MAQUETACIÓN VISUAL (MODO SIN GENERADOR DE IMÁGENES)\n"
+            "No hay ningún motor de generación de imágenes rasterizadas (PNG/JPG) activo en el entorno.\n"
+            "Por lo tanto, ante cualquier solicitud de diseño de interfaz, mockup, dashboard, landing page o concepto visual:\n"
+            "Debes realizar obligatoriamente una maquetación en HTML5 completa, rica y visualmente impactante entregada dentro de un único bloque de código:\n"
+            "```html\n"
+            "<!DOCTYPE html>\n"
+            "<html lang=\"es\">\n"
+            "<head>\n"
+            "  <meta charset=\"UTF-8\">\n"
+            "  <style>\n"
+            "    /* CSS moderno completo: Flexbox/Grid, sombras elegantes, paleta armónica, tipografías y responsive */\n"
+            "  </style>\n"
+            "</head>\n"
+            "<body>\n"
+            "  <!-- Estructura HTML5 semántica y visualmente terminada -->\n"
+            "  <script>\n"
+            "    /* Vanilla JS para interactividad básica si aplica */\n"
+            "  </script>\n"
+            "</body>\n"
+            "</html>\n"
+            "```\n"
+            "Bajo ningún concepto generes enlaces de imagen ficticios ni intentes generar archivos binarios. La entrega visual debe ser la maquetación HTML5/CSS completa para su previsualización y descarga mediante la herramienta de código."
+        )
+
+    @classmethod
+    def _build_prompt(
+        cls,
+        profile: SubAgentProfile,
+        user_request: str,
+        context_block: str,
+        chat_history: list[dict[str, Any]] | None,
+        image_provider: str | None,
+    ) -> str:
+        parts: list[str] = [profile.system_prompt]
+        if profile.is_supervisor:
+            roster_context = format_team_roster(exclude_id=profile.id)
+            if roster_context:
+                parts.append(roster_context)
+        if context_block:
+            parts.append(context_block)
+        chat_history_block = format_chat_history(chat_history)
+        if chat_history_block:
+            parts.append(chat_history_block)
+        if profile.supports_image_generation:
+            parts.append(cls._build_visual_directive(image_provider))
+        parts.append(f"## User Request\n{user_request}")
+        return "\n\n".join(parts)
+
+    @classmethod
+    async def _postprocess_visual_content(cls, content: str, image_provider: str | None) -> str:
+        if not image_provider:
+            # Strip any stray image generation directives if present without backtracking
+            cleaned = re.sub(r"\[GENERATE_IMAGE:\s*[^\]]+\]", "", content)
+            return re.sub(r"<!--\s*generate_image:\s*[^-]+-->", "", cleaned)
+
+        # 1. Search for primary explicit directive
+        match = re.search(r"\[GENERATE_IMAGE:\s*([^\]]+)\]", content)
+        if not match:
+            match = re.search(r"<!--\s*generate_image:\s*([^-]+)-->", content)
+
+        if match:
+            gen_prompt = match.group(1).strip()
+            try:
+                _, img_url = await ImageGenerationService.generate_and_save(gen_prompt, provider=image_provider)
+                clean_alt = re.sub(r"[\r\n]+", " ", gen_prompt)[:45].strip()
+                replacement = f"![{clean_alt}]({img_url})"
+                return content[:match.start()] + replacement + content[match.end():]
+            except Exception as exc:
+                warning = f"\n\n> ⚠️ *No se pudo generar la imagen con {image_provider}: {exc}*\n\n"
+                return content[:match.start()] + warning + content[match.end():]
+
+        # 2. Fallback: check placeholder markdown image link
+        img_match = re.search(r"!\[([^\]]*)\]\(([^)\s]+)\)", content)
+        if img_match:
+            alt_text = img_match.group(1).strip() or "diseño visual"
+            target_url = img_match.group(2)
+            if "placeholder" in target_url.lower() or target_url.startswith("http"):
+                try:
+                    _, img_url = await ImageGenerationService.generate_and_save(alt_text, provider=image_provider)
+                    return content[:img_match.start()] + f"![{alt_text}]({img_url})" + content[img_match.end():]
+                except Exception:
+                    pass
+
+        return content
+
+    @classmethod
+    def _calculate_usage(cls, prompt: str, content: str, llm_provider: ILLMProvider) -> dict[str, int]:
+        usage: dict[str, int] = {}
+        if hasattr(llm_provider, "get_last_usage"):
+            usage = llm_provider.get_last_usage() or {}
+
+        in_tkn = usage.get("input", 0)
+        out_tkn = usage.get("output", 0)
+        if not in_tkn or in_tkn == 0:
+            in_tkn = max(15, len(prompt) // 4)
+        if not out_tkn or out_tkn == 0:
+            out_tkn = max(10, len(content) // 4)
+        return {"input": in_tkn, "output": out_tkn, "total": in_tkn + out_tkn}
+
+    @classmethod
     async def run(
+        cls,
         role: str,
         user_request: str,
         llm_provider: ILLMProvider,
@@ -87,133 +213,20 @@ class SubAgentRunner:
 
         The ILLMProvider.complete() is synchronous; it is offloaded to a
         thread pool via asyncio.to_thread() to avoid blocking the event loop.
-
-        Args:
-            role:           The role identifier or name determining which profile and prompts to use.
-            user_request:   The (already formalized) user request to process.
-            llm_provider:   ILLMProvider to call for completion.
-            document_store: Store used for RAG retrieval.
-            model_name:     Model to use for the LLM call.
-            chat_history:   Optional list of previous messages in this session.
-
-        Returns:
-            SubAgentResponse with the agent's content and RAG chunks used.
         """
         profile = get_profile(role)
-
-        # ── 1. RAG retrieval ──────────────────────────────────────────────
-        context_chunks: list[DocumentChunk] = []
-        context_block = ""
-
-        if profile.uses_rag:
-            context_chunks = QueryVault.run(
-                query=user_request,
-                document_store=document_store,
-                filter=profile.rag_filter,
-            )
-            context_block = QueryVault.chunks_to_context(context_chunks)
-
-        # ── 2. Build prompt ───────────────────────────────────────────────
-        parts: list[str] = [profile.system_prompt]
-        if profile.is_supervisor:
-            roster_context = format_team_roster(exclude_id=profile.id)
-            if roster_context:
-                parts.append(roster_context)
-        if context_block:
-            parts.append(context_block)
-        chat_history_block = format_chat_history(chat_history)
-        if chat_history_block:
-            parts.append(chat_history_block)
-
-        # Dynamic directive for Fidias depending on IMAGE_GENERATION_PROVIDER
+        context_chunks, context_block = cls._retrieve_rag_context(profile, user_request, document_store)
         image_provider = ImageGenerationService.get_provider_name()
-        if profile.id in ("fidias", "fídias"):
-            if image_provider:
-                parts.append(
-                    f"## DIRECTIVA DE GENERACIÓN VISUAL (MOTOR {image_provider.upper()} ACTIVO)\n"
-                    f"Tienes activo el motor de generación de imágenes '{image_provider}'.\n"
-                    "Cuando el usuario solicite diseñar o generar una imagen, recurso gráfico, logotipo, ilustración o concepto visual de interfaz:\n"
-                    "1. Proporciona una breve explicación técnica y estética de tu propuesta en español.\n"
-                    "2. Incluye obligatoriamente en una línea independiente la directiva para generar la imagen real:\n"
-                    "[GENERATE_IMAGE: <detailed English visual prompt describing the interface or graphic with style, composition, colors, and 8k quality>]\n"
-                    "El sistema interceptará esta directiva, generará el archivo de imagen real mediante dicho motor y lo presentará al usuario."
-                )
-            else:
-                parts.append(
-                    "## DIRECTIVA DE MAQUETACIÓN VISUAL (MODO SIN GENERADOR DE IMÁGENES)\n"
-                    "No hay ningún motor de generación de imágenes rasterizadas (PNG/JPG) activo en el entorno.\n"
-                    "Por lo tanto, ante cualquier solicitud de diseño de interfaz, mockup, dashboard, landing page o concepto visual:\n"
-                    "Debes realizar obligatoriamente una maquetación en HTML5 completa, rica y visualmente impactante entregada dentro de un único bloque de código:\n"
-                    "```html\n"
-                    "<!DOCTYPE html>\n"
-                    "<html lang=\"es\">\n"
-                    "<head>\n"
-                    "  <meta charset=\"UTF-8\">\n"
-                    "  <style>\n"
-                    "    /* CSS moderno completo: Flexbox/Grid, sombras elegantes, paleta armónica, tipografías y responsive */\n"
-                    "  </style>\n"
-                    "</head>\n"
-                    "<body>\n"
-                    "  <!-- Estructura HTML5 semántica y visualmente terminada -->\n"
-                    "  <script>\n"
-                    "    /* Vanilla JS para interactividad básica si aplica */\n"
-                    "  </script>\n"
-                    "</body>\n"
-                    "</html>\n"
-                    "```\n"
-                    "Bajo ningún concepto generes enlaces de imagen ficticios ni intentes generar archivos binarios. La entrega visual debe ser la maquetación HTML5/CSS completa para su previsualización y descarga mediante la herramienta de código."
-                )
+        prompt = cls._build_prompt(profile, user_request, context_block, chat_history, image_provider)
 
-        parts.append(f"## User Request\n{user_request}")
-
-        prompt = "\n\n".join(parts)
-
-        # ── 3. LLM call (offloaded to thread pool — ILLMProvider is sync) ─
         start_time = time.perf_counter()
         content = await asyncio.to_thread(llm_provider.complete, prompt, model_name)
         latency = round(time.perf_counter() - start_time, 2)
 
-        # ── 4. Post-processing for Fidias image generation ───────────────
-        if profile.id in ("fidias", "fídias") and image_provider:
-            match = re.search(r"\[GENERATE_IMAGE:\s*(.+?)\]", content, flags=re.DOTALL)
-            if not match:
-                match = re.search(r"<!--\s*generate_image:\s*(.+?)\s*-->", content, flags=re.DOTALL)
+        if profile.supports_image_generation:
+            content = await cls._postprocess_visual_content(content, image_provider)
 
-            if match:
-                gen_prompt = match.group(1).strip()
-                try:
-                    _, img_url = await ImageGenerationService.generate_and_save(gen_prompt, provider=image_provider)
-                    clean_alt = re.sub(r'[\r\n]+', ' ', gen_prompt)[:45].strip()
-                    replacement = f"![{clean_alt}]({img_url})"
-                    content = content[:match.start()] + replacement + content[match.end():]
-                except Exception as exc:
-                    content = content[:match.start()] + f"\n\n> ⚠️ *No se pudo generar la imagen con {image_provider}: {exc}*\n\n" + content[match.end():]
-            else:
-                # Fallback: check if the model attempted to produce a markdown image link with a placeholder URL
-                img_match = re.search(r"!\[(.*?)\]\((https?://[^\s\)]+|[^\s\)]+placeholder[^\s\)]*)\)", content)
-                if img_match:
-                    alt_text = img_match.group(1) or "diseño visual"
-                    try:
-                        _, img_url = await ImageGenerationService.generate_and_save(alt_text, provider=image_provider)
-                        content = content[:img_match.start()] + f"![{alt_text}]({img_url})" + content[img_match.end():]
-                    except Exception:
-                        pass
-        elif profile.id in ("fidias", "fídias") and not image_provider:
-            # Strip any stray image generation directives if present
-            content = re.sub(r"\[GENERATE_IMAGE:\s*.+?\]", "", content, flags=re.DOTALL)
-            content = re.sub(r"<!--\s*generate_image:\s*.+?\s*-->", "", content, flags=re.DOTALL)
-
-        usage: dict[str, int] = {}
-        if hasattr(llm_provider, "get_last_usage"):
-            usage = llm_provider.get_last_usage() or {}
-
-        in_tkn = usage.get("input", 0)
-        out_tkn = usage.get("output", 0)
-        if not in_tkn or in_tkn == 0:
-            in_tkn = max(15, len(prompt) // 4)
-        if not out_tkn or out_tkn == 0:
-            out_tkn = max(10, len(content) // 4)
-        usage = {"input": in_tkn, "output": out_tkn, "total": in_tkn + out_tkn}
+        usage = cls._calculate_usage(prompt, content, llm_provider)
 
         return SubAgentResponse(
             role=role,

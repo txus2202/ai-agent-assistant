@@ -17,12 +17,16 @@ def test_trace_context_attributes():
         trace_id="tr-123",
         session_id="ses-456",
         name="architecture_debate",
+        user_id="user-789",
+        tags=["flow:debate", "agent:fidias"],
         metadata={"user": "developer"},
     )
     assert is_dataclass(ctx)
     assert ctx.trace_id == "tr-123"
     assert ctx.session_id == "ses-456"
     assert ctx.name == "architecture_debate"
+    assert ctx.user_id == "user-789"
+    assert ctx.tags == ["flow:debate", "agent:fidias"]
     assert ctx.metadata == {"user": "developer"}
 
 
@@ -58,9 +62,19 @@ def test_noop_observability_service_satisfies_protocol():
     service = NoOpObservabilityService()
     assert isinstance(service, IObservabilityService)
 
-    trace = service.start_trace(name="debate", session_id="ses-1")
+    trace = service.start_trace(
+        name="debate",
+        session_id="ses-1",
+        user_id="user-42",
+        input_data="Necesito una landing page",
+        tags=["flow:debate", "agent:fidias"],
+    )
     assert isinstance(trace, TraceContext)
-    service.end_trace(trace, status="SUCCESS")
+    assert trace.user_id == "user-42"
+    assert trace.tags == ["flow:debate", "agent:fidias"]
+
+    service.score_trace(trace, name="hitl_decision", value=1.0, comment="Aprobado por el usuario")
+    service.end_trace(trace, status="SUCCESS", output="Landing page generada")
 
     span = service.start_agent_span(trace, agent_role="interpreter", input_prompt="hello")
     assert isinstance(span, SpanContext)

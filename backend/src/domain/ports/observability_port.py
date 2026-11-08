@@ -14,6 +14,8 @@ class TraceContext:
     trace_id: str
     session_id: str
     name: str
+    user_id: str | None = None
+    tags: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -49,6 +51,9 @@ class IObservabilityService(Protocol):
         self,
         name: str,
         session_id: str,
+        user_id: str | None = None,
+        input_data: Any = None,
+        tags: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> TraceContext:
         """Initialize a new trace for a session / debate."""
@@ -61,6 +66,16 @@ class IObservabilityService(Protocol):
         output: Any = None,
     ) -> None:
         """Conclude an active trace."""
+        ...
+
+    def score_trace(
+        self,
+        trace_context: TraceContext,
+        name: str,
+        value: float,
+        comment: str | None = None,
+    ) -> None:
+        """Record an evaluation score on an active or concluded trace."""
         ...
 
     def start_agent_span(
@@ -98,13 +113,21 @@ class NoOpObservabilityService:
         self,
         name: str,
         session_id: str,
+        user_id: str | None = None,
+        input_data: Any = None,
+        tags: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> TraceContext:
+        meta = dict(metadata or {})
+        if input_data is not None:
+            meta["input"] = input_data
         return TraceContext(
             trace_id=str(uuid.uuid4()),
             session_id=session_id,
             name=name,
-            metadata=metadata or {},
+            user_id=user_id,
+            tags=list(tags or []),
+            metadata=meta,
         )
 
     def end_trace(
@@ -112,6 +135,16 @@ class NoOpObservabilityService:
         trace_context: TraceContext,
         status: str = "SUCCESS",
         output: Any = None,
+    ) -> None:
+        # No-op implementation when telemetry is disabled or unconfigured
+        pass
+
+    def score_trace(
+        self,
+        trace_context: TraceContext,
+        name: str,
+        value: float,
+        comment: str | None = None,
     ) -> None:
         # No-op implementation when telemetry is disabled or unconfigured
         pass

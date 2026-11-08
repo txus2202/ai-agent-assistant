@@ -13,7 +13,7 @@ openai==3.24.0                # OpenAI
 anthropic==1.11.0             # Anthropic
 
 # Phase 3+: Learning Agent extractors
-PyMuPDF==1.28.2               # PDF text extraction
+PyMuPDF==2.1               # PDF text extraction
 httpx==0.28.1                 # HTTP client for URL extraction (also used in FastAPI tests)
 beautifulsoup4==4.15.0        # HTML parsing for URL extractor
 

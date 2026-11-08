@@ -1042,17 +1042,19 @@ defineExpose({
 
                   <!-- Image preview -->
                   <div class="p-3 bg-[#020408] flex items-center justify-center border-t border-space-900/50">
-                    <img
-                      :src="block.content"
-                      :alt="block.alt"
-                      tabindex="0"
-                      role="button"
-                      data-test="chat-image-preview"
-                      class="max-h-60 rounded object-contain cursor-pointer hover:opacity-95 transition-opacity focus:outline-none focus:ring-2 focus:ring-pink-500"
+                    <button
+                      type="button"
+                      class="p-0 bg-transparent border-0 cursor-pointer rounded overflow-hidden focus:outline-none focus:ring-2 focus:ring-pink-500 max-h-60 flex items-center justify-center"
+                      :aria-label="`Ver imagen: ${block.alt || 'Recurso visual'}`"
                       @click="openImageModal(block.content, block.alt, `Recurso de ${msg.agentName || 'Diseño'}`)"
-                      @keydown.enter="openImageModal(block.content, block.alt, `Recurso de ${msg.agentName || 'Diseño'}`)"
-                      @keydown.space.prevent="openImageModal(block.content, block.alt, `Recurso de ${msg.agentName || 'Diseño'}`)"
-                    />
+                    >
+                      <img
+                        :src="block.content"
+                        :alt="block.alt"
+                        data-test="chat-image-preview"
+                        class="max-h-60 rounded object-contain hover:opacity-95 transition-opacity"
+                      />
+                    </button>
                   </div>
                 </div>
 

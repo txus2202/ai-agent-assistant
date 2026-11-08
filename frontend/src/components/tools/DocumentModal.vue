@@ -356,7 +356,7 @@ onUnmounted(() => {
 }
 
 :deep(.doc-inline-code) {
-  background: rgba(236, 72, 153, 0.15);
+  background: #1e0e1a;
   border: 1px solid rgba(236, 72, 153, 0.3);
   padding: 0.15rem 0.35rem;
   border-radius: 0.25rem;
@@ -371,7 +371,7 @@ onUnmounted(() => {
   margin: 1rem 0;
   color: #ffffff;
   font-style: italic;
-  background: rgba(236, 72, 153, 0.05);
+  background: #100b14;
   padding-top: 0.25rem;
   padding-bottom: 0.25rem;
   border-radius: 0 0.25rem 0.25rem 0;
@@ -391,7 +391,7 @@ onUnmounted(() => {
 }
 
 :deep(.doc-table th) {
-  background: rgba(236, 72, 153, 0.1);
+  background: #1a0b16;
   color: #ffffff;
   font-weight: 700;
 }

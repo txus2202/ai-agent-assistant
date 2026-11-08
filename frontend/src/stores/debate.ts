@@ -151,6 +151,30 @@ export function cleanAgentMessageContent(rawContent: string): string {
   return clean
 }
 
+export function getToolSpokenFallback(fenceType: string): string {
+  if (/mermaid|diagram/.test(fenceType)) {
+    return 'He generado el diagrama arquitectónico en pantalla.'
+  }
+  if (/markdown|md|doc/.test(fenceType)) {
+    return 'He generado el documento técnico en pantalla.'
+  }
+  return 'He generado el código en pantalla.'
+}
+
+export function findSentenceSplitIndex(buffer: string): number {
+  const terminalMatch = /[.!?\n]/.exec(buffer)
+  if (terminalMatch) {
+    return terminalMatch.index
+  }
+  if (buffer.length >= 20) {
+    const clauseMatch = /[,:;]/.exec(buffer.slice(20))
+    if (clauseMatch) {
+      return 20 + clauseMatch.index
+    }
+  }
+  return -1
+}
+
 export const useDebateStore = defineStore('debate', () => {
   const isConnected = ref(false)
   const isDebating = ref(false)
@@ -834,16 +858,6 @@ export const useDebateStore = defineStore('debate', () => {
     hasSpokenInCurrentMessage = true
   }
 
-  function getToolSpokenFallback(fenceType: string): string {
-    if (/mermaid|diagram/.test(fenceType)) {
-      return 'He generado el diagrama arquitectónico en pantalla.'
-    }
-    if (/markdown|md|doc/.test(fenceType)) {
-      return 'He generado el documento técnico en pantalla.'
-    }
-    return 'He generado el código en pantalla.'
-  }
-
   function handleOpenFenceInStream(fenceIdx: number, role?: string) {
     const textBefore = ttsStreamBuffer.slice(0, fenceIdx).trim()
     if (textBefore) {
@@ -856,20 +870,6 @@ export const useDebateStore = defineStore('debate', () => {
       codeFenceType = ttsStreamBuffer.slice(0, newlineIdx).trim().toLowerCase()
       ttsStreamBuffer = ttsStreamBuffer.slice(newlineIdx + 1)
     }
-  }
-
-  function findSentenceSplitIndex(buffer: string): number {
-    const terminalMatch = /[.!?\n]/.exec(buffer)
-    if (terminalMatch) {
-      return terminalMatch.index
-    }
-    if (buffer.length >= 20) {
-      const clauseMatch = /[,:;]/.exec(buffer.slice(20))
-      if (clauseMatch) {
-        return 20 + clauseMatch.index
-      }
-    }
-    return -1
   }
 
   function processOutsideFenceChunk(role?: string): boolean {
@@ -1021,8 +1021,8 @@ export const useDebateStore = defineStore('debate', () => {
     })
 
     const errorContent = `Error: ${event.content}`
-    const lastMsg = messages.value[messages.value.length - 1]
-    if (lastMsg && lastMsg.role === 'assistant' && (lastMsg.content === errorContent || lastMsg.content === event.content)) {
+    const lastMsg = messages.value.at(-1)
+    if (lastMsg?.role === 'assistant' && (lastMsg.content === errorContent || lastMsg.content === event.content)) {
       return
     }
 

@@ -362,14 +362,14 @@ onUnmounted(() => {
   border-radius: 0.25rem;
   font-family: ui-monospace, monospace;
   font-size: 0.8rem;
-  color: #fdf2f8;
+  color: #ffffff;
 }
 
 :deep(.doc-blockquote) {
   border-left: 3px solid #ec4899;
   padding-left: 1rem;
   margin: 1rem 0;
-  color: #f1f5f9;
+  color: #ffffff;
   font-style: italic;
   background: rgba(236, 72, 153, 0.05);
   padding-top: 0.25rem;

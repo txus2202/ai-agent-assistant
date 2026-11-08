@@ -7,7 +7,7 @@
 // Matches any fenced code/document/diagram block (```lang ... ``` or ``` ... ```)
 const FENCED_TOOL_REGEX = /```[^\n`]*\n[\s\S]*?```/gi
 // Matches unclosed trailing code/document block (e.g., during streaming)
-const UNCLOSED_FENCE_REGEX = /```[\s\S]*$/gi
+const UNCLOSED_FENCE_REGEX = /```[^`]*$/i
 // Matches image generation directives
 const IMAGE_DIRECTIVE_REGEX = /(?:\[GENERATE_IMAGE:[^\]]*\]|<!--\s*generate_image:[\s\S]*?-->)/gi
 // Matches Markdown images ![alt](url)
@@ -21,7 +21,7 @@ export function cleanTextForTts(text: string): string {
   // Detect tool presence before stripping
   const hasMermaid = /```(?:mermaid|diagram)/i.test(text)
   const hasDocument = /```(?:markdown|md|doc)/i.test(text)
-  const hasCode = /```(?:html|js|javascript|ts|typescript|css|py|python|go|golang|java|json|bash|sh|sql|vue|jsx|tsx|cpp|c|rust|php|yaml|yml)/i.test(text) || (/```/i.test(text) && !hasMermaid && !hasDocument)
+  const hasCode = /```/i.test(text) && !hasMermaid && !hasDocument
   const hasImage = IMAGE_TAG_REGEX.test(text) || IMAGE_DIRECTIVE_REGEX.test(text)
 
   // Strip all tool blocks (code, diagrams, documents, image directives, markdown images)

@@ -91,9 +91,10 @@ describe('DocumentModal.vue', () => {
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     const openSpy = vi.spyOn(window, 'open').mockReturnValue({
       document: {
-        write: vi.fn(),
-        close: vi.fn()
-      }
+        documentElement: { innerHTML: '' },
+      },
+      focus: vi.fn(),
+      print: vi.fn()
     } as unknown as Window)
 
     const wrapper = mount(DocumentModal, {

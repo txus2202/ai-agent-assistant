@@ -1045,9 +1045,13 @@ defineExpose({
                     <img
                       :src="block.content"
                       :alt="block.alt"
+                      tabindex="0"
+                      role="button"
                       data-test="chat-image-preview"
-                      class="max-h-60 rounded object-contain cursor-pointer hover:opacity-95 transition-opacity"
+                      class="max-h-60 rounded object-contain cursor-pointer hover:opacity-95 transition-opacity focus:outline-none focus:ring-2 focus:ring-pink-500"
                       @click="openImageModal(block.content, block.alt, `Recurso de ${msg.agentName || 'Diseño'}`)"
+                      @keydown.enter="openImageModal(block.content, block.alt, `Recurso de ${msg.agentName || 'Diseño'}`)"
+                      @keydown.space.prevent="openImageModal(block.content, block.alt, `Recurso de ${msg.agentName || 'Diseño'}`)"
                     />
                   </div>
                 </div>

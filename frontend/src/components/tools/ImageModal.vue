@@ -52,7 +52,7 @@ const downloadImage = () => {
     link.download = `${safeTitle}_${Date.now()}.png`
     document.body.appendChild(link)
     link.click()
-    document.body.removeChild(link)
+    link.remove()
   } catch (err) {
     console.error('Failed to download image:', err)
   }

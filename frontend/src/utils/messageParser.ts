@@ -125,7 +125,7 @@ function createFencedBlock(langRaw: string, codeContent: string): MessageBlock {
 
 function handleDocumentAgentFallback(rawContent: string): MessageBlock[] | null {
   const matchHeading = /(?:^|\n)(#[ \t]+[^\n]+)/.exec(rawContent)
-  if (!matchHeading || matchHeading.index === undefined) {
+  if (matchHeading?.index === undefined) {
     return null
   }
   const headingPos = matchHeading.index + (matchHeading[0].startsWith('\n') ? 1 : 0)
@@ -148,15 +148,7 @@ function handleDocumentAgentFallback(rawContent: string): MessageBlock[] | null 
   return result
 }
 
-/**
- * Parses message markdown content into a sequential list of text blocks,
- * Mermaid diagram blocks, fenced code blocks, documents, and images for specialized tool rendering.
- */
-export function parseMessageContent(rawContent: string, options?: ParseOptions): MessageBlock[] {
-  if (!rawContent?.trim()) {
-    return []
-  }
-
+function extractFencedBlocksAndText(rawContent: string): MessageBlock[] {
   const blocks: MessageBlock[] = []
   let lastIndex = 0
   let match: RegExpExecArray | null
@@ -192,6 +184,20 @@ export function parseMessageContent(rawContent: string, options?: ParseOptions):
       blocks.push(...parseTextAndImages(trailingText))
     }
   }
+
+  return blocks
+}
+
+/**
+ * Parses message markdown content into a sequential list of text blocks,
+ * Mermaid diagram blocks, fenced code blocks, documents, and images for specialized tool rendering.
+ */
+export function parseMessageContent(rawContent: string, options?: ParseOptions): MessageBlock[] {
+  if (!rawContent?.trim()) {
+    return []
+  }
+
+  const blocks = extractFencedBlocksAndText(rawContent)
 
   // Fallback for document agents (e.g. Calíope) emitting raw markdown without fenced code blocks
   if (options?.isDocumentAgent && !blocks.some(b => b.type === 'document' || b.type === 'code')) {

@@ -151,13 +151,13 @@ class SubAgentRunner:
     async def _postprocess_visual_content(cls, content: str, image_provider: str | None) -> str:
         if not image_provider:
             # Strip any stray image generation directives if present without backtracking
-            cleaned = re.sub(r"\[GENERATE_IMAGE:\s*[^\]]+\]", "", content)
-            return re.sub(r"<!--\s*generate_image:\s*[^-]+-->", "", cleaned)
+            cleaned = re.sub(r"\[GENERATE_IMAGE:[^\]]+\]", "", content)
+            return re.sub(r"<!--\s*generate_image:[^-]+-->", "", cleaned)
 
         # 1. Search for primary explicit directive
-        match = re.search(r"\[GENERATE_IMAGE:\s*([^\]]+)\]", content)
+        match = re.search(r"\[GENERATE_IMAGE:([^\]]+)\]", content)
         if not match:
-            match = re.search(r"<!--\s*generate_image:\s*([^-]+)-->", content)
+            match = re.search(r"<!--\s*generate_image:([^-]+)-->", content)
 
         if match:
             gen_prompt = match.group(1).strip()

@@ -394,7 +394,7 @@ export function exportDocumentToPdf(markdown: string, title?: string): void {
     window.onload = function() {
       window.print();
     };
-  <\/script>
+  </script>
 </body>
 </html>
 `)

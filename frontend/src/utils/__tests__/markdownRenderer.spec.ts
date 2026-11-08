@@ -68,7 +68,7 @@ describe('markdownRenderer.ts', () => {
     global.URL.revokeObjectURL = vi.fn()
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     const appendSpy = vi.spyOn(document.body, 'appendChild')
-    const removeSpy = vi.spyOn(document.body, 'removeChild')
+    const removeSpy = vi.spyOn(HTMLAnchorElement.prototype, 'remove').mockImplementation(() => {})
 
     downloadMarkdownFile('# Titulo\nContenido', 'manual_tecnico')
 
@@ -78,20 +78,20 @@ describe('markdownRenderer.ts', () => {
   })
 
   it('opens a print window when exporting to PDF', () => {
-    const writeMock = vi.fn()
-    const closeMock = vi.fn()
+    const printMock = vi.fn()
+    const focusMock = vi.fn()
     const openMock = vi.spyOn(window, 'open').mockReturnValue({
       document: {
-        write: writeMock,
-        close: closeMock,
+        documentElement: { innerHTML: '' },
       },
+      print: printMock,
+      focus: focusMock,
     } as unknown as Window)
 
     exportDocumentToPdf('# Reporte de Arquitectura\nTexto', 'Reporte de Arquitectura')
 
     expect(openMock).toHaveBeenCalled()
-    expect(writeMock).toHaveBeenCalled()
-    expect(closeMock).toHaveBeenCalled()
+    expect(printMock).toHaveBeenCalled()
   })
 })
 

@@ -88,117 +88,140 @@ function getHeadingHtml(trimmed: string): string | null {
   return null
 }
 
+class MarkdownDocParser {
+  private readonly output: string[] = []
+  private inUl = false
+  private inOl = false
+  private inBlockquote = false
+
+  public parse(lines: string[]): string {
+    for (const line of lines) {
+      this.processLine((line || '').trim())
+    }
+    this.closeLists()
+    this.closeBlockquote()
+    return this.output.join('\n')
+  }
+
+  private closeLists(): void {
+    if (this.inUl) {
+      this.output.push('</ul>')
+      this.inUl = false
+    }
+    if (this.inOl) {
+      this.output.push('</ol>')
+      this.inOl = false
+    }
+  }
+
+  private closeBlockquote(): void {
+    if (this.inBlockquote) {
+      this.output.push('</blockquote>')
+      this.inBlockquote = false
+    }
+  }
+
+  private processLine(trimmed: string): void {
+    if (!trimmed) {
+      this.closeLists()
+      this.closeBlockquote()
+      return
+    }
+
+    if (this.handlePassthrough(trimmed)) return
+    if (this.handleBlockquote(trimmed)) return
+    this.closeBlockquote()
+
+    if (this.handleHeading(trimmed)) return
+    if (this.handleHorizontalRule(trimmed)) return
+    if (this.handleLists(trimmed)) return
+
+    this.closeLists()
+    this.output.push(`<p class="doc-p">${formatInline(trimmed)}</p>`)
+  }
+
+  private handlePassthrough(trimmed: string): boolean {
+    const isCodeMarker = trimmed.startsWith('__CODE_BLOCK_') && trimmed.endsWith('__')
+    const isTableElement =
+      trimmed.startsWith('<table class="doc-table">') ||
+      trimmed.startsWith('</table>') ||
+      trimmed.startsWith('<thead>') ||
+      trimmed.startsWith('<tbody>') ||
+      trimmed.startsWith('<tr>')
+
+    if (isCodeMarker || isTableElement) {
+      this.closeLists()
+      this.closeBlockquote()
+      this.output.push(trimmed)
+      return true
+    }
+    return false
+  }
+
+  private handleBlockquote(trimmed: string): boolean {
+    if (!trimmed.startsWith('> ')) return false
+    this.closeLists()
+    if (!this.inBlockquote) {
+      this.output.push('<blockquote class="doc-blockquote">')
+      this.inBlockquote = true
+    }
+    this.output.push(`<p>${formatInline(trimmed.slice(2))}</p>`)
+    return true
+  }
+
+  private handleHeading(trimmed: string): boolean {
+    const headingHtml = getHeadingHtml(trimmed)
+    if (!headingHtml) return false
+    this.closeLists()
+    this.output.push(headingHtml)
+    return true
+  }
+
+  private handleHorizontalRule(trimmed: string): boolean {
+    if (!/^(\*\*\*|---|___)$/.test(trimmed)) return false
+    this.closeLists()
+    this.output.push('<hr class="doc-hr" />')
+    return true
+  }
+
+  private handleLists(trimmed: string): boolean {
+    if (/^[-*+]\s+/.test(trimmed)) {
+      if (this.inOl) {
+        this.output.push('</ol>')
+        this.inOl = false
+      }
+      if (!this.inUl) {
+        this.output.push('<ul class="doc-ul">')
+        this.inUl = true
+      }
+      this.output.push(`<li>${formatInline(trimmed.replace(/^[-*+]\s+/, ''))}</li>`)
+      return true
+    }
+    if (/^\d+\.\s+/.test(trimmed)) {
+      if (this.inUl) {
+        this.output.push('</ul>')
+        this.inUl = false
+      }
+      if (!this.inOl) {
+        this.output.push('<ol class="doc-ol">')
+        this.inOl = true
+      }
+      this.output.push(`<li>${formatInline(trimmed.replace(/^\d+\.\s+/, ''))}</li>`)
+      return true
+    }
+    return false
+  }
+}
+
 export function renderMarkdownToHtml(markdown: string): string {
   if (!markdown) return ''
 
   const { processed, codeBlocks } = extractCodeBlocks(markdown)
   const textWithTables = renderMarkdownTables(processed)
 
-  const lines = textWithTables.split('\n')
-  const output: string[] = []
-  let inUl = false
-  let inOl = false
-  let inBlockquote = false
+  const parser = new MarkdownDocParser()
+  let finalHtml = parser.parse(textWithTables.split('\n'))
 
-  const closeLists = () => {
-    if (inUl) {
-      output.push('</ul>')
-      inUl = false
-    }
-    if (inOl) {
-      output.push('</ol>')
-      inOl = false
-    }
-  }
-
-  const closeBlockquote = () => {
-    if (inBlockquote) {
-      output.push('</blockquote>')
-      inBlockquote = false
-    }
-  }
-
-  for (const line of lines) {
-    const trimmed = (line || '').trim()
-
-    if (trimmed.startsWith('__CODE_BLOCK_') && trimmed.endsWith('__')) {
-      closeLists()
-      closeBlockquote()
-      output.push(trimmed)
-      continue
-    }
-
-    if (trimmed.startsWith('<table class="doc-table">') || trimmed.startsWith('</table>') || trimmed.startsWith('<thead>') || trimmed.startsWith('<tbody>') || trimmed.startsWith('<tr>')) {
-      closeLists()
-      closeBlockquote()
-      output.push(trimmed)
-      continue
-    }
-
-    if (!trimmed) {
-      closeLists()
-      closeBlockquote()
-      continue
-    }
-
-    if (trimmed.startsWith('> ')) {
-      closeLists()
-      if (!inBlockquote) {
-        output.push('<blockquote class="doc-blockquote">')
-        inBlockquote = true
-      }
-      output.push(`<p>${formatInline(trimmed.slice(2))}</p>`)
-      continue
-    }
-    closeBlockquote()
-
-    const headingHtml = getHeadingHtml(trimmed)
-    if (headingHtml) {
-      closeLists()
-      output.push(headingHtml)
-      continue
-    }
-
-    if (/^(\*\*\*|---|___)$/.test(trimmed)) {
-      closeLists()
-      output.push('<hr class="doc-hr" />')
-      continue
-    }
-
-    if (/^[-*+]\s+/.test(trimmed)) {
-      if (inOl) {
-        output.push('</ol>')
-        inOl = false
-      }
-      if (!inUl) {
-        output.push('<ul class="doc-ul">')
-        inUl = true
-      }
-      output.push(`<li>${formatInline(trimmed.replace(/^[-*+]\s+/, ''))}</li>`)
-      continue
-    }
-
-    if (/^\d+\.\s+/.test(trimmed)) {
-      if (inUl) {
-        output.push('</ul>')
-        inUl = false
-      }
-      if (!inOl) {
-        output.push('<ol class="doc-ol">')
-        inOl = true
-      }
-      output.push(`<li>${formatInline(trimmed.replace(/^\d+\.\s+/, ''))}</li>`)
-      continue
-    }
-
-    closeLists()
-    output.push(`<p class="doc-p">${formatInline(trimmed)}</p>`)
-  }
-
-  closeLists()
-  closeBlockquote()
-
-  let finalHtml = output.join('\n')
   codeBlocks.forEach((block, index) => {
     finalHtml = finalHtml.replaceAll(`__CODE_BLOCK_${index}__`, block)
   })
@@ -240,7 +263,7 @@ export function downloadMarkdownFile(content: string, filename?: string): void {
   link.download = finalFilename
   document.body.appendChild(link)
   link.click()
-  document.body.removeChild(link)
+  link.remove()
   URL.revokeObjectURL(url)
 }
 
@@ -258,9 +281,7 @@ export function exportDocumentToPdf(markdown: string, title?: string): void {
     return
   }
 
-  printWindow.document.write(`
-<!DOCTYPE html>
-<html lang="es">
+  const htmlDoc = `
 <head>
   <meta charset="utf-8" />
   <title>${escapeHtml(docTitle)}</title>
@@ -384,13 +405,12 @@ export function exportDocumentToPdf(markdown: string, title?: string): void {
     <span>Documentación generada por Atenea AI (Calíope)</span>
     <span>${new Date().toLocaleDateString('es-ES')}</span>
   </div>
-  <script>
-    window.onload = function() {
-      window.print();
-    };
-  </script>
 </body>
-</html>
-`)
-  printWindow.document.close()
+`
+
+  if (printWindow.document?.documentElement) {
+    printWindow.document.documentElement.innerHTML = htmlDoc
+  }
+  printWindow.focus?.()
+  printWindow.print?.()
 }

@@ -464,7 +464,7 @@ agents:
       You will deliver the code within Markdown code blocks. Your technical scope is strictly limited to HTML5 (HTML, CSS, and vanilla JavaScript for UI interactions). **Under no circumstances** should you generate code for specific frameworks like React, Vue, Angular, or similar; if the design requires this type of development, you must limit yourself to delivering the layout or base design, explicitly stating that the developer agent will handle its implementation in the corresponding framework.
 
       ## 3. For Image Generation and Graphic Resources
-      - When an image generation provider is enabled (IMAGE_GENERATION_PROVIDER=pollinations | imagen): You will emit the directive `[GENERATE_IMAGE: <detailed English visual prompt>]` so the system automatically generates and displays the real image.
+      - When an image generation provider is enabled (IMAGE_GENERATION_PROVIDER=imagen): You will emit the directive `[GENERATE_IMAGE: <detailed English visual prompt>]` so the system automatically generates and displays the real image.
       - When no image generation provider is enabled (IMAGE_GENERATION_PROVIDER is unset or empty): You will deliver the most visual, complete, and rich HTML5/CSS/JS mockup layout enclosed in a single ```html code block, so the user can preview, copy, or download the full mockup through the code viewer.
       - Under no circumstances invent dummy image URLs; either emit the generation directive if enabled, or provide the complete HTML5 layout.
 

@@ -105,4 +105,77 @@ describe('CodeModal.vue', () => {
     expect(appendChildSpy).toHaveBeenCalled()
     expect(removeChildSpy).toHaveBeenCalled()
   })
+
+  it('renders preview and code tabs when language is html', async () => {
+    const htmlCode = '<h1>AbilaStore</h1><p>Bienvenidos</p>'
+    const wrapper = mount(CodeModal, {
+      props: {
+        isOpen: true,
+        code: htmlCode,
+        language: 'html',
+        extension: 'html',
+        title: 'Maqueta Web',
+        teleportDisabled: true
+      }
+    })
+
+    const previewTab = wrapper.find('[data-test="code-tab-preview"]')
+    const codeTab = wrapper.find('[data-test="code-tab-code"]')
+    expect(previewTab.exists()).toBe(true)
+    expect(codeTab.exists()).toBe(true)
+
+    // Defaults to preview mode
+    const iframe = wrapper.find('[data-test="code-modal-preview-iframe"]')
+    expect(iframe.exists()).toBe(true)
+
+    // Sandbox attributes: MUST have allow-scripts, MUST NOT have allow-same-origin or allow-top-navigation
+    const sandboxAttr = iframe.attributes('sandbox') || ''
+    expect(sandboxAttr).toContain('allow-scripts')
+    expect(sandboxAttr).not.toContain('allow-same-origin')
+    expect(sandboxAttr).not.toContain('allow-top-navigation')
+
+    // CSP in srcdoc
+    const srcdocAttr = iframe.attributes('srcdoc') || ''
+    expect(srcdocAttr).toContain("connect-src 'none'")
+    expect(srcdocAttr).toContain('AbilaStore')
+
+    // Switch to code tab
+    await codeTab.trigger('click')
+    expect(wrapper.find('[data-test="code-modal-preview-iframe"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('AbilaStore')
+  })
+
+  it('creates html blob with text/html mime type when downloading html', async () => {
+    let capturedBlob: Blob | null = null
+    const originalBlob = global.Blob
+    global.Blob = class MockBlob extends originalBlob {
+      constructor(blobParts?: BlobPart[], options?: BlobPropertyBag) {
+        super(blobParts, options)
+        capturedBlob = this
+      }
+    } as any
+
+    global.URL.createObjectURL = vi.fn().mockReturnValue('blob:mock-url')
+    global.URL.revokeObjectURL = vi.fn()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    const wrapper = mount(CodeModal, {
+      props: {
+        isOpen: true,
+        code: '<!DOCTYPE html><html><body>AbilaStore</body></html>',
+        language: 'html',
+        extension: 'html',
+        title: 'AbilaStore Demo',
+        teleportDisabled: true
+      }
+    })
+
+    const downloadBtn = wrapper.find('[data-test="code-modal-download-btn"]')
+    await downloadBtn.trigger('click')
+
+    expect(capturedBlob).not.toBeNull()
+    expect(capturedBlob?.type).toBe('text/html;charset=utf-8')
+
+    global.Blob = originalBlob
+  })
 })

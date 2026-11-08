@@ -27,6 +27,7 @@ import ImageModal from './tools/ImageModal.vue'
 import DocumentModal from './tools/DocumentModal.vue'
 import { cleanTextForTts, splitTextIntoTtsChunks } from '../utils/ttsFilter'
 import { parseMessageContent, getLanguageExtension } from '../utils/messageParser'
+import { getMimeTypeForExtension } from '../utils/mimeHelper'
 import {
   downloadMarkdownFile,
   exportDocumentToPdf,
@@ -164,7 +165,8 @@ const downloadChatCode = (code: string, extension?: string, title?: string) => {
       .replace(/[^a-z0-9_-]+/g, '_')
       .slice(0, 30)
     const filename = `${safeTitle}_${Date.now()}.${ext}`
-    const blob = new Blob([code], { type: 'text/plain;charset=utf-8' })
+    const mimeType = getMimeTypeForExtension(ext)
+    const blob = new Blob([code], { type: mimeType })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url

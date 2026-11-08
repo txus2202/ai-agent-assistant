@@ -2,11 +2,10 @@
 Infrastructure Service: ImageGenerationService
 
 Coordinates image generation via:
-1. Pollinations (Flux model, free, no API key needed)
-2. Google Imagen 3 (via google-genai SDK, pay-as-you-go)
+1. Google Imagen 3 (via google-genai SDK, enterprise grade and private)
 
 Configured via environment variable:
-IMAGE_GENERATION_PROVIDER: "pollinations" | "imagen" | "" / "none"
+IMAGE_GENERATION_PROVIDER: "imagen" | "" / "none"
 """
 from __future__ import annotations
 
@@ -17,31 +16,6 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import ClassVar
-
-
-class PollinationsGenerator:
-    """Generates images using Pollinations.ai (Flux model, free)."""
-
-    BASE_URL: ClassVar[str] = "https://image.pollinations.ai/prompt"
-
-    @classmethod
-    def generate(cls, prompt: str, timeout: float = 60.0) -> bytes:
-        import urllib.parse
-        import httpx
-
-        clean_prompt = prompt.strip()
-        if not clean_prompt:
-            raise ValueError("Prompt cannot be empty for image generation")
-
-        encoded_prompt = urllib.parse.quote(clean_prompt)
-        url = f"{cls.BASE_URL}/{encoded_prompt}?width=1024&height=1024&model=flux&nologo=true"
-
-        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-            resp = client.get(url)
-            resp.raise_for_status()
-            if not resp.content:
-                raise RuntimeError("Pollinations returned empty content")
-            return resp.content
 
 
 class ImagenGenerator:
@@ -96,15 +70,27 @@ class ImageGenerationService:
     def get_provider_name(cls) -> str | None:
         """
         Return the normalized active image generation provider name, or None if disabled.
-        Reads from IMAGE_GENERATION_PROVIDER (or fallback IMAGE_PROVIDER).
+        Checks explicit OS environment variable first, then pydantic Settings (which loads .env).
         """
-        raw = os.getenv("IMAGE_GENERATION_PROVIDER") or os.getenv("IMAGE_PROVIDER") or ""
-        val = raw.strip().lower()
+        # Explicit process environment variable has highest precedence
+        env_val = os.getenv("IMAGE_GENERATION_PROVIDER")
+        if env_val is None:
+            env_val = os.getenv("IMAGE_PROVIDER")
+
+        if env_val is not None:
+            raw = env_val
+        else:
+            # Fallback to pydantic Settings (which loads .env file) only if env is unset
+            try:
+                from src.presentation.api.config import get_settings
+                raw = get_settings().image_generation_provider
+            except Exception:
+                raw = ""
+
+        val = str(raw).strip().lower()
 
         if val in ("imagen", "google", "imagen3", "imagen-3", "imagen-3.0"):
             return "imagen"
-        if val in ("pollinations", "flux"):
-            return "pollinations"
         return None
 
     @classmethod
@@ -118,12 +104,10 @@ class ImageGenerationService:
         prov = provider or cls.get_provider_name()
         if not prov:
             raise ValueError(
-                "No image generation provider configured. Set IMAGE_GENERATION_PROVIDER to 'pollinations' or 'imagen'."
+                "No image generation provider configured. Set IMAGE_GENERATION_PROVIDER to 'imagen'."
             )
 
-        if prov == "pollinations":
-            return PollinationsGenerator.generate(prompt)
-        elif prov == "imagen":
+        if prov == "imagen":
             return ImagenGenerator.generate(prompt)
         else:
             raise ValueError(f"Unknown image generation provider: {prov}")

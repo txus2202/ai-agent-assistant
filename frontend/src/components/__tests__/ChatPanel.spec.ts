@@ -587,6 +587,42 @@ describe('ChatPanel.vue', () => {
     expect(wrapper.text()).toContain('package main')
   })
 
+  it('downloads code file with appropriate MIME type when clicking chat-code-download-btn', async () => {
+    let capturedBlob: Blob | null = null
+    const originalBlob = global.Blob
+    global.Blob = class MockBlob extends originalBlob {
+      constructor(blobParts?: BlobPart[], options?: BlobPropertyBag) {
+        super(blobParts, options)
+        capturedBlob = this
+      }
+    } as any
+
+    global.URL.createObjectURL = vi.fn().mockReturnValue('blob:mock-code-url')
+    global.URL.revokeObjectURL = vi.fn()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    const messages = [
+      {
+        role: 'assistant' as const,
+        content: 'Aquí tienes la maqueta:\n```html\n<!DOCTYPE html><html><body>AbilaStore</body></html>\n```',
+        agentName: 'Fidias'
+      }
+    ]
+
+    const wrapper = mount(ChatPanel, {
+      props: { messages, isDebating: false }
+    })
+
+    const downloadBtn = wrapper.find('[data-test="chat-code-download-btn"]')
+    expect(downloadBtn.exists()).toBe(true)
+    await downloadBtn.trigger('click')
+
+    expect(capturedBlob).not.toBeNull()
+    expect(capturedBlob?.type).toBe('text/html;charset=utf-8')
+
+    global.Blob = originalBlob
+  })
+
   it('renders image card and opens ImageModal when clicking preview or Ver button', async () => {
     const messages = [
       {

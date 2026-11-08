@@ -31,7 +31,7 @@ soundfile==0.14.0
 vosk==0.3.44
 
 # Phase 6: Observability
-langfuse==2.60.10
+langfuse==5.2.0
 
 # Security-patched dependencies (resolves critical/high CVEs in transitive dependencies)
 aiohttp>=3.14.5

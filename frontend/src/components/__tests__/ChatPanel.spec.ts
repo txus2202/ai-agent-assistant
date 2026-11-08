@@ -588,14 +588,14 @@ describe('ChatPanel.vue', () => {
   })
 
   it('downloads code file with appropriate MIME type when clicking chat-code-download-btn', async () => {
-    let capturedBlob: Blob | null = null
+    let capturedOptions: BlobPropertyBag | undefined
     const originalBlob = global.Blob
     global.Blob = class MockBlob extends originalBlob {
       constructor(blobParts?: BlobPart[], options?: BlobPropertyBag) {
         super(blobParts, options)
-        capturedBlob = this
+        capturedOptions = options
       }
-    } as any
+    } as unknown as typeof Blob
 
     global.URL.createObjectURL = vi.fn().mockReturnValue('blob:mock-code-url')
     global.URL.revokeObjectURL = vi.fn()
@@ -617,8 +617,8 @@ describe('ChatPanel.vue', () => {
     expect(downloadBtn.exists()).toBe(true)
     await downloadBtn.trigger('click')
 
-    expect(capturedBlob).not.toBeNull()
-    expect((capturedBlob as Blob | null)?.type).toBe('text/html;charset=utf-8')
+    expect(capturedOptions).toBeDefined()
+    expect(capturedOptions?.type).toBe('text/html;charset=utf-8')
 
     global.Blob = originalBlob
   })

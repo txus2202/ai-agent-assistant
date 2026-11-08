@@ -90,7 +90,7 @@ const downloadCode = () => {
     link.download = filename
     document.body.appendChild(link)
     link.click()
-    document.body.removeChild(link)
+    link.remove()
     URL.revokeObjectURL(url)
   } catch (err) {
     console.error('Failed to download code file:', err)

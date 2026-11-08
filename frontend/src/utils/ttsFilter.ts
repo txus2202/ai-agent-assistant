@@ -7,9 +7,9 @@
 // Matches any fenced code/document/diagram block (```lang ... ``` or ``` ... ```)
 const FENCED_TOOL_REGEX = /```[^\n`]*\n[\s\S]*?```/gi
 // Matches unclosed trailing code/document block (e.g., during streaming)
-const UNCLOSED_FENCE_REGEX = /```[^\n`]*\n?[\s\S]*$/gi
+const UNCLOSED_FENCE_REGEX = /```[\s\S]*$/gi
 // Matches image generation directives
-const IMAGE_DIRECTIVE_REGEX = /(?:\[GENERATE_IMAGE:\s*[\s\S]*?\]|<!--\s*generate_image:\s*[\s\S]*?-->)/gi
+const IMAGE_DIRECTIVE_REGEX = /(?:\[GENERATE_IMAGE:[^\]]*\]|<!--\s*generate_image:[\s\S]*?-->)/gi
 // Matches Markdown images ![alt](url)
 const IMAGE_TAG_REGEX = /!\[[^\]]*\]\([^)]+\)/g
 

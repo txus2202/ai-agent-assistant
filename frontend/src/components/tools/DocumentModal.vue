@@ -362,14 +362,14 @@ onUnmounted(() => {
   border-radius: 0.25rem;
   font-family: ui-monospace, monospace;
   font-size: 0.8rem;
-  color: #f472b6;
+  color: #fdf2f8;
 }
 
 :deep(.doc-blockquote) {
   border-left: 3px solid #ec4899;
   padding-left: 1rem;
   margin: 1rem 0;
-  color: #94a3b8;
+  color: #f1f5f9;
   font-style: italic;
   background: rgba(236, 72, 153, 0.05);
   padding-top: 0.25rem;
@@ -392,7 +392,7 @@ onUnmounted(() => {
 
 :deep(.doc-table th) {
   background: rgba(236, 72, 153, 0.1);
-  color: #fbcfe8;
+  color: #ffffff;
   font-weight: 700;
 }
 

@@ -85,7 +85,7 @@ describe('CodeModal.vue', () => {
     global.URL.revokeObjectURL = vi.fn()
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     const appendChildSpy = vi.spyOn(document.body, 'appendChild')
-    const removeChildSpy = vi.spyOn(document.body, 'removeChild')
+    const removeSpy = vi.spyOn(HTMLAnchorElement.prototype, 'remove')
 
     const wrapper = mount(CodeModal, {
       props: {
@@ -103,7 +103,7 @@ describe('CodeModal.vue', () => {
 
     expect(clickSpy).toHaveBeenCalled()
     expect(appendChildSpy).toHaveBeenCalled()
-    expect(removeChildSpy).toHaveBeenCalled()
+    expect(removeSpy).toHaveBeenCalled()
   })
 
   it('renders preview and code tabs when language is html', async () => {

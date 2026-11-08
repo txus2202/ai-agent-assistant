@@ -97,7 +97,7 @@ const downloadSvg = () => {
     link.download = `${safeTitle}_${Date.now()}.svg`
     document.body.appendChild(link)
     link.click()
-    document.body.removeChild(link)
+    link.remove()
     URL.revokeObjectURL(url)
   } catch (err) {
     console.error('Failed to download SVG diagram:', err)

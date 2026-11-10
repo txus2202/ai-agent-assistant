@@ -9,10 +9,23 @@ from src.presentation.api.app import create_app
 from src.domain.ports.observability_port import SystemMetrics
 
 
+from src.domain.entities.user import User
+from src.presentation.api.dependencies.auth import get_current_user
+
+
 @pytest.fixture
 def client():
     app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id="usr-test", username="testuser", password_hash="h", is_admin=False
+    )
     return TestClient(app)
+
+
+def test_observability_unauthenticated():
+    app = create_app()
+    c = TestClient(app)
+    assert c.get("/observability/stats").status_code == 401
 
 
 def test_get_observability_stats_endpoint(client):

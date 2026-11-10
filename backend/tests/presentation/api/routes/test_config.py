@@ -2,10 +2,55 @@ import pytest
 from fastapi.testclient import TestClient
 from src.presentation.api.app import create_app
 
+from src.domain.entities.user import User
+from src.presentation.api.dependencies.auth import get_current_user
+
 @pytest.fixture
-def client():
+def test_user():
+    return User(
+        id="test-user-id",
+        username="testadmin",
+        password_hash="fakehash",
+        is_admin=True,
+        is_active=True,
+    )
+
+@pytest.fixture
+def client(test_user):
     app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: test_user
     return TestClient(app)
+
+def test_get_agents_config_unauthenticated():
+    raw_app = create_app()
+    raw_client = TestClient(raw_app)
+    response = raw_client.get("/config/agents")
+    assert response.status_code == 401
+
+def test_per_user_agent_config_isolation(test_user):
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: test_user
+    client1 = TestClient(app)
+
+    # User 1 sets the_judge to openai / gpt-4o
+    res1 = client1.put("/config/agents/the_judge", json={"provider": "openai", "model_name": "gpt-4o"})
+    assert res1.status_code == 200
+
+    # Switch to User 2
+    user2 = User(id="user-2-id", username="operator2", password_hash="hash2", is_admin=False)
+    app.dependency_overrides[get_current_user] = lambda: user2
+    client2 = TestClient(app)
+
+    # User 2 sets the_judge to anthropic / claude-3-5-sonnet
+    res2 = client2.put("/config/agents/the_judge", json={"provider": "anthropic", "model_name": "claude-3-5-sonnet"})
+    assert res2.status_code == 200
+
+    # Verify User 2 gets claude-3-5-sonnet
+    assert client2.get("/config/agents/the_judge").json()["model_name"] == "claude-3-5-sonnet"
+
+    # Switch back to User 1 and verify gpt-4o is preserved
+    app.dependency_overrides[get_current_user] = lambda: test_user
+    assert client1.get("/config/agents/the_judge").json()["model_name"] == "gpt-4o"
 
 def test_get_agents_config(client):
     response = client.get("/config/agents")

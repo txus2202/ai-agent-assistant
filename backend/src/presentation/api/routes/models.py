@@ -1,8 +1,10 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 import logging
 
+from src.domain.entities.user import User
 from src.infrastructure.llm.registry import get_llm_provider
+from src.presentation.api.dependencies.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +20,9 @@ class ProviderResponse(BaseModel):
     models: list[ModelResponse]
 
 @router.get("", response_model=list[ProviderResponse])
-def get_available_models():
+def get_available_models(
+    current_user: User = Depends(get_current_user),
+):
     """
     Returns all available models grouped by provider.
     Queries the actual APIs to get real data.

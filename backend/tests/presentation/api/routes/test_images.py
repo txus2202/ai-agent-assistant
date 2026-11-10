@@ -10,10 +10,23 @@ from src.infrastructure.image_generation.service import ImageGenerationService
 from src.presentation.api.app import create_app
 
 
+from src.domain.entities.user import User
+from src.presentation.api.dependencies.auth import get_current_user
+
+
 @pytest.fixture
 def client():
     app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id="usr-test", username="testuser", password_hash="h", is_admin=False
+    )
     return TestClient(app)
+
+
+def test_images_unauthenticated():
+    app = create_app()
+    c = TestClient(app)
+    assert c.get("/images/test.png").status_code == 401
 
 
 def test_get_image_success(client, tmp_path, monkeypatch):

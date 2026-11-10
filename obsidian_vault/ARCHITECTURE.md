@@ -8,13 +8,14 @@ The system uses a **Modular Monolith** architecture based on **Clean Architectur
 
 ## Application Layers
 
-1. **Domain:** Core entities (`ArchitectureSolution`, `Task`, `Agent`) and abstract interfaces (Ports like `ILLMProvider`). Zero framework dependencies.
-2. **Application:** Use Cases (`GenerateArchitectureDesign`). Coordinates business logic.
+1. **Domain:** Core entities (`ArchitectureSolution`, `Task`, `Agent`, `User`) and abstract interfaces (Ports like `ILLMProvider`, `IUserRepository`, `IPasswordHasher`, `ITokenService`). Zero framework dependencies.
+2. **Application:** Use Cases (`GenerateArchitectureDesign`, `AuthService`). Coordinates business logic.
 3. **Infrastructure:** Implements domain interfaces. Includes adapters for:
    - AI Providers: `GeminiAdapter`, `OpenAIAdapter`, `AnthropicAdapter` (routed via Google ADK / Langchain abstractions).
-   - Databases: ChromaDB, Obsidian Local File System.
+   - Databases: ChromaDB, Obsidian Local File System, SQLite and PostgreSQL repositories (`SqliteDebateRepository`, `SQLiteUserRepository`, `PostgreSQLUserRepository`).
+   - Security: Argon2id password hashing (`Argon2idPasswordHasher`), HMAC-SHA256 JWT tokens (`JwtTokenService`).
    - Voice: Whisper.cpp, Piper.
-4. **Presentation:** FastAPI controllers, WebSockets, Typer CLI, and the Vue 3 web client.
+4. **Presentation:** FastAPI controllers, WebSockets, Typer CLI, and the Vue 3 web client. Session management via HttpOnly cookies and Bearer tokens.
 
 ## Multimodal RAG Strategy
 

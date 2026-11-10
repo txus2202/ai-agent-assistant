@@ -7,10 +7,21 @@ from src.application.services.learn_from_session import LearnFromSession
 from src.application.services.learn_from_source import LearnResult
 from src.application.services.ingest_vault import IngestResult
 
+from src.domain.entities.user import User
+from src.presentation.api.dependencies.auth import get_current_user
+
 @pytest.fixture
 def client():
     app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id="usr-test", username="testuser", password_hash="h", is_admin=False
+    )
     return TestClient(app)
+
+def test_learning_unauthenticated():
+    app = create_app()
+    c = TestClient(app)
+    assert c.post("/learning/session", json={"session_id": "123"}).status_code == 401
 
 
 @pytest.fixture(autouse=True)

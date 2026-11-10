@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 @dataclass
 class AgentConfig:
@@ -8,3 +9,4 @@ class AgentConfig:
     role: str
     provider: str
     model_name: str
+    user_id: Optional[str] = None

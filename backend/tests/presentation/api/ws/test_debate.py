@@ -101,9 +101,18 @@ def ws_client(monkeypatch):
     from src.presentation.api.ws import debate
     monkeypatch.setattr(debate.SupervisorAgent, "run", _fake_debate_generator)
 
+    from unittest.mock import AsyncMock, MagicMock
+    from src.application.services.auth_service import AuthService
+    from src.domain.entities.user import User
+
+    mock_auth = MagicMock(spec=AuthService)
+    mock_auth.is_initialized = AsyncMock(return_value=True)
+    test_user = User(id="usr-test-ws", username="architect", password_hash="h", is_admin=True, is_active=True)
+    mock_auth.validate_token = AsyncMock(return_value=test_user)
+
     from src.presentation.api.app import create_app
-    app = create_app()
-    return TestClient(app)
+    app = create_app(auth_service=mock_auth)
+    return TestClient(app, cookies={"atenea_session": "mock_valid_ws_token"})
 
 
 class TestDebateWebSocket:
@@ -329,7 +338,7 @@ class TestDebateWebSocket:
         # Verify database record: only 1 DebateRecord for this session_id
         settings = get_settings()
         repo = SqliteDebateRepository(str(settings.sqlite_db_path))
-        record = repo.find_by_id(session_id)
+        record = repo.find_by_id(session_id, allow_unscoped=True)
         assert record is not None
         assert record.id == session_id
         
@@ -643,7 +652,7 @@ def test_debate_observability_enriched_trace_and_hitl_scoring(ws_client, monkeyp
         mock_obs.start_trace.assert_called_once()
         _, kwargs = mock_obs.start_trace.call_args
         assert kwargs["input_data"] == "Diseña una pasarela de pagos con Stripe"
-        assert kwargs["user_id"] == "local_user"
+        assert kwargs["user_id"] == "architect"
         assert "flow:supervisor_debate" in kwargs["tags"]
         assert "has:hitl" in kwargs["tags"]
 

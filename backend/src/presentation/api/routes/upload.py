@@ -5,7 +5,9 @@ import uuid
 import aiofiles  # type: ignore[import-untyped]
 from typing import Annotated, Dict
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from src.domain.entities.user import User
+from src.presentation.api.dependencies.auth import get_current_user
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 
@@ -20,7 +22,10 @@ MAX_FILE_SIZE_MB = 50
         413: {"description": "File too large"}
     }
 )
-async def upload_file(file: Annotated[UploadFile, File(...)]) -> Dict[str, str]:
+async def upload_file(
+    file: Annotated[UploadFile, File(...)],
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, str]:
     """
     Sube un archivo de forma temporal para que luego el agente de aprendizaje 
     (o cualquier otro) pueda procesarlo pasándole la ruta.

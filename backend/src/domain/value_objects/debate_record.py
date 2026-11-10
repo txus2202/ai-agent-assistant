@@ -15,6 +15,7 @@ class DebateRecord:
     target_agent: str = "supervisor"
     events: List[Dict[str, Any]] = field(default_factory=list)
     status: str = "running" # running, completed, aborted
+    user_id: Optional[str] = None
 
     @property
     def events_json(self) -> str:

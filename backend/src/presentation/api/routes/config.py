@@ -1,12 +1,14 @@
-from typing import Annotated, List, Dict, Any
+from typing import Annotated, List, Dict, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from src.domain.agents.sub_agent_profiles import get_all_profiles, get_profile
+from src.domain.entities.user import User
+from src.domain.ports.agent_config_repository import IAgentConfigRepository
 from src.domain.value_objects.agent_config import AgentConfig
-from src.infrastructure.persistence.sqlite_agent_config_repository import SqliteAgentConfigRepository
 from src.presentation.api.config import get_settings, Settings
+from src.presentation.api.dependencies.auth import get_agent_config_repository, get_current_user
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -14,8 +16,8 @@ class AgentConfigUpdate(BaseModel):
     provider: str
     model_name: str
 
-def get_config_repo(settings: Annotated[Settings, Depends(get_settings)]) -> SqliteAgentConfigRepository:
-    return SqliteAgentConfigRepository(str(settings.sqlite_db_path))
+def get_config_repo(settings: Annotated[Settings, Depends(get_settings)]) -> IAgentConfigRepository:
+    return get_agent_config_repository(settings)
 
 def _extract_topology_roles(profile: Any, top: Any) -> list[str]:
     top_roles: list[str] = []
@@ -44,12 +46,13 @@ def _extract_topology_roles(profile: Any, top: Any) -> list[str]:
 def _build_agent_item(
     profile: Any,
     top: Any,
-    repo: SqliteAgentConfigRepository,
+    repo: IAgentConfigRepository,
     default_provider: str,
     default_model: str,
+    user_id: Optional[str] = None,
 ) -> dict[str, Any]:
     role_value = profile.id
-    config = repo.find_by_role(role_value) or repo.find_by_role(profile.display_name)
+    config = repo.find_by_role(role_value, user_id=user_id) or repo.find_by_role(profile.display_name, user_id=user_id)
 
     return {
         "id": role_value,
@@ -67,16 +70,19 @@ def _build_agent_item(
 
 
 @router.get("/agents")
-async def get_agents_config(repo: Annotated[SqliteAgentConfigRepository, Depends(get_config_repo)]) -> List[Dict[str, Any]]:
+async def get_agents_config(
+    repo: Annotated[IAgentConfigRepository, Depends(get_config_repo)],
+    current_user: User = Depends(get_current_user),
+) -> List[Dict[str, Any]]:
     """
-    Devuelve la lista de agentes disponibles en el sistema con su nombre, descripción, proveedor, modelo y capacidades configuradas.
+    Devuelve la lista de agentes disponibles en el sistema con su nombre, descripción, proveedor, modelo y capacidades configuradas para el usuario autenticado.
     """
     settings = get_settings()
     from src.domain.agents.debate_topology import load_topology
     top = load_topology()
 
     return [
-        _build_agent_item(profile, top, repo, settings.default_provider, settings.default_model)
+        _build_agent_item(profile, top, repo, settings.default_provider, settings.default_model, user_id=current_user.id)
         for profile in get_all_profiles()
     ]
 
@@ -88,10 +94,11 @@ async def get_agents_config(repo: Annotated[SqliteAgentConfigRepository, Depends
 )
 async def get_agent_config(
     role: str,
-    repo: Annotated[SqliteAgentConfigRepository, Depends(get_config_repo)]
+    repo: Annotated[IAgentConfigRepository, Depends(get_config_repo)],
+    current_user: User = Depends(get_current_user),
 ) -> Dict[str, str]:
     """
-    Obtiene la configuración (nombre, descripción, proveedor y modelo) de un agente específico.
+    Obtiene la configuración (nombre, descripción, proveedor y modelo) de un agente específico para el usuario autenticado.
     """
     try:
         profile = get_profile(role)
@@ -99,9 +106,9 @@ async def get_agent_config(
         raise HTTPException(status_code=404, detail="Agent role not found")
 
     settings = get_settings()
-    config = repo.find_by_role(profile.id)
+    config = repo.find_by_role(profile.id, user_id=current_user.id)
     if not config:
-        config = repo.find_by_role(profile.display_name)
+        config = repo.find_by_role(profile.display_name, user_id=current_user.id)
     
     return {
         "id": profile.id,
@@ -121,10 +128,11 @@ async def get_agent_config(
 async def update_agent_config(
     role: str, 
     update: AgentConfigUpdate, 
-    repo: Annotated[SqliteAgentConfigRepository, Depends(get_config_repo)]
+    repo: Annotated[IAgentConfigRepository, Depends(get_config_repo)],
+    current_user: User = Depends(get_current_user),
 ):
     """
-    Actualiza la configuración (proveedor y modelo) de un agente específico.
+    Actualiza la configuración (proveedor y modelo) de un agente específico para el usuario autenticado.
     """
     try:
         profile = get_profile(role)
@@ -134,14 +142,17 @@ async def update_agent_config(
     config = AgentConfig(
         role=profile.id,
         provider=update.provider,
-        model_name=update.model_name
+        model_name=update.model_name,
+        user_id=current_user.id,
     )
     repo.save(config)
     return {"ok": True}
 
 
 @router.get("/topology")
-async def get_topology() -> Dict[str, Any]:
+async def get_topology(
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Devuelve la topología de roles y asignación de agentes configurada en topology.yaml.
     """

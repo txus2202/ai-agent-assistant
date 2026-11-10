@@ -12,10 +12,12 @@ import re
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 
+from src.domain.entities.user import User
 from src.infrastructure.image_generation.service import ImageGenerationService
+from src.presentation.api.dependencies.auth import get_current_user
 
 router = APIRouter(tags=["images"])
 
@@ -27,7 +29,10 @@ IMAGE_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 @router.get("/images/{filename}", responses=IMAGE_RESPONSES)
 @router.get("/api/images/{filename}", responses=IMAGE_RESPONSES)
-async def get_generated_image(filename: str):
+async def get_generated_image(
+    filename: str,
+    current_user: User = Depends(get_current_user),
+):
     """Serve a generated image file safely."""
     if not re.match(r"^[a-zA-Z0-9_\-\.]+$", filename):
         raise HTTPException(status_code=400, detail="Invalid filename format")

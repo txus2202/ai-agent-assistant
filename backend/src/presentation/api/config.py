@@ -7,9 +7,11 @@ Keys are never validated at startup — validation happens at first use.
 """
 from __future__ import annotations
 
+from typing import Any, Literal
 from pathlib import Path
+import secrets
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -79,6 +81,21 @@ class Settings(BaseSettings):
     langfuse_base_url: str = ""
     langfuse_default_user_id: str = "local_user"
 
+    # Authentication & Security (Phase 7)
+    auth_secret_key: str = Field(default_factory=lambda: secrets.token_urlsafe(48))
+    auth_token_expiry_seconds: int = 28800
+    auth_cookie_secure: bool = False
+    auth_cookie_name: str = "atenea_session"
+    auth_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
+    auth_delete_strategy: Literal["soft", "hard"] = "soft"
+    database_url: str = ""
+    initial_setup_token: str | None = None
+    auth_trust_x_forwarded_for: bool = False
+    auth_rate_limit_login_attempts: int = 5
+    auth_rate_limit_login_window_seconds: int = 60
+    auth_rate_limit_setup_attempts: int = 3
+    auth_rate_limit_setup_window_seconds: int = 60
+
     @property
     def effective_langfuse_host(self) -> str:
         return self.langfuse_base_url or self.langfuse_host or "http://localhost:3000"
@@ -97,6 +114,11 @@ class Settings(BaseSettings):
         if v not in allowed:
             raise ValueError(f"Unknown provider: '{v}'. Must be one of {allowed}")
         return v
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.auth_cookie_samesite == "none" and not self.auth_cookie_secure:
+            raise ValueError("auth_cookie_secure must be True when auth_cookie_samesite is set to 'none'")
+
 
 
 # Module-level singleton — replaced in tests via dependency override

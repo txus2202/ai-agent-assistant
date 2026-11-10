@@ -76,8 +76,34 @@ async def wake_word_endpoint(websocket: WebSocket):
     Expects raw 16kHz Int16 PCM audio chunks.
     Sends {"type": "WAKE_WORD_DETECTED"} when the wake word is detected.
     """
+    from src.presentation.api.config import get_settings
+    from src.presentation.api.dependencies.auth import (
+        get_auth_service,
+        validate_websocket_origin,
+        authenticate_websocket,
+    )
+    settings = get_settings()
+
+    # 1. CSWSH Defense: Origin check
+    if not validate_websocket_origin(websocket, settings):
+        await websocket.close(code=1008, reason="Origin not allowed")
+        return
+
+    # 2. Resolve AuthService (Fail-closed)
+    try:
+        auth_service = get_auth_service(websocket)
+    except Exception:
+        logger.exception("Failed to obtain auth service in wake_word handshake")
+        await websocket.close(code=1011, reason="Authentication service unavailable")
+        return
+
+    # 3. Authenticate (Fail-closed)
+    authenticated_user = await authenticate_websocket(websocket, auth_service, settings)
+    if not authenticated_user:
+        return
+
     await websocket.accept()
-    logger.info("Client connected to Wake-Word stream")
+    logger.info("Client connected to Wake-Word stream (user: %s)", authenticated_user.username)
     wake_word_service.reset()
     
     try:

@@ -4,13 +4,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from src.application.services.learn_from_session import LearnFromSession
-from src.infrastructure.persistence.sqlite_agent_config_repository import SqliteAgentConfigRepository
-from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
+from src.domain.entities.user import User
+from src.domain.ports.agent_config_repository import IAgentConfigRepository
+from src.domain.ports.debate_repository import IDebateRepository
 from src.infrastructure.rag.chroma_document_store import ChromaDBDocumentStore
 from src.infrastructure.llm.registry import get_llm_provider
-
-
 from src.presentation.api.config import get_settings, Settings
+from src.presentation.api.dependencies.auth import (
+    get_agent_config_repository,
+    get_current_user,
+    get_debate_repository,
+)
 
 router = APIRouter(prefix="/learning", tags=["learning"])
 
@@ -20,16 +24,16 @@ class LearnSessionRequest(BaseModel):
     content: str | None = None
 
 
-def get_debate_repo(settings: Settings = Depends(get_settings)) -> SqliteDebateRepository:
-    return SqliteDebateRepository(str(settings.sqlite_db_path))
+def get_debate_repo(settings: Settings = Depends(get_settings)) -> IDebateRepository:
+    return get_debate_repository(settings)
 
 
-def get_agent_config_repo(settings: Settings = Depends(get_settings)) -> SqliteAgentConfigRepository:
-    return SqliteAgentConfigRepository(str(settings.sqlite_db_path))
+def get_agent_config_repo(settings: Settings = Depends(get_settings)) -> IAgentConfigRepository:
+    return get_agent_config_repository(settings)
 
 
-def _extract_chat_history(repo: SqliteDebateRepository, session_id: str) -> list[dict[str, Any]]:
-    record = repo.find_by_id(session_id)
+def _extract_chat_history(repo: IDebateRepository, session_id: str, user_id: str) -> list[dict[str, Any]]:
+    record = repo.find_by_id(session_id, user_id=user_id)
     if not record or not record.events:
         return []
     history: list[dict[str, Any]] = []
@@ -45,10 +49,11 @@ def _extract_chat_history(repo: SqliteDebateRepository, session_id: str) -> list
 
 
 def _resolve_learning_config(
-    agent_config_repo: SqliteAgentConfigRepository,
+    agent_config_repo: IAgentConfigRepository,
     settings: Settings,
+    user_id: str | None = None,
 ) -> tuple[str, str]:
-    config = agent_config_repo.find_by_role("learning")
+    config = agent_config_repo.find_by_role("learning", user_id=user_id)
     prov_name = config.provider if config else settings.default_provider
     mod_name = config.model_name if config else settings.default_model
     return prov_name, mod_name
@@ -63,11 +68,12 @@ def _resolve_learning_config(
 async def learn_session(
     payload: LearnSessionRequest,
     settings: Settings = Depends(get_settings),
-    repo: SqliteDebateRepository = Depends(get_debate_repo),
-    agent_config_repo: SqliteAgentConfigRepository = Depends(get_agent_config_repo),
+    repo: IDebateRepository = Depends(get_debate_repo),
+    agent_config_repo: IAgentConfigRepository = Depends(get_agent_config_repo),
+    current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    chat_history = _extract_chat_history(repo, payload.session_id)
-    prov_name, mod_name = _resolve_learning_config(agent_config_repo, settings)
+    chat_history = _extract_chat_history(repo, payload.session_id, user_id=current_user.id)
+    prov_name, mod_name = _resolve_learning_config(agent_config_repo, settings, user_id=current_user.id)
 
     llm = get_llm_provider(prov_name)
     vault_root = Path(settings.vault_root)

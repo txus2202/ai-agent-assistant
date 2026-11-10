@@ -15,7 +15,8 @@ _CREATE_DEBATES_TABLE = """
         user_request  TEXT NOT NULL,
         target_agent  TEXT NOT NULL,
         events_json   TEXT NOT NULL,
-        status        TEXT NOT NULL
+        status        TEXT NOT NULL,
+        user_id       TEXT
     )
 """
 
@@ -28,7 +29,7 @@ class SqliteDebateRepository(IDebateRepository):
         try:
             with self._connection() as conn:
                 conn.execute(
-                    "INSERT INTO debates (id, created_at, user_request, target_agent, events_json, status) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO debates (id, created_at, user_request, target_agent, events_json, status, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (
                         debate.id,
                         debate.created_at.isoformat(),
@@ -36,13 +37,10 @@ class SqliteDebateRepository(IDebateRepository):
                         debate.target_agent,
                         debate.events_json,
                         debate.status,
+                        debate.user_id,
                     ),
                 )
         except sqlite3.Error as exc:
-            import logging
-            log = logging.getLogger(__name__)
-            log.error(f"DEBUG SQLITE CREATE: id={type(debate.id)} created_at={type(debate.created_at.isoformat())} user_request={type(debate.user_request)} target_agent={type(debate.target_agent)} events_json={type(debate.events_json)} status={type(debate.status)}")
-            log.error(f"DEBUG SQLITE CREATE VALUES: target_agent={debate.target_agent}")
             raise RepositoryError(f"Failed to create debate {debate.id}: {exc}") from exc
 
     def append_event(self, debate_id: str, event_json: str) -> None:
@@ -77,23 +75,51 @@ class SqliteDebateRepository(IDebateRepository):
             raise RepositoryError(f"Failed to update session for debate {debate_id}: {exc}") from exc
 
 
-    def find_all(self) -> List[DebateRecord]:
+    def find_all(self, user_id: Optional[str] = None, allow_unscoped: bool = False) -> List[DebateRecord]:
+        if not user_id and not allow_unscoped:
+            return []
         try:
             with self._connection() as conn:
-                rows = conn.execute("SELECT * FROM debates ORDER BY created_at DESC").fetchall()
+                if user_id:
+                    rows = conn.execute("SELECT * FROM debates WHERE user_id = ? ORDER BY created_at DESC", (user_id,)).fetchall()
+                else:
+                    rows = conn.execute("SELECT * FROM debates ORDER BY created_at DESC").fetchall()
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to fetch all debates: {exc}") from exc
 
         return [self._row_to_record(row) for row in rows]
 
-    def find_by_id(self, debate_id: str) -> Optional[DebateRecord]:
+    def find_by_id(self, debate_id: str, user_id: Optional[str] = None, allow_unscoped: bool = False) -> Optional[DebateRecord]:
+        if not user_id and not allow_unscoped:
+            return None
         try:
             with self._connection() as conn:
-                row = conn.execute("SELECT * FROM debates WHERE id = ?", (debate_id,)).fetchone()
+                if user_id:
+                    row = conn.execute("SELECT * FROM debates WHERE id = ? AND user_id = ?", (debate_id, user_id)).fetchone()
+                else:
+                    row = conn.execute("SELECT * FROM debates WHERE id = ?", (debate_id,)).fetchone()
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to query debate {debate_id}: {exc}") from exc
 
         return self._row_to_record(row) if row else None
+
+    def assign_legacy_debates_to_user(self, user_id: str) -> int:
+        """Assign all pre-auth debates (user_id IS NULL) to the given user (e.g. initial admin)."""
+        try:
+            with self._connection() as conn:
+                cursor = conn.execute("UPDATE debates SET user_id = ? WHERE user_id IS NULL", (user_id,))
+                return cursor.rowcount
+        except sqlite3.Error as exc:
+            raise RepositoryError(f"Failed to assign legacy debates to user {user_id}: {exc}") from exc
+
+    def delete_by_user_id(self, user_id: str) -> int:
+        """Delete all debates belonging to a specific user."""
+        try:
+            with self._connection() as conn:
+                cursor = conn.execute("DELETE FROM debates WHERE user_id = ?", (user_id,))
+                return cursor.rowcount
+        except sqlite3.Error as exc:
+            raise RepositoryError(f"Failed to delete debates for user {user_id}: {exc}") from exc
 
     def delete(self, debate_id: str) -> None:
         try:
@@ -106,6 +132,10 @@ class SqliteDebateRepository(IDebateRepository):
         try:
             with self._connection() as conn:
                 conn.execute(_CREATE_DEBATES_TABLE)
+                cursor = conn.execute("PRAGMA table_info(debates)")
+                cols = [col["name"] for col in cursor.fetchall()]
+                if "user_id" not in cols:
+                    conn.execute("ALTER TABLE debates ADD COLUMN user_id TEXT")
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to initialise schema: {exc}") from exc
 
@@ -130,6 +160,7 @@ class SqliteDebateRepository(IDebateRepository):
             user_request=row["user_request"],
             target_agent=row["target_agent"],
             status=row["status"],
+            user_id=row["user_id"] if "user_id" in row.keys() else None,
         )
         record.events_json = row["events_json"]
         return record

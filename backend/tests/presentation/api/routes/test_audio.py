@@ -6,10 +6,24 @@ from src.presentation.api.app import create_app
 from src.infrastructure.audio.local_audio_service import LocalAudioService
 
 
+from src.domain.entities.user import User
+from src.presentation.api.dependencies.auth import get_current_user
+
+
 @pytest.fixture
 def client():
     app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id="usr-test", username="testuser", password_hash="h", is_admin=False
+    )
     return TestClient(app)
+
+
+def test_audio_unauthenticated():
+    app = create_app()
+    c = TestClient(app)
+    assert c.post("/audio/transcribe").status_code == 401
+    assert c.post("/audio/synthesize", json={"text": "hi"}).status_code == 401
 
 
 @pytest.fixture

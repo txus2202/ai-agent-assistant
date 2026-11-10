@@ -23,6 +23,9 @@ const initializeAppData = async () => {
       configStore.loadAgentsConfig()
     ])
     await store.loadAgents()
+    if (import.meta.env.MODE !== 'test') {
+      store.connect()
+    }
   } catch (e) {
     console.error('Failed to load application data:', e)
   }
@@ -31,15 +34,22 @@ const initializeAppData = async () => {
 watch(
   () => authStore.isAuthenticated,
   (authenticated) => {
-    if (authenticated && !store.isAgentsLoaded) {
-      void initializeAppData()
+    if (authenticated) {
+      if (!store.isAgentsLoaded) {
+        void initializeAppData()
+      } else if (import.meta.env.MODE !== 'test') {
+        store.connect()
+      }
+    } else {
+      store.disconnect()
+      store.isAgentsLoaded = false
     }
   }
 )
 
 onMounted(async () => {
   initTheme()
-  if (!isAuthRoute.value) {
+  if (authStore.isAuthenticated && !isAuthRoute.value) {
     await initializeAppData()
   }
 })

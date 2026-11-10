@@ -501,8 +501,10 @@ export const useDebateStore = defineStore('debate', () => {
   let ws: WebSocket | null = null
   let reconnectAttempts = 0
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
+  let shouldReconnect = true
 
   function connect() {
+    shouldReconnect = true
     const wsUrl = resolveWsUrl('/ws/debate')
     
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
@@ -541,7 +543,9 @@ export const useDebateStore = defineStore('debate', () => {
         })
       }
       ws = null
-      attemptReconnect()
+      if (shouldReconnect) {
+        attemptReconnect()
+      }
     }
     
     ws.onerror = (error) => {
@@ -553,6 +557,21 @@ export const useDebateStore = defineStore('debate', () => {
         })
       }
     }
+  }
+
+  function disconnect() {
+    shouldReconnect = false
+    if (reconnectTimeout) {
+      clearTimeout(reconnectTimeout)
+      reconnectTimeout = null
+    }
+    reconnectAttempts = 0
+    if (ws) {
+      ws.onclose = null
+      ws.close()
+      ws = null
+    }
+    isConnected.value = false
   }
 
   function attemptReconnect() {
@@ -1122,10 +1141,7 @@ export const useDebateStore = defineStore('debate', () => {
     }
   }
 
-  // Connect automatically on store initialization
-  if (import.meta.env.MODE !== 'test') {
-    connect()
-  }
+  // WebSocket connection is initiated explicitly after user authentication in App.vue
 
   function startAutoListen() {
     if (isAutoListenEnabled.value) return
@@ -1391,6 +1407,7 @@ export const useDebateStore = defineStore('debate', () => {
     executionTrail,
     recordExecutionTrail,
     connect,
+    disconnect,
     startDebate,
     uploadFile,
     handleSupervisorEvent,

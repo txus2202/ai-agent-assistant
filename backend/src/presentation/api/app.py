@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
 
     # Initialize PostgreSQL pool if configured
     db_url = getattr(settings, "database_url", "")
-    if db_url and (db_url.startswith("postgres://") or db_url.startswith("postgresql://")):
+    if db_url and db_url.startswith(("postgres://", "postgresql://")):
         try:
             import asyncpg
             app.state.db_pool = await asyncpg.create_pool(dsn=db_url)

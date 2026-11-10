@@ -24,7 +24,7 @@ MAX_FILE_SIZE_MB = 50
 )
 async def upload_file(
     file: Annotated[UploadFile, File(...)],
-    current_user: User = Depends(get_current_user),
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> Dict[str, str]:
     """
     Sube un archivo de forma temporal para que luego el agente de aprendizaje 

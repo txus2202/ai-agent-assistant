@@ -4,7 +4,7 @@ Endpoints for system observability metrics and telemetry.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 
 from src.domain.entities.user import User
@@ -39,7 +39,7 @@ def reset_observability_service() -> None:
 
 @router.get("/stats")
 async def get_stats(
-    current_user: User = Depends(get_current_user),
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict[str, Any]:
     """Retrieve real-time cluster health, CPU/memory telemetry, and active agent counts."""
     service = get_observability_service()

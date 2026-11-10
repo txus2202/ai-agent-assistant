@@ -1,3 +1,4 @@
+from typing import Annotated
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 import logging
@@ -21,7 +22,7 @@ class ProviderResponse(BaseModel):
 
 @router.get("", response_model=list[ProviderResponse])
 def get_available_models(
-    current_user: User = Depends(get_current_user),
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
     """
     Returns all available models grouped by provider.

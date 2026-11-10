@@ -138,7 +138,7 @@ def _set_auth_cookie(response: Response, token: str, request: Optional[Request] 
     )
 
 
-@router.get("/status", response_model=AuthStatusResponse)
+@router.get("/status")
 async def get_status(
     request: Request,
     auth_service: AuthService = Depends(get_auth_service),
@@ -156,7 +156,6 @@ async def get_status(
 
 @router.post(
     "/setup",
-    response_model=AuthSuccessResponse,
     dependencies=[Depends(check_setup_rate_limit)],
     responses={
         403: {"description": "Setup has already been completed or invalid setup token"},
@@ -202,7 +201,6 @@ async def initial_setup(
 
 @router.post(
     "/login",
-    response_model=AuthSuccessResponse,
     dependencies=[Depends(check_login_rate_limit)],
     responses={
         401: {"description": "Invalid username or password"},
@@ -260,7 +258,6 @@ async def logout(response: Response, request: Request) -> dict[str, str]:
 
 @router.post(
     "/change-password",
-    response_model=dict[str, str],
     responses={
         400: {"description": "Weak password"},
         401: {"description": "Current password incorrect or session invalid"},
@@ -293,14 +290,14 @@ async def change_password(
         ) from exc
 
 
-@router.get("/me", response_model=UserPublic)
+@router.get("/me")
 async def get_me(
     current_user: User = Depends(get_current_user),
 ) -> UserPublic:
     return _user_to_public(current_user)
 
 
-@router.get("/users", response_model=list[UserPublic])
+@router.get("/users")
 async def list_users(
     admin: User = Depends(require_admin),
     auth_service: AuthService = Depends(get_auth_service),
@@ -311,7 +308,6 @@ async def list_users(
 
 @router.post(
     "/users",
-    response_model=UserPublic,
     responses={
         400: {"description": "Invalid input or weak password"},
         403: {"description": "Admin privileges required"},
@@ -345,7 +341,6 @@ async def create_user(
 
 @router.patch(
     "/users/{user_id}",
-    response_model=UserPublic,
     responses={
         400: {"description": "Invalid input or self-deactivation/demotion"},
         403: {"description": "Admin privileges required"},
@@ -387,7 +382,6 @@ async def update_user(
 
 @router.delete(
     "/users/{user_id}",
-    response_model=DeleteUserResponse,
     responses={
         400: {"description": "Cannot delete own account"},
         403: {"description": "Admin privileges required"},

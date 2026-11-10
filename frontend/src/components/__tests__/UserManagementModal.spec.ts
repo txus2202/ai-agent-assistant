@@ -195,7 +195,7 @@ describe('UserManagementModal.vue', () => {
     await flushPromises()
 
     const toggleBtns = wrapper.findAll('[data-test="toggle-active-btn"]')
-    expect(toggleBtns.length).toBe(2)
+    expect(toggleBtns).toHaveLength(2)
 
     // Second button belongs to targetUser
     await toggleBtns[1]?.trigger('click')

@@ -41,7 +41,7 @@ def get_audio_service() -> LocalAudioService:
 )
 async def transcribe_audio(
     file: Annotated[UploadFile, File(...)],
-    current_user: User = Depends(get_current_user),
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
     """
     Transcribes audio to text using local Whisper.
@@ -72,7 +72,7 @@ async def transcribe_audio(
 )
 async def synthesize_audio(
     request: dict,
-    current_user: User = Depends(get_current_user),
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> Response:
     """
     Synthesizes text to speech using Piper TTS.

@@ -2,7 +2,7 @@ import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 @dataclass
 class DebateRecord:

@@ -44,7 +44,7 @@ const handleSetup = async () => {
     cleanToken || undefined,
   )
   if (success) {
-    router.push('/')
+    await router.push('/')
   }
 }
 </script>
@@ -96,15 +96,15 @@ const handleSetup = async () => {
 
         <form @submit.prevent="handleSetup" class="space-y-4">
           <div>
-            <label class="block text-xs font-mono uppercase tracking-wider text-slate-300 mb-1.5 flex items-center gap-1.5">
+            <label for="setup-username" class="block text-xs font-mono uppercase tracking-wider text-slate-300 mb-1.5 flex items-center gap-1.5">
               <User class="w-3.5 h-3.5 text-amber-400" />
               Usuario Administrador
             </label>
             <input
+              id="setup-username"
               v-model="username"
               data-test="username"
               type="text"
-              autofocus
               autocomplete="username"
               placeholder="admin"
               class="w-full px-3.5 py-2.5 bg-space-950 border border-space-800 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 rounded-lg text-sm text-cyan-50 placeholder-slate-600 font-mono transition-colors outline-none"
@@ -112,11 +112,12 @@ const handleSetup = async () => {
           </div>
 
           <div>
-            <label class="block text-xs font-mono uppercase tracking-wider text-slate-300 mb-1.5 flex items-center gap-1.5">
+            <label for="setup-password" class="block text-xs font-mono uppercase tracking-wider text-slate-300 mb-1.5 flex items-center gap-1.5">
               <Lock class="w-3.5 h-3.5 text-amber-400" />
               Contraseña Maestra (Mínimo 8 caracteres)
             </label>
             <input
+              id="setup-password"
               v-model="password"
               data-test="password"
               type="password"
@@ -127,11 +128,12 @@ const handleSetup = async () => {
           </div>
 
           <div>
-            <label class="block text-xs font-mono uppercase tracking-wider text-slate-300 mb-1.5 flex items-center gap-1.5">
+            <label for="setup-confirm-password" class="block text-xs font-mono uppercase tracking-wider text-slate-300 mb-1.5 flex items-center gap-1.5">
               <Lock class="w-3.5 h-3.5 text-amber-400" />
               Confirmar Contraseña
             </label>
             <input
+              id="setup-confirm-password"
               v-model="confirmPassword"
               data-test="confirm-password"
               type="password"
@@ -142,11 +144,12 @@ const handleSetup = async () => {
           </div>
 
           <div v-if="authStore.setupTokenRequired">
-            <label class="block text-xs font-mono uppercase tracking-wider text-amber-300 mb-1.5 flex items-center gap-1.5">
+            <label for="setup-token" class="block text-xs font-mono uppercase tracking-wider text-amber-300 mb-1.5 flex items-center gap-1.5">
               <KeyRound class="w-3.5 h-3.5 text-amber-400" />
               Token de Inicialización (INITIAL_SETUP_TOKEN)
             </label>
             <input
+              id="setup-token"
               v-model="setupToken"
               data-test="setup-token"
               type="password"

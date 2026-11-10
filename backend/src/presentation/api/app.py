@@ -80,12 +80,14 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
     await asyncio.to_thread(docker_manager.ensure_stack_state, settings.langfuse_metrics_enabled)
     
     # Future: ChromaDB, LLMProviderRegistry init
-    yield
-    # ── Shutdown ─────────────────────────────────────────────────────────
-    if hasattr(app.state, "db_pool") and app.state.db_pool:
-        await app.state.db_pool.close()
-    if settings.langfuse_metrics_enabled:
-        await asyncio.to_thread(docker_manager.stop_stack)
+    try:
+        yield
+    finally:
+        # ── Shutdown ─────────────────────────────────────────────────────────
+        if hasattr(app.state, "db_pool") and app.state.db_pool:
+            await app.state.db_pool.close()
+        if settings.langfuse_metrics_enabled:
+            await asyncio.to_thread(docker_manager.stop_stack)
 
 
 

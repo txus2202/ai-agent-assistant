@@ -315,11 +315,12 @@ const formatDate = (isoString: string): string => {
 
             <form @submit.prevent="handleCreateUser" class="space-y-4">
               <div>
-                <label class="block text-[11px] font-mono uppercase tracking-wider text-slate-300 mb-1">
+                <label for="new-operator-username" class="block text-[11px] font-mono uppercase tracking-wider text-slate-300 mb-1">
                   Nombre de Usuario
                 </label>
                 <div class="relative">
                   <input
+                    id="new-operator-username"
                     v-model="username"
                     data-test="username-input"
                     type="text"
@@ -332,11 +333,12 @@ const formatDate = (isoString: string): string => {
               </div>
 
               <div>
-                <label class="block text-[11px] font-mono uppercase tracking-wider text-slate-300 mb-1">
+                <label for="new-operator-password" class="block text-[11px] font-mono uppercase tracking-wider text-slate-300 mb-1">
                   Contraseña (mínimo 8 caracteres)
                 </label>
                 <div class="relative">
                   <input
+                    id="new-operator-password"
                     v-model="password"
                     data-test="password-input"
                     type="password"
@@ -349,11 +351,12 @@ const formatDate = (isoString: string): string => {
               </div>
 
               <div>
-                <label class="block text-[11px] font-mono uppercase tracking-wider text-slate-300 mb-1">
+                <label for="new-operator-confirm-password" class="block text-[11px] font-mono uppercase tracking-wider text-slate-300 mb-1">
                   Confirmar Contraseña
                 </label>
                 <div class="relative">
                   <input
+                    id="new-operator-confirm-password"
                     v-model="confirmPassword"
                     data-test="confirm-password-input"
                     type="password"
@@ -567,7 +570,11 @@ const formatDate = (isoString: string): string => {
                     </div>
 
                     <div>
+                      <label :for="`edit-password-${user.id}`" class="sr-only">
+                        Nueva contraseña (opcional)
+                      </label>
                       <input
+                        :id="`edit-password-${user.id}`"
                         v-model="editPassword"
                         data-test="edit-password-input"
                         type="password"

@@ -33,7 +33,7 @@ from src.presentation.api.dependencies.rate_limiter import (
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
-async def check_login_rate_limit(request: Request) -> None:
+def check_login_rate_limit(request: Request) -> None:
     settings = getattr(request.app.state, "settings", None) or get_settings()
     limiter = getattr(request.app.state, "rate_limiter", default_rate_limiter)
     enforce_rate_limit(
@@ -46,7 +46,7 @@ async def check_login_rate_limit(request: Request) -> None:
     )
 
 
-async def check_setup_rate_limit(request: Request) -> None:
+def check_setup_rate_limit(request: Request) -> None:
     settings = getattr(request.app.state, "settings", None) or get_settings()
     limiter = getattr(request.app.state, "rate_limiter", default_rate_limiter)
     enforce_rate_limit(

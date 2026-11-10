@@ -182,11 +182,12 @@ class SqliteAgentConfigRepository(IAgentConfigRepository):
 
     @staticmethod
     def _row_to_config(row: sqlite3.Row) -> AgentConfig:
-        uid = row["user_id"] if "user_id" in row.keys() else None
+        data = dict(row)
+        uid = data.get("user_id")
         return AgentConfig(
-            role=row["role"],
-            provider=row["provider"],
-            model_name=row["model_name"],
+            role=data["role"],
+            provider=data["provider"],
+            model_name=data["model_name"],
             user_id=uid if uid else None,
         )
 

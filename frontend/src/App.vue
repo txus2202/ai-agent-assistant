@@ -32,7 +32,7 @@ watch(
   () => authStore.isAuthenticated,
   (authenticated) => {
     if (authenticated && !store.isAgentsLoaded) {
-      initializeAppData()
+      void initializeAppData()
     }
   }
 )

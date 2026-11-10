@@ -154,13 +154,14 @@ class SqliteDebateRepository(IDebateRepository):
 
     @staticmethod
     def _row_to_record(row: sqlite3.Row) -> DebateRecord:
+        data = dict(row)
         record = DebateRecord(
-            id=row["id"],
-            created_at=datetime.fromisoformat(row["created_at"]),
-            user_request=row["user_request"],
-            target_agent=row["target_agent"],
-            status=row["status"],
-            user_id=row["user_id"] if "user_id" in row.keys() else None,
+            id=data["id"],
+            created_at=datetime.fromisoformat(data["created_at"]),
+            user_request=data["user_request"],
+            target_agent=data["target_agent"],
+            status=data["status"],
+            user_id=data.get("user_id"),
         )
-        record.events_json = row["events_json"]
+        record.events_json = data["events_json"]
         return record

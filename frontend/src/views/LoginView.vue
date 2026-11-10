@@ -23,7 +23,7 @@ const handleLogin = async () => {
   if (success) {
     const rawRedirect = (route.query.redirect as string) || '/'
     const safeRedirect = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/'
-    router.push(safeRedirect)
+    await router.push(safeRedirect)
   }
 }
 </script>
@@ -69,14 +69,14 @@ const handleLogin = async () => {
 
         <form @submit.prevent="handleLogin" class="space-y-4">
           <div>
-            <label class="block text-xs font-mono uppercase tracking-wider text-slate-300 mb-1.5 flex items-center gap-1.5">
+            <label for="login-username" class="block text-xs font-mono uppercase tracking-wider text-slate-300 mb-1.5 flex items-center gap-1.5">
               <User class="w-3.5 h-3.5 text-cyan-400" />
               Usuario
             </label>
             <input
+              id="login-username"
               v-model="username"
               type="text"
-              autofocus
               autocomplete="username"
               placeholder="Introduce tu usuario"
               class="w-full px-3.5 py-2.5 bg-space-950 border border-space-800 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-lg text-sm text-cyan-50 placeholder-slate-600 font-mono transition-colors outline-none"
@@ -84,11 +84,12 @@ const handleLogin = async () => {
           </div>
 
           <div>
-            <label class="block text-xs font-mono uppercase tracking-wider text-slate-300 mb-1.5 flex items-center gap-1.5">
+            <label for="login-password" class="block text-xs font-mono uppercase tracking-wider text-slate-300 mb-1.5 flex items-center gap-1.5">
               <Lock class="w-3.5 h-3.5 text-cyan-400" />
               Contraseña
             </label>
             <input
+              id="login-password"
               v-model="password"
               type="password"
               autocomplete="current-password"

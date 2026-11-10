@@ -52,3 +52,61 @@ class ExtractionError(Exception):
     internal exceptions (PyMuPDF errors, httpx errors, etc.) and re-raise
     them as ExtractionError to preserve the anti-corruption layer (ADR-004).
     """
+
+
+class AuthenticationError(Exception):
+    """Base exception for authentication errors."""
+
+
+class AuthorizationError(Exception):
+    """Base exception for authorization and access control errors."""
+
+
+class DomainValidationError(Exception):
+    """Base exception for domain business validation errors."""
+
+
+class WeakPasswordError(DomainValidationError):
+    """Raised when a password does not meet minimum strength requirements."""
+
+
+class SelfModificationError(AuthorizationError):
+    """Raised when an administrator attempts prohibited self-modification (e.g. self-delete or self-deactivation)."""
+
+
+class InvalidCredentialsError(AuthenticationError):
+    """Raised when provided credentials (username/password) are incorrect."""
+
+
+class UserInactiveError(AuthenticationError):
+    """Raised when the user account is deactivated."""
+
+
+class SetupAlreadyCompletedError(AuthenticationError):
+    """Raised when initial setup is attempted after users already exist."""
+
+
+class UserAlreadyExistsError(AuthenticationError):
+    """Raised when attempting to create a user with a duplicate username."""
+
+
+class UserNotFoundError(AuthenticationError):
+    """Raised when a user is not found."""
+
+
+class UnauthorizedError(AuthorizationError):
+    """Raised when a user attempts an action without sufficient permissions."""
+
+
+class LastAdminError(AuthorizationError):
+    """Raised when an operation would leave the system without an active administrator."""
+
+
+
+
+class InvalidTokenError(AuthenticationError):
+    """Raised when a session token is invalid or malformed."""
+
+
+class TokenExpiredError(AuthenticationError):
+    """Raised when a session token has expired."""

@@ -21,7 +21,22 @@ vi.mock('@lucide/vue', () => ({
   Ear: { template: '<svg data-test="ear-on"></svg>' },
   EarOff: { template: '<svg data-test="ear-off"></svg>' },
   Sun: { template: '<svg data-test="sun-icon"></svg>' },
-  Moon: { template: '<svg data-test="moon-icon"></svg>' }
+  Moon: { template: '<svg data-test="moon-icon"></svg>' },
+  User: { template: '<svg data-test="user-icon"></svg>' },
+  Users: { template: '<svg data-test="users-icon"></svg>' },
+  LogOut: { template: '<svg data-test="logout-icon"></svg>' },
+  KeyRound: { template: '<svg data-test="key-icon"></svg>' },
+  X: { template: '<svg data-test="close-icon"></svg>' },
+}))
+
+// Mock UserManagementModal to keep AppHeader tests isolated
+vi.mock('../UserManagementModal.vue', () => ({
+  default: {
+    name: 'UserManagementModal',
+    props: ['isOpen'],
+    emits: ['close'],
+    template: '<div v-if="isOpen" data-test="user-management-modal-stub"></div>',
+  },
 }))
 
 describe('AppHeader.vue', () => {
@@ -147,5 +162,97 @@ describe('AppHeader.vue', () => {
     // History button shares the same hover amber styling
     expect(historyBtn.classes()).toContain('hover:text-amber-600')
     expect(historyBtn.classes()).toContain('hover:border-amber-500/40')
+  })
+
+  it('renders user badge and handles logout when authenticated', async () => {
+    const { useAuthStore } = await import('../../stores/auth')
+    const authStore = useAuthStore()
+    authStore.user = {
+      id: 'usr-1',
+      username: 'architect',
+      is_admin: false,
+      is_active: true,
+      created_at: '2026-11-09T00:00:00',
+    }
+
+    const wrapper = mount(AppHeader)
+    const userBadge = wrapper.find('[data-test="user-badge"]')
+    expect(userBadge.exists()).toBe(true)
+    expect(userBadge.text()).toContain('architect')
+
+    const logoutBtn = wrapper.find('[data-test="logout-btn"]')
+    expect(logoutBtn.exists()).toBe(true)
+
+    const logoutSpy = vi.spyOn(authStore, 'logout').mockResolvedValue(undefined)
+    await logoutBtn.trigger('click')
+
+    expect(logoutSpy).toHaveBeenCalled()
+    expect(pushMock).toHaveBeenCalledWith('/login')
+  })
+
+  it('hides user management button for regular non-admin users', async () => {
+    const { useAuthStore } = await import('../../stores/auth')
+    const authStore = useAuthStore()
+    authStore.user = {
+      id: 'usr-1',
+      username: 'architect',
+      is_admin: false,
+      is_active: true,
+      created_at: '2026-11-09T00:00:00',
+    }
+
+    const wrapper = mount(AppHeader)
+    expect(wrapper.find('[data-test="manage-users-btn"]').exists()).toBe(false)
+  })
+
+  it('shows user management button for admin users and toggles modal', async () => {
+    const { useAuthStore } = await import('../../stores/auth')
+    const authStore = useAuthStore()
+    authStore.user = {
+      id: 'usr-admin',
+      username: 'sysadmin',
+      is_admin: true,
+      is_active: true,
+      created_at: '2026-11-09T00:00:00',
+    }
+
+    const wrapper = mount(AppHeader)
+    const manageBtn = wrapper.find('[data-test="manage-users-btn"]')
+    expect(manageBtn.exists()).toBe(true)
+
+    // Modal initially closed
+    expect(wrapper.find('[data-test="user-management-modal-stub"]').exists()).toBe(false)
+
+    // Click to open modal
+    await manageBtn.trigger('click')
+    expect(wrapper.find('[data-test="user-management-modal-stub"]').exists()).toBe(true)
+  })
+
+  it('allows regular authenticated users to open self-service change password modal', async () => {
+    const { useAuthStore } = await import('../../stores/auth')
+    const authStore = useAuthStore()
+    authStore.user = {
+      id: 'usr-1',
+      username: 'architect',
+      is_admin: false,
+      is_active: true,
+      created_at: '2026-11-09T00:00:00',
+    }
+    vi.spyOn(authStore, 'changePassword').mockResolvedValue(true)
+
+    const wrapper = mount(AppHeader)
+    const changePwdBtn = wrapper.find('[data-test="change-password-btn"]')
+    expect(changePwdBtn.exists()).toBe(true)
+
+    await changePwdBtn.trigger('click')
+    expect(wrapper.find('[data-test="change-password-modal"]').exists()).toBe(true)
+
+    await wrapper.find('[data-test="current-password-input"]').setValue('OldPass123!')
+    await wrapper.find('[data-test="new-password-input"]').setValue('NewPass123!')
+    await wrapper.find('[data-test="confirm-new-password-input"]').setValue('NewPass123!')
+    await wrapper.find('[data-test="change-password-modal"] form').trigger('submit.prevent')
+
+    expect(authStore.changePassword).toHaveBeenCalledWith('OldPass123!', 'NewPass123!')
+    expect(wrapper.find('[data-test="change-password-success"]').exists()).toBe(true)
   })
 })

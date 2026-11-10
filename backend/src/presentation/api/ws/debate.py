@@ -129,11 +129,16 @@ def _extract_pending_from_event(ev: dict[str, Any]) -> dict[str, Any] | None:
 class DebateWebSocketHandler:
     """Handles the WebSocket debate streaming and HITL responses."""
     
-    def __init__(self, websocket: WebSocket):
+    def __init__(self, websocket: WebSocket, authenticated_user: Any = None, auth_service: Any = None):
         self.websocket = websocket
+        self.authenticated_user = authenticated_user
+        self.auth_service = auth_service
         self.settings = get_settings()
         db_path = str(self.settings.sqlite_db_path)
-        self.agent_config_repo = SqliteAgentConfigRepository(db_path)
+        from src.infrastructure.persistence.sqlite_agent_config_repository import UserScopedAgentConfigRepository
+        base_agent_repo = SqliteAgentConfigRepository(db_path)
+        user_id_scope = self.authenticated_user.id if self.authenticated_user else None
+        self.agent_config_repo = UserScopedAgentConfigRepository(base_agent_repo, user_id=user_id_scope)
         self.debate_repo = SqliteDebateRepository(db_path)
         store_kwargs: dict[str, Any] = {}
         if self.settings.chroma_host:
@@ -601,7 +606,14 @@ class DebateWebSocketHandler:
         user_id: str | None = None,
         attachments: list[Any] | None = None,
     ) -> None:
-        existing_record = self.debate_repo.find_by_id(session_id) if session_id else None
+        user_id_scope = self.authenticated_user.id if self.authenticated_user else None
+        existing_record = self.debate_repo.find_by_id(session_id, user_id=user_id_scope) if session_id else None
+
+        if session_id and not existing_record:
+            # Check if this session exists under another user to prevent IDOR hijacking
+            unfiltered_check = self.debate_repo.find_by_id(session_id, allow_unscoped=True)
+            if unfiltered_check:
+                raise PermissionError(f"Access denied: Session '{session_id}' belongs to another user")
 
         if existing_record:
             self.debate_record = existing_record
@@ -612,7 +624,8 @@ class DebateWebSocketHandler:
                 id=session_id or str(uuid.uuid4()),
                 user_request=user_request,
                 target_agent=target_agent,
-                status="running"
+                status="running",
+                user_id=user_id_scope,
             )
             self.debate_repo.create(self.debate_record)
 
@@ -626,7 +639,9 @@ class DebateWebSocketHandler:
         self.debate_repo.append_event(self.debate_record.id, json.dumps(user_event_dict))
 
         tags = self._build_trace_tags(target_agent, attachments)
-        effective_user = user_id or getattr(self.settings, "langfuse_default_user_id", "local_user")
+        effective_user = (
+            self.authenticated_user.username if self.authenticated_user else user_id
+        ) or getattr(self.settings, "langfuse_default_user_id", "local_user")
 
         self.current_trace = self.observability.start_trace(
             name=f"debate_{target_agent}",
@@ -738,7 +753,7 @@ class DebateWebSocketHandler:
         primary_target = target_agents[0] if target_agents else "supervisor"
         attachments = raw_start.get("attachments", [])
         chat_history = raw_start.get("history", [])
-        user_id = raw_start.get("user_id")
+        user_id = self.authenticated_user.id if self.authenticated_user else raw_start.get("user_id")
 
         self._init_session_and_trace(
             raw_start.get("session_id"),
@@ -754,8 +769,17 @@ class DebateWebSocketHandler:
             await self._dispatch_target(primary_target, user_request, chat_history, attachments)
 
     async def process_messages(self) -> None:
+        from src.presentation.api.dependencies.auth import authenticate_websocket
+
         while True:
             raw_start = await self.websocket.receive_json()
+            if self.auth_service is not None:
+                refreshed_user = await authenticate_websocket(
+                    self.websocket, self.auth_service, self.settings
+                )
+                if not refreshed_user:
+                    return
+                self.authenticated_user = refreshed_user
             if raw_start.get("type") != "start":
                 await self.websocket.send_json({"type": "error", "content": "Expected 'start' message"})
                 continue
@@ -764,7 +788,7 @@ class DebateWebSocketHandler:
     def abort(self) -> None:
         if self.debate_record:
             try:
-                record = self.debate_repo.find_by_id(self.debate_record.id)
+                record = self.debate_repo.find_by_id(self.debate_record.id, allow_unscoped=True)
                 if record and record.status == "running":
                     self.debate_repo.update_status(self.debate_record.id, "aborted")
             except Exception:
@@ -788,14 +812,45 @@ async def debate_ws(websocket: WebSocket) -> None:
     WebSocket endpoint for debate streaming.
     
     Flow:
-    1. Accept connection.
-    2. Wait for 'start' message with parameters.
-    3. Run SupervisorAgent.run() async generator or target sub-agent.
-    4. Send each event as JSON.
-    5. On HITL_REQUIRED, wait for 'hitl_response' from client before continuing.
+    1. CSWSH check (Origin).
+    2. Authenticate strictly (Fail-Closed).
+    3. Accept connection.
+    4. Wait for 'start' message with parameters.
+    5. Run SupervisorAgent.run() async generator or target sub-agent.
+    6. Send each event as JSON.
+    7. On HITL_REQUIRED, wait for 'hitl_response' from client before continuing.
     """
+    from src.presentation.api.dependencies.auth import (
+        get_auth_service,
+        validate_websocket_origin,
+        authenticate_websocket,
+    )
+    settings = get_settings()
+
+    # 1. CSWSH protection: Validate Origin header if present
+    if not validate_websocket_origin(websocket, settings):
+        await websocket.close(code=1008, reason="Origin not allowed")
+        return
+
+    # 2. Fall-closed resolution of AuthService
+    try:
+        auth_service = get_auth_service(websocket)
+    except Exception:
+        logger.exception("Failed to obtain auth service in websocket handshake")
+        await websocket.close(code=1011, reason="Authentication service unavailable")
+        return
+
+    # 3. Authenticate strictly (Fail-closed)
+    authenticated_user = await authenticate_websocket(websocket, auth_service, settings)
+    if not authenticated_user:
+        return
+
     await websocket.accept()
-    handler = DebateWebSocketHandler(websocket)
+    handler = DebateWebSocketHandler(
+        websocket,
+        authenticated_user=authenticated_user,
+        auth_service=auth_service,
+    )
     
     try:
         await handler.process_messages()

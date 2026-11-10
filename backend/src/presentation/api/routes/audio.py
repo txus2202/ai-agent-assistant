@@ -1,11 +1,13 @@
 import io
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 
+from src.domain.entities.user import User
 from src.infrastructure.audio.local_audio_service import LocalAudioService
 from src.presentation.api.config import get_settings
+from src.presentation.api.dependencies.auth import get_current_user
 
 router = APIRouter(prefix="/audio", tags=["audio"])
 
@@ -37,7 +39,10 @@ def get_audio_service() -> LocalAudioService:
         500: {"description": "Internal server error during transcription"},
     },
 )
-async def transcribe_audio(file: Annotated[UploadFile, File(...)]) -> dict:
+async def transcribe_audio(
+    file: Annotated[UploadFile, File(...)],
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """
     Transcribes audio to text using local Whisper.
     """
@@ -65,7 +70,10 @@ async def transcribe_audio(file: Annotated[UploadFile, File(...)]) -> dict:
         500: {"description": "Internal server error during speech synthesis"},
     },
 )
-async def synthesize_audio(request: dict) -> Response:
+async def synthesize_audio(
+    request: dict,
+    current_user: User = Depends(get_current_user),
+) -> Response:
     """
     Synthesizes text to speech using Piper TTS.
     Returns a WAV file.

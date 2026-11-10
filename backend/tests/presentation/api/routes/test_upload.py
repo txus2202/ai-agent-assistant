@@ -4,10 +4,21 @@ from fastapi.testclient import TestClient
 from src.presentation.api.app import create_app
 from src.presentation.api.routes.upload import TEMP_UPLOAD_DIR
 
+from src.domain.entities.user import User
+from src.presentation.api.dependencies.auth import get_current_user
+
 @pytest.fixture
 def client():
     app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id="usr-test", username="testuser", password_hash="h", is_admin=False
+    )
     return TestClient(app)
+
+def test_upload_unauthenticated():
+    app = create_app()
+    c = TestClient(app)
+    assert c.post("/upload").status_code == 401
 
 def test_upload_file(client, tmp_path, monkeypatch):
     from src.presentation.api.routes import upload

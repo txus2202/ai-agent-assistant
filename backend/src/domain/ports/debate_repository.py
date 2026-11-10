@@ -21,12 +21,20 @@ class IDebateRepository(ABC):
 
 
     @abstractmethod
-    def find_all(self) -> List[DebateRecord]:
-        """Returns all debates."""
+    def find_all(self, user_id: Optional[str] = None, allow_unscoped: bool = False) -> List[DebateRecord]:
+        """Returns all debates, optionally filtered by user_id. Fail-closed if user_id is None unless allow_unscoped=True."""
 
     @abstractmethod
-    def find_by_id(self, debate_id: str) -> Optional[DebateRecord]:
-        """Finds a debate by ID."""
+    def find_by_id(self, debate_id: str, user_id: Optional[str] = None, allow_unscoped: bool = False) -> Optional[DebateRecord]:
+        """Finds a debate by ID, optionally restricted to owner user_id. Fail-closed if user_id is None unless allow_unscoped=True."""
+
+    @abstractmethod
+    def assign_legacy_debates_to_user(self, user_id: str) -> int:
+        """Assigns all pre-auth debates (user_id IS NULL) to a specified user."""
+
+    @abstractmethod
+    def delete_by_user_id(self, user_id: str) -> int:
+        """Deletes all debates belonging to a specific user."""
 
     @abstractmethod
     def delete(self, debate_id: str) -> None:

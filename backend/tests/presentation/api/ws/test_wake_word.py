@@ -1,12 +1,18 @@
 import pytest
+from unittest.mock import patch, AsyncMock, MagicMock
 from fastapi.testclient import TestClient
 from src.presentation.api.app import create_app
-from unittest.mock import patch
-
-app = create_app()
-client = TestClient(app)
-
+from src.domain.entities.user import User
+from src.application.services.auth_service import AuthService
 from src.infrastructure.audio.wake_word_service import WakeWordDetection
+
+mock_auth = MagicMock(spec=AuthService)
+mock_auth.is_initialized = AsyncMock(return_value=True)
+test_user = User(id="usr-wake", username="audio_tester", password_hash="h", is_admin=False, is_active=True)
+mock_auth.validate_token = AsyncMock(return_value=test_user)
+
+app = create_app(auth_service=mock_auth)
+client = TestClient(app, cookies={"atenea_session": "valid_wake_token"})
 
 @patch("src.presentation.api.ws.wake_word.wake_word_service.process_chunk")
 def test_wake_word_websocket_detected(mock_process_chunk):

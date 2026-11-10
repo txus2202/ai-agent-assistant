@@ -33,6 +33,10 @@ vosk==0.3.44
 # Phase 6: Observability
 langfuse==2.60.10
 
+# Phase 7: Authentication & Security
+argon2-cffi>=23.1.0
+PyJWT>=2.10.1
+
 # Security-patched dependencies (resolves critical/high CVEs in transitive dependencies)
 aiohttp>=3.14.5
 certifi>=2026.10.1

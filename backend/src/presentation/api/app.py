@@ -47,14 +47,33 @@ atexit.register(_cleanup_docker_on_exit)
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ARG001
     # ── Startup ──────────────────────────────────────────────────────────
-    settings = get_settings()
-    # Validate config early (will raise if default_provider is invalid)
+    settings = getattr(app.state, "settings", None) or get_settings()
+    # Validate config early (will raise if default_provider or auth_secret_key is invalid)
     _ = settings.default_provider
+    from src.infrastructure.security.jwt_token_service import JwtTokenService
+    JwtTokenService(secret_key=settings.auth_secret_key, default_expiry_seconds=settings.auth_token_expiry_seconds)
     
     # Initialize SQLite repositories to ensure schemas are created
     db_path = str(settings.sqlite_db_path)
     SqliteAgentConfigRepository(db_path)
     SqliteDebateRepository(db_path)
+    from src.infrastructure.persistence.sqlite_user_repository import SQLiteUserRepository
+    SQLiteUserRepository(db_path)
+
+    # Initialize PostgreSQL pool if configured
+    db_url = getattr(settings, "database_url", "")
+    if db_url and (db_url.startswith("postgres://") or db_url.startswith("postgresql://")):
+        try:
+            import asyncpg
+            app.state.db_pool = await asyncpg.create_pool(dsn=db_url)
+            from src.infrastructure.persistence.postgres_user_repository import PostgreSQLUserRepository
+            pg_repo = PostgreSQLUserRepository(pool=app.state.db_pool)
+            await pg_repo.init_schema()
+        except ImportError:
+            raise RuntimeError(
+                f"DATABASE_URL is set to '{db_url}', but asyncpg is not installed. "
+                "Install it with `pip install asyncpg` or unset DATABASE_URL to use SQLite."
+            )
     
     # Ensure Langfuse Docker stack matches LANGFUSE_METRICS_ENABLED
     docker_manager = DockerObservabilityManager()
@@ -63,36 +82,46 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
     # Future: ChromaDB, LLMProviderRegistry init
     yield
     # ── Shutdown ─────────────────────────────────────────────────────────
+    if hasattr(app.state, "db_pool") and app.state.db_pool:
+        await app.state.db_pool.close()
     if settings.langfuse_metrics_enabled:
         await asyncio.to_thread(docker_manager.stop_stack)
 
 
 
-def create_app() -> FastAPI:
-    settings = get_settings()
+def create_app(
+    settings: Settings | None = None,
+    auth_service: Any = None,
+) -> FastAPI:
+    cfg = settings or get_settings()
 
     app = FastAPI(
         title="A.T.E.N.E.A.",
         description="AI Architecture Assistant — Multi-Agent Debate API",
-        version=settings.api_version,
+        version=cfg.api_version,
         lifespan=lifespan,
     )
+    app.state.settings = cfg
+    if auth_service is not None:
+        app.state.auth_service = auth_service
 
     # ── CORS ─────────────────────────────────────────────────────────────
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins,
+        allow_origins=cfg.cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
     # ── Routers ──────────────────────────────────────────────────────────
-    from src.presentation.api.routes import health, config, upload, history, models, audio, observability, learning, images
+    from src.presentation.api.routes import health, config, upload, history, models, audio, observability, learning, images, auth
     from src.presentation.api.ws import debate, wake_word
 
     # Register routes
     app.include_router(health.router)
+    app.include_router(auth.router)
+    app.include_router(auth.router, prefix="/api")
     app.include_router(config.router)
     app.include_router(upload.router)
     app.include_router(images.router)

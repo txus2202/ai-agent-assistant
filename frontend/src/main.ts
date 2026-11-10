@@ -27,7 +27,7 @@ window.fetch = async (...args) => {
       const authStore = useAuthStore()
       authStore.user = null
       if (router.currentRoute.value.path !== '/login') {
-        router.push({
+        void router.push({
           path: '/login',
           query:
             router.currentRoute.value.fullPath !== '/'

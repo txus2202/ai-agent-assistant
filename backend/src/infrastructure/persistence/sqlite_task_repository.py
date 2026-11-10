@@ -160,17 +160,18 @@ class SqliteTaskRepository(ITaskRepository):
         Sets status, result, and created_at directly — bypasses state machine
         intentionally (DDD reconstitution pattern, not a domain transition).
         """
-        dependencies = [uuid.UUID(dep) for dep in json.loads(row["dependencies"])]
+        data = dict(row)
+        dependencies = [uuid.UUID(dep) for dep in json.loads(data["dependencies"])]
 
         task = Task(
-            task_id=uuid.UUID(row["id"]),
-            prompt=row["prompt"],
-            agent_id=uuid.UUID(row["agent_id"]),
+            task_id=uuid.UUID(data["id"]),
+            prompt=data["prompt"],
+            agent_id=uuid.UUID(data["agent_id"]),
             dependencies=dependencies,
         )
         # Reconstitution: restore persisted state directly
-        task.status = TaskStatus(row["status"])
-        task.result = row["result"]  # may be None
-        task.created_at = datetime.fromisoformat(row["created_at"])
+        task.status = TaskStatus(data["status"])
+        task.result = data["result"]  # may be None
+        task.created_at = datetime.fromisoformat(data["created_at"])
 
         return task

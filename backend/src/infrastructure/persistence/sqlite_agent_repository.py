@@ -133,11 +133,12 @@ class SqliteAgentRepository(IAgentRepository):
     @staticmethod
     def _row_to_agent(row: sqlite3.Row) -> Agent:
         """Reconstitute an Agent entity from a database row."""
+        data = dict(row)
         return Agent(
-            agent_id=uuid.UUID(row["id"]),
-            name=row["name"],
-            role=row["role"],
-            provider=row["provider"],
-            model_name=row["model_name"],
-            status=AgentStatus(row["status"]),
+            agent_id=uuid.UUID(data["id"]),
+            name=data["name"],
+            role=data["role"],
+            provider=data["provider"],
+            model_name=data["model_name"],
+            status=AgentStatus(data["status"]),
         )

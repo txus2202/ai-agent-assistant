@@ -63,7 +63,7 @@ const handleLogout = async () => {
     debateStore.stopAutoListen()
   }
   await authStore.logout()
-  router.push('/login')
+  await router.push('/login')
 }
 
 const toggleAudio = () => {
@@ -213,6 +213,8 @@ const toggleAutoListen = () => {
     data-test="change-password-modal"
     class="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 border-0 m-0 w-full h-full max-w-none max-h-none text-inherit"
     @click.self="isChangePasswordOpen = false"
+    @cancel.prevent="isChangePasswordOpen = false"
+    @keydown.esc="isChangePasswordOpen = false"
   >
     <div class="w-full max-w-md bg-space-900 border border-cyan-500/40 rounded-xl shadow-[0_0_30px_rgba(0,229,255,0.15)] p-5 space-y-4">
       <div class="flex items-center justify-between border-b border-space-800 pb-3">
@@ -239,8 +241,9 @@ const toggleAutoListen = () => {
 
       <form @submit.prevent="handleChangePassword" class="space-y-3">
         <div>
-          <label class="block text-[11px] font-mono uppercase text-slate-300 mb-1">Contraseña Actual</label>
+          <label for="header-current-password" class="block text-[11px] font-mono uppercase text-slate-300 mb-1">Contraseña Actual</label>
           <input
+            id="header-current-password"
             v-model="currentPassword"
             data-test="current-password-input"
             type="password"
@@ -250,8 +253,9 @@ const toggleAutoListen = () => {
           />
         </div>
         <div>
-          <label class="block text-[11px] font-mono uppercase text-slate-300 mb-1">Nueva Contraseña (mín. 8 caracteres)</label>
+          <label for="header-new-password" class="block text-[11px] font-mono uppercase text-slate-300 mb-1">Nueva Contraseña (mín. 8 caracteres)</label>
           <input
+            id="header-new-password"
             v-model="newPassword"
             data-test="new-password-input"
             type="password"
@@ -261,8 +265,9 @@ const toggleAutoListen = () => {
           />
         </div>
         <div>
-          <label class="block text-[11px] font-mono uppercase text-slate-300 mb-1">Confirmar Nueva Contraseña</label>
+          <label for="header-confirm-password" class="block text-[11px] font-mono uppercase text-slate-300 mb-1">Confirmar Nueva Contraseña</label>
           <input
+            id="header-confirm-password"
             v-model="confirmNewPassword"
             data-test="confirm-new-password-input"
             type="password"

@@ -98,7 +98,7 @@ def create_rate_limiter(
     trust_x_forwarded_for: bool = False,
 ) -> Callable:
     """FastAPI dependency factory enforcing rate limits by client IP."""
-    async def _rate_limit_dependency(request: Request) -> None:
+    def _rate_limit_dependency(request: Request) -> None:
         enforce_rate_limit(
             request=request,
             max_requests=max_requests,

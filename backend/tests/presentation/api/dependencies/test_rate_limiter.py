@@ -78,8 +78,7 @@ def test_rate_limiter_window_expiration(monkeypatch):
     assert retry_after == 0
 
 
-@pytest.mark.asyncio
-async def test_fastapi_rate_limiter_dependency_raises_429():
+def test_fastapi_rate_limiter_dependency_raises_429():
     limiter = InMemoryRateLimiter()
     dep = create_rate_limiter(max_requests=2, window_seconds=60, limiter=limiter, key_prefix="test")
 
@@ -88,20 +87,19 @@ async def test_fastapi_rate_limiter_dependency_raises_429():
     mock_request.client.host = "192.168.1.10"
 
     # 1st and 2nd pass
-    await dep(mock_request)
-    await dep(mock_request)
+    dep(mock_request)
+    dep(mock_request)
 
     # 3rd must raise 429
     with pytest.raises(HTTPException) as exc_info:
-        await dep(mock_request)
+        dep(mock_request)
 
     assert exc_info.value.status_code == status.HTTP_429_TOO_MANY_REQUESTS
     assert "Retry-After" in exc_info.value.headers
     assert exc_info.value.detail == "Too many requests. Please try again later."
 
 
-@pytest.mark.asyncio
-async def test_rate_limiter_ignores_spoofed_x_forwarded_for_by_default():
+def test_rate_limiter_ignores_spoofed_x_forwarded_for_by_default():
     limiter = InMemoryRateLimiter()
     dep = create_rate_limiter(
         max_requests=2,
@@ -116,14 +114,14 @@ async def test_rate_limiter_ignores_spoofed_x_forwarded_for_by_default():
         req = MagicMock(spec=Request)
         req.headers = {"X-Forwarded-For": spoof_ip}
         req.client.host = "10.0.0.5"
-        await dep(req)
+        dep(req)
 
     # 3rd attempt with yet another spoofed X-Forwarded-For must still be blocked
     req3 = MagicMock(spec=Request)
     req3.headers = {"X-Forwarded-For": "3.3.3.3"}
     req3.client.host = "10.0.0.5"
     with pytest.raises(HTTPException) as exc_info:
-        await dep(req3)
+        dep(req3)
     assert exc_info.value.status_code == status.HTTP_429_TOO_MANY_REQUESTS
 
 

@@ -21,26 +21,34 @@ describe('Router & Navigation Guards', () => {
     expect(routes.find(r => r.name === 'setup')).toBeDefined()
   })
 
-  it('redirects to /setup when system is not initialized', async () => {
+  it.each([
+    {
+      description: 'redirects to /setup when system is not initialized',
+      isInitialized: false,
+      targetPath: '/',
+      expectedPath: '/setup',
+    },
+    {
+      description: 'redirects unauthenticated user to /login when system is initialized',
+      isInitialized: true,
+      targetPath: '/',
+      expectedPath: '/login',
+    },
+    {
+      description: 'redirects away from /setup to /login if system is already initialized and unauthenticated',
+      isInitialized: true,
+      targetPath: '/setup',
+      expectedPath: '/login',
+    },
+  ])('$description', async ({ isInitialized, targetPath, expectedPath }) => {
     const authStore = useAuthStore()
-    authStore.isInitialized = false
+    authStore.isInitialized = isInitialized
     authStore.user = null
 
-    await router.push('/')
+    await router.push(targetPath)
     await router.isReady()
 
-    expect(router.currentRoute.value.path).toBe('/setup')
-  })
-
-  it('redirects unauthenticated user to /login when system is initialized', async () => {
-    const authStore = useAuthStore()
-    authStore.isInitialized = true
-    authStore.user = null
-
-    await router.push('/')
-    await router.isReady()
-
-    expect(router.currentRoute.value.path).toBe('/login')
+    expect(router.currentRoute.value.path).toBe(expectedPath)
   })
 
   it('redirects to /login with redirect query when trying to access /history while unauthenticated', async () => {
@@ -92,16 +100,5 @@ describe('Router & Navigation Guards', () => {
     await router.isReady()
 
     expect(router.currentRoute.value.path).toBe('/')
-  })
-
-  it('redirects away from /setup to /login if system is already initialized and unauthenticated', async () => {
-    const authStore = useAuthStore()
-    authStore.isInitialized = true
-    authStore.user = null
-
-    await router.push('/setup')
-    await router.isReady()
-
-    expect(router.currentRoute.value.path).toBe('/login')
   })
 })

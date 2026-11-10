@@ -42,54 +42,52 @@ class SqliteAgentConfigRepository(IAgentConfigRepository):
             raise RepositoryError(f"Failed to save agent config {config.role}: {exc}") from exc
 
     def find_by_role(self, role: str, user_id: Optional[str] = None) -> Optional[AgentConfig]:
+        candidates = self._candidate_roles(role)
         try:
             with self._connection() as conn:
                 row = None
-                # 1. If user_id is provided, search user-specific override first
                 if user_id:
-                    row = conn.execute(
-                        "SELECT * FROM agent_configs WHERE role = ? AND user_id = ?",
-                        (role, user_id),
-                    ).fetchone()
-                    if not row:
-                        try:
-                            from src.domain.agents.sub_agent_profiles import get_profile
-                            p = get_profile(role)
-                            for alt in (p.display_name, p.id):
-                                if alt != role:
-                                    row = conn.execute(
-                                        "SELECT * FROM agent_configs WHERE role = ? AND user_id = ?",
-                                        (alt, user_id),
-                                    ).fetchone()
-                                    if row:
-                                        break
-                        except Exception:
-                            pass
-
-                # 2. Fall back to global default (user_id = '' or NULL)
+                    row = self._query_by_candidates(conn, candidates, user_id=user_id)
                 if not row:
-                    row = conn.execute(
-                        "SELECT * FROM agent_configs WHERE role = ? AND (user_id = '' OR user_id IS NULL)",
-                        (role,),
-                    ).fetchone()
-                    if not row:
-                        try:
-                            from src.domain.agents.sub_agent_profiles import get_profile
-                            p = get_profile(role)
-                            for alt in (p.display_name, p.id):
-                                if alt != role:
-                                    row = conn.execute(
-                                        "SELECT * FROM agent_configs WHERE role = ? AND (user_id = '' OR user_id IS NULL)",
-                                        (alt,),
-                                    ).fetchone()
-                                    if row:
-                                        break
-                        except Exception:
-                            pass
+                    row = self._query_by_candidates(conn, candidates, user_id=None)
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to query agent config {role}: {exc}") from exc
 
         return self._row_to_config(row) if row else None
+
+    @staticmethod
+    def _candidate_roles(role: str) -> List[str]:
+        candidates = [role]
+        try:
+            from src.domain.agents.sub_agent_profiles import get_profile
+            profile = get_profile(role)
+            for alt in (profile.display_name, profile.id):
+                if alt not in candidates:
+                    candidates.append(alt)
+        except Exception:
+            pass
+        return candidates
+
+    @staticmethod
+    def _query_by_candidates(
+        conn: sqlite3.Connection,
+        candidates: List[str],
+        user_id: Optional[str],
+    ) -> Optional[sqlite3.Row]:
+        for candidate in candidates:
+            if user_id:
+                row = conn.execute(
+                    "SELECT * FROM agent_configs WHERE role = ? AND user_id = ?",
+                    (candidate, user_id),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT * FROM agent_configs WHERE role = ? AND (user_id = '' OR user_id IS NULL)",
+                    (candidate,),
+                ).fetchone()
+            if row:
+                return row
+        return None
 
     def find_all(self, user_id: Optional[str] = None) -> List[AgentConfig]:
         try:

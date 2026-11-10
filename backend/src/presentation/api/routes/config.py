@@ -72,7 +72,7 @@ def _build_agent_item(
 @router.get("/agents")
 async def get_agents_config(
     repo: Annotated[IAgentConfigRepository, Depends(get_config_repo)],
-    current_user: User = Depends(get_current_user),
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> List[Dict[str, Any]]:
     """
     Devuelve la lista de agentes disponibles en el sistema con su nombre, descripción, proveedor, modelo y capacidades configuradas para el usuario autenticado.
@@ -95,7 +95,7 @@ async def get_agents_config(
 async def get_agent_config(
     role: str,
     repo: Annotated[IAgentConfigRepository, Depends(get_config_repo)],
-    current_user: User = Depends(get_current_user),
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> Dict[str, str]:
     """
     Obtiene la configuración (nombre, descripción, proveedor y modelo) de un agente específico para el usuario autenticado.
@@ -129,7 +129,7 @@ async def update_agent_config(
     role: str, 
     update: AgentConfigUpdate, 
     repo: Annotated[IAgentConfigRepository, Depends(get_config_repo)],
-    current_user: User = Depends(get_current_user),
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
     """
     Actualiza la configuración (proveedor y modelo) de un agente específico para el usuario autenticado.
@@ -151,7 +151,7 @@ async def update_agent_config(
 
 @router.get("/topology")
 async def get_topology(
-    current_user: User = Depends(get_current_user),
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> Dict[str, Any]:
     """
     Devuelve la topología de roles y asignación de agentes configurada en topology.yaml.

@@ -10,7 +10,7 @@ from __future__ import annotations
 import mimetypes
 import re
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -31,7 +31,7 @@ IMAGE_RESPONSES: dict[int | str, dict[str, Any]] = {
 @router.get("/api/images/{filename}", responses=IMAGE_RESPONSES)
 async def get_generated_image(
     filename: str,
-    current_user: User = Depends(get_current_user),
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
     """Serve a generated image file safely."""
     if not re.match(r"^[a-zA-Z0-9_\-\.]+$", filename):

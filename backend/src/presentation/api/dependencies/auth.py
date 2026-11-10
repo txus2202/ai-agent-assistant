@@ -40,7 +40,7 @@ def get_auth_service(connection: HTTPConnection) -> AuthService:
     if _auth_service_instance is None:
         settings = get_settings()
         db_url = getattr(settings, "database_url", "")
-        if db_url and (db_url.startswith("postgres://") or db_url.startswith("postgresql://")):
+        if db_url and db_url.startswith(("postgres://", "postgresql://")):
             # PostgreSQL pool injected from lifespan
             pg_pool = getattr(app_state, "db_pool", None)
             if pg_pool:

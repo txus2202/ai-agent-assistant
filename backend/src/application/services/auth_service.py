@@ -1,5 +1,4 @@
 import asyncio
-import dataclasses
 from datetime import datetime, timezone
 import uuid
 from typing import Optional, Tuple
@@ -22,6 +21,7 @@ from src.domain.ports.agent_config_repository import IAgentConfigRepository
 
 # Pre-computed Argon2id hash for constant-time timing attack mitigation
 _DUMMY_HASH = "$argon2id$v=19$m=65536,t=2,p=2$c29tZXNhbHQxMjM0NTY3OA$9/3e3T5e0qYFmE2iU4zQ5sW8aD6gH7jK9lM1nO3pQ5s"
+_WEAK_PASSWORD_MSG = "Password must be at least 8 characters long."
 
 
 class AuthService:
@@ -59,7 +59,7 @@ class AuthService:
         Serialized by _setup_lock to prevent concurrent admin creation.
         """
         if len(password) < 8:
-            raise WeakPasswordError("Password must be at least 8 characters long.")
+            raise WeakPasswordError(_WEAK_PASSWORD_MSG)
 
         async with self._setup_lock:
             if await self.is_initialized():
@@ -157,7 +157,7 @@ class AuthService:
             raise UnauthorizedError("Only administrators can create new users.")
 
         if len(password) < 8:
-            raise WeakPasswordError("Password must be at least 8 characters long.")
+            raise WeakPasswordError(_WEAK_PASSWORD_MSG)
 
         user_id = str(uuid.uuid4())
         password_hash = await asyncio.to_thread(self._hasher.hash, password)
@@ -179,6 +179,38 @@ class AuthService:
         if not actor.is_admin:
             raise UnauthorizedError("Only administrators can list users.")
         return await self._user_repo.list_users()
+
+    @staticmethod
+    def _validate_self_update(
+        actor: User,
+        target: User,
+        is_active: Optional[bool],
+        is_admin: Optional[bool],
+    ) -> None:
+        if actor.id != target.id:
+            return
+        if is_active is False:
+            raise SelfModificationError("Cannot deactivate your own administrator account.")
+        if is_admin is False:
+            raise SelfModificationError("Cannot revoke administrator privileges from your own account.")
+
+    async def _ensure_not_last_admin(self, target: User, error_msg: str) -> None:
+        all_users = await self._user_repo.list_users()
+        active_admins = [u for u in all_users if u.is_admin and u.is_active]
+        if len(active_admins) <= 1 and any(u.id == target.id for u in active_admins):
+            raise LastAdminError(error_msg)
+
+    async def _resolve_password_update(
+        self,
+        target: User,
+        password: Optional[str],
+    ) -> Tuple[str, int]:
+        if password is None:
+            return target.password_hash, target.token_version
+        if len(password) < 8:
+            raise WeakPasswordError(_WEAK_PASSWORD_MSG)
+        new_hash = await asyncio.to_thread(self._hasher.hash, password)
+        return new_hash, target.token_version + 1
 
     async def update_user(
         self,
@@ -203,39 +235,28 @@ class AuthService:
         if not target:
             raise UserNotFoundError(f"User '{user_id}' not found.")
 
-        # Self-modification restrictions
-        if actor.id == target.id:
-            if is_active is False:
-                raise SelfModificationError("Cannot deactivate your own administrator account.")
-            if is_admin is False:
-                raise SelfModificationError("Cannot revoke administrator privileges from your own account.")
+        self._validate_self_update(actor, target, is_active, is_admin)
 
-        # Last administrator protection
-        will_demote = (is_admin is False and target.is_admin)
-        will_deactivate = (is_active is False and target.is_admin and target.is_active)
+        will_demote = is_admin is False and target.is_admin
+        will_deactivate = is_active is False and target.is_admin and target.is_active
         if will_demote or will_deactivate:
-            all_users = await self._user_repo.list_users()
-            active_admins = [u for u in all_users if u.is_admin and u.is_active]
-            if len(active_admins) <= 1 and any(u.id == target.id for u in active_admins):
-                raise LastAdminError("Cannot demote or deactivate the last active administrator.")
+            await self._ensure_not_last_admin(
+                target,
+                "Cannot demote or deactivate the last active administrator.",
+            )
 
-        new_password_hash = target.password_hash
-        new_token_version = target.token_version
-        if password is not None:
-            if len(password) < 8:
-                raise WeakPasswordError("Password must be at least 8 characters long.")
-            new_password_hash = await asyncio.to_thread(self._hasher.hash, password)
-            new_token_version = target.token_version + 1
-
+        new_password_hash, new_token_version = await self._resolve_password_update(target, password)
         new_deleted_at = None if is_active is True else target.deleted_at
 
-        updated_target = dataclasses.replace(
-            target,
+        updated_target = User(
+            id=target.id,
+            username=target.username,
             password_hash=new_password_hash,
-            token_version=new_token_version,
             is_admin=target.is_admin if is_admin is None else is_admin,
             is_active=target.is_active if is_active is None else is_active,
+            token_version=new_token_version,
             deleted_at=new_deleted_at,
+            created_at=target.created_at,
         )
 
         await self._user_repo.save(updated_target)
@@ -264,10 +285,15 @@ class AuthService:
             raise InvalidCredentialsError("Current password is incorrect.")
 
         new_hash = await asyncio.to_thread(self._hasher.hash, new_password)
-        updated = dataclasses.replace(
-            user,
+        updated = User(
+            id=user.id,
+            username=user.username,
             password_hash=new_hash,
+            is_admin=user.is_admin,
+            is_active=user.is_active,
             token_version=user.token_version + 1,
+            deleted_at=user.deleted_at,
+            created_at=user.created_at,
         )
         await self._user_repo.save(updated)
 
@@ -278,6 +304,14 @@ class AuthService:
             token_version=updated.token_version,
         )
         return new_token, updated
+
+    def _purge_user_resources(self, user_id: str) -> None:
+        for repo in (self._debate_repo, self._agent_config_repo):
+            if repo:
+                try:
+                    repo.delete_by_user_id(user_id)
+                except Exception:
+                    pass
 
     async def delete_user(self, actor: User, user_id: str) -> str:
         """
@@ -301,30 +335,25 @@ class AuthService:
             raise SelfModificationError("Cannot delete your own administrator account.")
 
         if target.is_admin:
-            all_users = await self._user_repo.list_users()
-            active_admins = [u for u in all_users if u.is_admin and u.is_active]
-            if len(active_admins) <= 1 and any(u.id == target.id for u in active_admins):
-                raise LastAdminError("Cannot delete the last active administrator.")
-
-        strategy = self._delete_strategy.lower()
-        if strategy == "hard":
-            await self._user_repo.delete(user_id)
-            if self._debate_repo:
-                try:
-                    self._debate_repo.delete_by_user_id(user_id)
-                except Exception:
-                    pass
-            if self._agent_config_repo:
-                try:
-                    self._agent_config_repo.delete_by_user_id(user_id)
-                except Exception:
-                    pass
-            return "hard"
-        else:
-            updated_target = dataclasses.replace(
+            await self._ensure_not_last_admin(
                 target,
-                is_active=False,
-                deleted_at=datetime.now(timezone.utc),
+                "Cannot delete the last active administrator.",
             )
-            await self._user_repo.save(updated_target)
-            return "soft"
+
+        if self._delete_strategy.lower() == "hard":
+            await self._user_repo.delete(user_id)
+            self._purge_user_resources(user_id)
+            return "hard"
+
+        updated_target = User(
+            id=target.id,
+            username=target.username,
+            password_hash=target.password_hash,
+            is_admin=target.is_admin,
+            is_active=False,
+            token_version=target.token_version,
+            deleted_at=datetime.now(timezone.utc),
+            created_at=target.created_at,
+        )
+        await self._user_repo.save(updated_target)
+        return "soft"

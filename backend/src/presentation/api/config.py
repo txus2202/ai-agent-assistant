@@ -115,6 +115,20 @@ class Settings(BaseSettings):
             raise ValueError(f"Unknown provider: '{v}'. Must be one of {allowed}")
         return v
 
+    @field_validator("auth_secret_key", mode="before")
+    @classmethod
+    def default_auth_secret_key_if_empty(cls, v: Any) -> Any:
+        if not v or (isinstance(v, str) and not v.strip()):
+            return secrets.token_urlsafe(48)
+        return v
+
+    @field_validator("initial_setup_token", mode="before")
+    @classmethod
+    def empty_setup_token_to_none(cls, v: Any) -> Any:
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
     def model_post_init(self, __context: Any) -> None:
         if self.auth_cookie_samesite == "none" and not self.auth_cookie_secure:
             raise ValueError("auth_cookie_secure must be True when auth_cookie_samesite is set to 'none'")

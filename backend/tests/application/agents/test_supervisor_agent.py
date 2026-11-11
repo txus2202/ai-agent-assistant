@@ -1003,5 +1003,66 @@ class TestAdaptiveSupervisorRouting:
         done_events = [e for e in events if e.type == EventType.DONE]
         assert len(done_events) == 1
 
+    @pytest.mark.anyio
+    async def test_supervisor_forwards_rag_top_k_and_min_score_from_agent_config_repo(self, monkeypatch):
+        from src.application.agents import supervisor_agent as _mod
+        from src.application.agents.sub_agent_runner import SubAgentResponse
+        from src.application.agents.supervisor_agent import SupervisorAgent, TriageDecision
+        from src.domain.agents.debate_topology import DebateTopology
+        from src.domain.value_objects.agent_config import AgentConfig
+
+        captured_kwargs: dict[str, dict] = {}
+
+        async def _capturing_runner(role, user_request, llm_provider, document_store, model_name, **kwargs):
+            key = role.value if hasattr(role, "value") else str(role)
+            captured_kwargs[key] = kwargs
+            return SubAgentResponse(role=role, content=f"{key}: output", context_chunks=[])
+
+        monkeypatch.setattr(_mod.SubAgentRunner, "run", _capturing_runner)
+        monkeypatch.setattr(
+            _mod,
+            "classify_intent",
+            lambda *args, **kwargs: TriageDecision(
+                mode="single_agent",
+                target_agent="implementer_one",
+                reasoning="Direct call to ImplOne",
+            ),
+        )
+
+        class CustomRagConfigRepo(FakeAgentConfigRepo):
+            def find_by_role(self, role: str) -> AgentConfig | None:
+                if role in ("ImplOne", "implementer_one"):
+                    return AgentConfig(
+                        role=role,
+                        provider="gemini",
+                        model_name="gemini-2.5-flash",
+                        rag_top_k=0,
+                        rag_min_score=0.75,
+                    )
+                return super().find_by_role(role)
+
+        custom_topology = DebateTopology(
+            supervisor="Coordinator",
+            interpreters=("Interpreter",),
+            proposers=("PropOne",),
+            reviewers=("Auditor",),
+            evaluators=("Auditor",),
+            implementers=("ImplOne",),
+        )
+
+        await _collect(SupervisorAgent.run(
+            user_request="Documenta la sesión actual sin ruido del vault",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=CustomRagConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_approve_always,
+            topology=custom_topology,
+        ))
+
+        assert "ImplOne" in captured_kwargs
+        assert captured_kwargs["ImplOne"]["rag_top_k"] == 0
+        assert captured_kwargs["ImplOne"]["rag_min_score"] == pytest.approx(0.75)
+
+
 
 

@@ -557,7 +557,12 @@ class DebateWebSocketHandler:
             ))
 
             llm_prov, mod_name = self._resolve_agent_llm(profile, agent_role)
-            runner_kwargs = {"chat_history": chat_history} if chat_history else {}
+            config = self.agent_config_repo.find_by_role(profile.id) or self.agent_config_repo.find_by_role(agent_role)
+            runner_kwargs: dict[str, Any] = {"chat_history": chat_history} if chat_history else {}
+            if config and getattr(config, "rag_top_k", None) is not None:
+                runner_kwargs["rag_top_k"] = config.rag_top_k
+            if config and getattr(config, "rag_min_score", None) is not None:
+                runner_kwargs["rag_min_score"] = config.rag_min_score
             resp = await SubAgentRunner.run(
                 role=agent_role,
                 user_request=user_request,

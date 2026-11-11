@@ -57,6 +57,41 @@ describe('useConfigStore', () => {
     expect(store.agentsConfig[0]!.model_name).toBe('gpt-4o')
   })
 
+  it('handles updateAgentConfig with ragTopK and ragMinScore parameters', async () => {
+    const store = useConfigStore()
+    store.agentsConfig = [
+      {
+        id: 'caliope',
+        name: 'Calíope',
+        provider: 'gemini',
+        model_name: 'gemini-2.5-flash',
+        rag_top_k: 5,
+        rag_min_score: 0.3,
+      }
+    ]
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true })
+    })
+
+    await store.updateAgentConfig('caliope', 'gemini', 'gemini-2.5-flash', 0, 0.45)
+
+    expect(global.fetch).toHaveBeenCalledWith('/api/config/agents/caliope', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'gemini',
+        model_name: 'gemini-2.5-flash',
+        rag_top_k: 0,
+        rag_min_score: 0.45,
+      })
+    })
+
+    expect(store.agentsConfig[0]!.rag_top_k).toBe(0)
+    expect(store.agentsConfig[0]!.rag_min_score).toBe(0.45)
+  })
+
   it('handles loadProviders by fetching and filtering providers with models', async () => {
     const mockProviders = [
       { id: 'gemini', name: 'Gemini', models: [{ id: 'gemini-1.5-flash', name: 'Gemini Flash' }] },

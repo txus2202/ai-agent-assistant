@@ -450,7 +450,11 @@ def _build_role_runner(
         model_name = config.model_name if config else settings.default_model
 
         llm_provider = llm_factory(provider_name)
-        runner_kwargs = {"chat_history": chat_history} if chat_history else {}
+        runner_kwargs: dict[str, Any] = {"chat_history": chat_history} if chat_history else {}
+        if config and getattr(config, "rag_top_k", None) is not None:
+            runner_kwargs["rag_top_k"] = config.rag_top_k
+        if config and getattr(config, "rag_min_score", None) is not None:
+            runner_kwargs["rag_min_score"] = config.rag_min_score
         resp = await SubAgentRunner.run(
             role=agent_name,
             user_request=req,

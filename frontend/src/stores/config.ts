@@ -7,6 +7,8 @@ export interface AgentConfig {
   color_hex?: string
   provider: string
   model_name: string
+  rag_top_k?: number
+  rag_min_score?: number
   uses_rag?: boolean
   supports_hitl?: boolean
   can_ingest_documents?: boolean
@@ -65,14 +67,28 @@ export const useConfigStore = defineStore('config', {
       }
     },
     
-    async updateAgentConfig(role: string, provider: string, modelName: string) {
+    async updateAgentConfig(
+      role: string,
+      provider: string,
+      modelName: string,
+      ragTopK?: number,
+      ragMinScore?: number,
+    ) {
       try {
+        const payload: Record<string, unknown> = { provider, model_name: modelName }
+        if (ragTopK !== undefined) {
+          payload.rag_top_k = ragTopK
+        }
+        if (ragMinScore !== undefined) {
+          payload.rag_min_score = ragMinScore
+        }
+
         const response = await fetch(`/api/config/agents/${role}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ provider, model_name: modelName }),
+          body: JSON.stringify(payload),
         })
         
         if (response.ok) {
@@ -80,6 +96,12 @@ export const useConfigStore = defineStore('config', {
           if (index !== -1) {
             this.agentsConfig[index]!.provider = provider
             this.agentsConfig[index]!.model_name = modelName
+            if (ragTopK !== undefined) {
+              this.agentsConfig[index]!.rag_top_k = ragTopK
+            }
+            if (ragMinScore !== undefined) {
+              this.agentsConfig[index]!.rag_min_score = ragMinScore
+            }
           }
         }
       } catch (error) {

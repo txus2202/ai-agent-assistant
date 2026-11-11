@@ -162,6 +162,50 @@ class TestSubAgentRunner:
         assert "unique_rag_content_xyz" in sent_prompt
 
     @pytest.mark.anyio
+    async def test_rag_top_k_zero_skips_rag_retrieval_for_rag_agent(self):
+        llm = FakeLLM()
+        store = InMemoryDocumentStore()
+        store.upsert([
+            _chunk("spec#s", "should_not_be_retrieved_xyz", metadata={"type": "spec"}),
+        ])
+
+        response = await SubAgentRunner.run(
+            role="PropOne",
+            user_request="propose something without vault noise",
+            llm_provider=llm,
+            document_store=store,
+            model_name="gemini-3.6-flash",
+            rag_top_k=0,
+            rag_min_score=0.3,
+        )
+
+        assert response.context_chunks == []
+        sent_prompt = llm.received_prompts[0]
+        assert "should_not_be_retrieved_xyz" not in sent_prompt
+
+    @pytest.mark.anyio
+    async def test_rag_top_k_limits_returned_chunks(self):
+        llm = FakeLLM()
+        store = InMemoryDocumentStore()
+        store.upsert([
+            _chunk("spec#1", "architecture spec content 1", metadata={"type": "spec"}),
+            _chunk("spec#2", "architecture spec content 2", metadata={"type": "spec"}),
+            _chunk("spec#3", "architecture spec content 3", metadata={"type": "spec"}),
+        ])
+
+        response = await SubAgentRunner.run(
+            role="PropOne",
+            user_request="architecture spec content",
+            llm_provider=llm,
+            document_store=store,
+            model_name="gemini-3.6-flash",
+            rag_top_k=1,
+            rag_min_score=0.0,
+        )
+
+        assert len(response.context_chunks) == 1
+
+    @pytest.mark.anyio
     async def test_prompt_includes_chat_history_context(self):
         llm = FakeLLM()
         history = [

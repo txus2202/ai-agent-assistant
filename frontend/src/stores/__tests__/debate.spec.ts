@@ -616,6 +616,42 @@ describe('useDebateStore', () => {
     expect(store.activeTtsRole).toBeNull()
   })
 
+  it('handles cancelDebate stopping TTS, resetting agents and isDebating, sending abort and adding cancellation message', () => {
+    const store = useDebateStore()
+    store.connect()
+    store.isDebating = true
+    store.isTtsPlaying = true
+    store.isHitlRequired = true
+    store.agents = [
+      { role: 'hermes', name: 'Hermes', state: 'ACTIVE' },
+      { role: 'supervisor', name: 'Atenea', state: 'ACTIVE' }
+    ]
+
+    const socket = activeSockets[0]
+    expect(socket).toBeDefined()
+
+    store.cancelDebate()
+
+    expect(store.isDebating).toBe(false)
+    expect(store.isTtsPlaying).toBe(false)
+    expect(store.isHitlRequired).toBe(false)
+    expect(store.agents[0]!.state).toBe('STANDBY')
+    expect(store.agents[1]!.state).toBe('STANDBY')
+    expect(socket!.send).toHaveBeenCalledWith(JSON.stringify({ type: 'cancel' }))
+    expect(socket!.close).toHaveBeenCalled()
+
+    const lastMsg = store.messages[store.messages.length - 1]
+    expect(lastMsg).toBeDefined()
+    expect(lastMsg!.content).toContain('cancelada por el usuario')
+  })
+
+  it('does nothing in cancelDebate if not debating', () => {
+    const store = useDebateStore()
+    store.isDebating = false
+    store.cancelDebate()
+    expect(store.messages).toHaveLength(0)
+  })
+
   it('handles websocket open, message, error, and close lifecycle events', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(console, 'log').mockImplementation(() => {})

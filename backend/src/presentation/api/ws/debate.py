@@ -292,6 +292,10 @@ class DebateWebSocketHandler:
                 chat_history=chat_history,
             ):
                 await self.send_event(event)
+        except WebSocketDisconnect:
+            logger.info("WebSocket disconnected during supervisor debate; aborting")
+            self.abort()
+            raise
         except Exception as e:
             logger.exception("Error during supervisor debate execution")
             if self.debate_record:
@@ -793,7 +797,16 @@ class DebateWebSocketHandler:
                 if not refreshed_user:
                     return
                 self.authenticated_user = refreshed_user
-            if raw_start.get("type") != "start":
+            msg_type = raw_start.get("type")
+            if msg_type in ("cancel", "abort"):
+                self.abort()
+                await self.websocket.send_json({
+                    "type": "done",
+                    "role": "supervisor",
+                    "content": "Debate cancelado por el usuario."
+                })
+                continue
+            if msg_type != "start":
                 await self.websocket.send_json({"type": "error", "content": "Expected 'start' message"})
                 continue
             await self._handle_start_request(raw_start)

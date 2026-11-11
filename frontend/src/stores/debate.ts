@@ -709,6 +709,44 @@ export const useDebateStore = defineStore('debate', () => {
     ws.send(JSON.stringify(payload))
   }
 
+  function cancelDebate() {
+    if (!isDebating.value) return
+
+    stopTts()
+
+    agents.value.forEach(a => {
+      if (a.state === 'ACTIVE') {
+        a.state = 'STANDBY'
+      }
+    })
+
+    isDebating.value = false
+    isHitlRequired.value = false
+    hitlCheckpoint.value = null
+    hitlTargetAgents.value = []
+
+    if (ws) {
+      try {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'cancel' }))
+        }
+      } catch (e) {
+        console.warn('Failed to send cancel over WebSocket:', e)
+      }
+      disconnect()
+      connect()
+    }
+
+    messages.value.push({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      agentName: 'A.T.E.N.E.A.',
+      agentRole: 'supervisor',
+      content: '⚠️ Deliberación cancelada por el usuario. Puedes reformular tu consulta o iniciar una nueva cuando desees.',
+      timestamp: new Date().toISOString()
+    })
+  }
+
   function findAgent(role?: string | null): Agent | undefined {
     if (!role) return undefined
     const clean = role.toLowerCase().trim()
@@ -1409,6 +1447,7 @@ export const useDebateStore = defineStore('debate', () => {
     connect,
     disconnect,
     startDebate,
+    cancelDebate,
     uploadFile,
     handleSupervisorEvent,
     submitHitlDecision,

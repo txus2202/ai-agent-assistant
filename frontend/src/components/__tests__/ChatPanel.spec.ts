@@ -7,6 +7,7 @@ import { useDebateStore, type ChatMessage, type SupervisorEvent } from '../../st
 
 // Mock the debate store
 const mockStartDebate = vi.fn()
+const mockCancelDebate = vi.fn()
 const mockUploadFile = vi.fn().mockResolvedValue('/uploads/test.pdf')
 const mockSubmitHitlDecision = vi.fn()
 const mockStore = {
@@ -21,6 +22,7 @@ const mockStore = {
     { role: 'diagrammer', name: 'Aracne', state: 'STANDBY', color_hex: '#ec4899' }
   ],
   startDebate: mockStartDebate,
+  cancelDebate: mockCancelDebate,
   uploadFile: mockUploadFile,
   projectName: 'A.T.E.N.E.A.',
   projectDescription: 'Asistente Técnica y Evaluadora de Nuevas Estructuras y Arquitecturas',
@@ -808,6 +810,46 @@ describe('ChatPanel.vue', () => {
     // Deselect NL Interpreter
     await interpreterOption!.trigger('click')
     expect(dropdownBtn.text()).toContain('Learning Agent')
+  })
+
+  it('renders cancel button and info toggle next to ATENEA when isDebating is true and triggers cancelDebate', async () => {
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: true }
+    })
+
+    const cancelBtn = wrapper.find('[data-test="cancel-debate-btn"]')
+    const infoToggleBtn = wrapper.find('[data-test="cancel-info-toggle-btn"]')
+
+    expect(cancelBtn.exists()).toBe(true)
+    expect(infoToggleBtn.exists()).toBe(true)
+    expect(cancelBtn.text()).toContain('Cancelar')
+
+    // Click cancel
+    await cancelBtn.trigger('click')
+    expect(mockCancelDebate).toHaveBeenCalled()
+
+    // Popover is initially hidden
+    expect(wrapper.find('[data-test="cancel-info-popover"]').exists()).toBe(false)
+
+    // Open info popover
+    await infoToggleBtn.trigger('click')
+    const popover = wrapper.find('[data-test="cancel-info-popover"]')
+    expect(popover.exists()).toBe(true)
+    expect(popover.text()).toContain('Cancela la ejecución de los agentes')
+
+    // Close info popover via close button
+    const closeBtn = wrapper.find('[data-test="cancel-info-close-btn"]')
+    await closeBtn.trigger('click')
+    expect(wrapper.find('[data-test="cancel-info-popover"]').exists()).toBe(false)
+  })
+
+  it('does not render cancel button when isDebating is false', () => {
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: false }
+    })
+
+    expect(wrapper.find('[data-test="cancel-debate-btn"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="cancel-info-toggle-btn"]').exists()).toBe(false)
   })
 })
 

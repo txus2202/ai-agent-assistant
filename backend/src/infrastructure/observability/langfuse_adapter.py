@@ -146,6 +146,29 @@ class LangfuseObservabilityAdapter(IObservabilityService):
 
         self._flush_client()
 
+    @staticmethod
+    def _build_trace_update_kwargs(
+        trace_context: TraceContext,
+        status: str,
+        output: Any,
+        models_used: list[str],
+    ) -> dict[str, Any]:
+        update_kwargs: dict[str, Any] = {"status": status, "output": output}
+        if not models_used:
+            return update_kwargs
+
+        current_tags = list(trace_context.tags or [])
+        for m in models_used:
+            tag = f"model:{m}"
+            if tag not in current_tags:
+                current_tags.append(tag)
+        update_kwargs["tags"] = current_tags
+
+        current_meta = dict(trace_context.metadata or {})
+        current_meta["models"] = models_used
+        update_kwargs["metadata"] = current_meta
+        return update_kwargs
+
     def end_trace(
         self,
         trace_context: TraceContext,
@@ -160,19 +183,12 @@ class LangfuseObservabilityAdapter(IObservabilityService):
 
         if lf_trace and hasattr(lf_trace, "update"):
             try:
-                update_kwargs: dict[str, Any] = {"status": status, "output": output}
-                if models_used:
-                    current_tags = list(trace_context.tags or [])
-                    for m in models_used:
-                        tag = f"model:{m}"
-                        if tag not in current_tags:
-                            current_tags.append(tag)
-                    update_kwargs["tags"] = current_tags
-
-                    current_meta = dict(trace_context.metadata or {})
-                    current_meta["models"] = models_used
-                    update_kwargs["metadata"] = current_meta
-
+                update_kwargs = self._build_trace_update_kwargs(
+                    trace_context=trace_context,
+                    status=status,
+                    output=output,
+                    models_used=models_used,
+                )
                 lf_trace.update(**update_kwargs)
             except Exception as exc:
                 logger.warning("Failed to update Langfuse trace: %s", exc)

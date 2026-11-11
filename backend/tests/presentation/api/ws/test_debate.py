@@ -711,6 +711,16 @@ def test_supervisor_exception_emits_single_error_event(ws_client, monkeypatch):
         assert "LLM rate limit exceeded on agent Ícaro" in err_event["content"]
 
 
+def test_cancel_message_aborts_and_acknowledges(ws_client):
+    with ws_client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({"type": "cancel"})
+        resp = websocket.receive_json()
+        assert resp["type"] == "done"
+        assert resp["role"] == "supervisor"
+        assert "cancelado" in resp["content"].lower()
+
+
+
 
 
 

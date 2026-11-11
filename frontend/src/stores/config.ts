@@ -45,8 +45,16 @@ export const useConfigStore = defineStore('config', {
       try {
         const response = await fetch('/api/models')
         if (response.ok) {
+          const isProbing = response.headers?.get?.('x-models-probing') === '1'
           const data = await response.json()
           this.providers = data.filter((p: ProviderConfig) => p.models && p.models.length > 0)
+
+          if (isProbing) {
+            // Silently refresh model list once background probing completes
+            setTimeout(() => {
+              void this.loadProviders()
+            }, 3500)
+          }
         }
       } catch (error) {
         console.error('Failed to load providers:', error)

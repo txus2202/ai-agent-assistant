@@ -64,9 +64,13 @@ class ILLMProvider(ABC):
         yield self.complete(prompt, model_name)
 
     @abstractmethod
-    def list_models(self) -> list[dict[str, str]]:
+    def list_models(self, probe: bool = True) -> list[dict[str, str]]:
         """
         List all available models for this provider.
+
+        Args:
+            probe: If True, executes healthcheck probing to filter out deprecated/unusable
+                   models. If False, returns the raw candidate catalog without network probe delays.
 
         Returns:
             A list of dictionaries, each containing 'id' and 'name' keys.

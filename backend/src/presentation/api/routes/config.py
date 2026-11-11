@@ -157,13 +157,22 @@ async def update_agent_config(
         raise HTTPException(status_code=404, detail="Agent role not found")
 
     existing = repo.find_by_role(profile.id, user_id=current_user.id)
+    
+    rag_top_k = update.rag_top_k
+    if rag_top_k is None and existing:
+        rag_top_k = existing.rag_top_k
+
+    rag_min_score = update.rag_min_score
+    if rag_min_score is None and existing:
+        rag_min_score = existing.rag_min_score
+
     config = AgentConfig(
         role=profile.id,
         provider=update.provider,
         model_name=update.model_name,
         user_id=current_user.id,
-        rag_top_k=update.rag_top_k if update.rag_top_k is not None else (existing.rag_top_k if existing else None),
-        rag_min_score=update.rag_min_score if update.rag_min_score is not None else (existing.rag_min_score if existing else None),
+        rag_top_k=rag_top_k,
+        rag_min_score=rag_min_score,
     )
     repo.save(config)
     return {"ok": True}

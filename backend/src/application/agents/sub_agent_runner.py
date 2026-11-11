@@ -75,14 +75,21 @@ class SubAgentRunner:
 
     @classmethod
     def _retrieve_rag_context(
-        cls, profile: SubAgentProfile, user_request: str, document_store: IDocumentStore
+        cls,
+        profile: SubAgentProfile,
+        user_request: str,
+        document_store: IDocumentStore,
+        rag_top_k: int | None = None,
+        rag_min_score: float | None = None,
     ) -> tuple[list[DocumentChunk], str]:
-        if not profile.uses_rag:
+        if not profile.uses_rag or rag_top_k == 0:
             return [], ""
         chunks = QueryVault.run(
             query=user_request,
             document_store=document_store,
             filter=profile.rag_filter,
+            top_k=rag_top_k,
+            min_score=rag_min_score,
         )
         return chunks, QueryVault.chunks_to_context(chunks)
 
@@ -207,6 +214,8 @@ class SubAgentRunner:
         document_store: IDocumentStore,
         model_name: str,
         chat_history: list[dict[str, Any]] | None = None,
+        rag_top_k: int | None = None,
+        rag_min_score: float | None = None,
     ) -> SubAgentResponse:
         """
         Run a sub-agent for the given role (async, ADR-016).
@@ -215,7 +224,13 @@ class SubAgentRunner:
         thread pool via asyncio.to_thread() to avoid blocking the event loop.
         """
         profile = get_profile(role)
-        context_chunks, context_block = cls._retrieve_rag_context(profile, user_request, document_store)
+        context_chunks, context_block = cls._retrieve_rag_context(
+            profile,
+            user_request,
+            document_store,
+            rag_top_k=rag_top_k,
+            rag_min_score=rag_min_score,
+        )
         image_provider = ImageGenerationService.get_provider_name()
         prompt = cls._build_prompt(profile, user_request, context_block, chat_history, image_provider)
 

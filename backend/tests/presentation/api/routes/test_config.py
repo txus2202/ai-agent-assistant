@@ -89,6 +89,50 @@ def test_put_agent_config(client):
     judge_config = next(c for c in response_get.json() if c["id"] == "the_judge")
     assert judge_config["provider"] == "openai"
     assert judge_config["model_name"] == "gpt-4o"
+    assert judge_config["rag_top_k"] == 5
+    assert judge_config["rag_min_score"] == pytest.approx(0.3)
+
+
+def test_put_agent_config_with_rag_params_and_preservation(client):
+    # 1. Update provider, model, and custom RAG settings
+    payload = {
+        "provider": "gemini",
+        "model_name": "gemini-2.5-flash",
+        "rag_top_k": 12,
+        "rag_min_score": 0.55,
+    }
+    res = client.put("/config/agents/senior_architect", json=payload)
+    assert res.status_code == 200
+
+    cfg = client.get("/config/agents/senior_architect").json()
+    assert cfg["rag_top_k"] == 12
+    assert cfg["rag_min_score"] == pytest.approx(0.55)
+
+    # 2. Subsequent model-only update preserves rag_top_k and rag_min_score
+    res2 = client.put(
+        "/config/agents/senior_architect",
+        json={"provider": "openai", "model_name": "gpt-4o"},
+    )
+    assert res2.status_code == 200
+    cfg2 = client.get("/config/agents/senior_architect").json()
+    assert cfg2["provider"] == "openai"
+    assert cfg2["model_name"] == "gpt-4o"
+    assert cfg2["rag_top_k"] == 12
+    assert cfg2["rag_min_score"] == pytest.approx(0.55)
+
+
+@pytest.mark.parametrize(
+    "invalid_payload",
+    [
+        {"provider": "gemini", "model_name": "gemini-2.5-flash", "rag_top_k": -1},
+        {"provider": "gemini", "model_name": "gemini-2.5-flash", "rag_top_k": 51},
+        {"provider": "gemini", "model_name": "gemini-2.5-flash", "rag_min_score": -0.05},
+        {"provider": "gemini", "model_name": "gemini-2.5-flash", "rag_min_score": 1.05},
+    ],
+)
+def test_put_agent_config_validates_rag_bounds(client, invalid_payload):
+    response = client.put("/config/agents/senior_architect", json=invalid_payload)
+    assert response.status_code == 422
 
 def test_put_agent_config_invalid_role(client):
     payload = {

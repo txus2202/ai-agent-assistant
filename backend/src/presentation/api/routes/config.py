@@ -1,7 +1,7 @@
 from typing import Annotated, List, Dict, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.domain.agents.sub_agent_profiles import get_all_profiles, get_profile
 from src.domain.entities.user import User
@@ -15,6 +15,8 @@ router = APIRouter(prefix="/config", tags=["config"])
 class AgentConfigUpdate(BaseModel):
     provider: str
     model_name: str
+    rag_top_k: Optional[int] = Field(default=None, ge=0, le=50)
+    rag_min_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
 
 def get_config_repo(settings: Annotated[Settings, Depends(get_settings)]) -> IAgentConfigRepository:
     return get_agent_config_repository(settings)
@@ -49,6 +51,8 @@ def _build_agent_item(
     repo: IAgentConfigRepository,
     default_provider: str,
     default_model: str,
+    default_rag_top_k: int = 5,
+    default_rag_min_score: float = 0.30,
     user_id: Optional[str] = None,
 ) -> dict[str, Any]:
     role_value = profile.id
@@ -61,6 +65,8 @@ def _build_agent_item(
         "color_hex": profile.color_hex,
         "provider": config.provider if config else default_provider,
         "model_name": config.model_name if config else default_model,
+        "rag_top_k": config.rag_top_k if (config and config.rag_top_k is not None) else default_rag_top_k,
+        "rag_min_score": config.rag_min_score if (config and config.rag_min_score is not None) else default_rag_min_score,
         "uses_rag": profile.uses_rag,
         "supports_hitl": profile.supports_hitl,
         "can_ingest_documents": profile.can_ingest_documents,
@@ -82,7 +88,16 @@ async def get_agents_config(
     top = load_topology()
 
     return [
-        _build_agent_item(profile, top, repo, settings.default_provider, settings.default_model, user_id=current_user.id)
+        _build_agent_item(
+            profile,
+            top,
+            repo,
+            settings.default_provider,
+            settings.default_model,
+            default_rag_top_k=settings.rag_top_k,
+            default_rag_min_score=settings.rag_min_score,
+            user_id=current_user.id,
+        )
         for profile in get_all_profiles()
     ]
 
@@ -96,9 +111,9 @@ async def get_agent_config(
     role: str,
     repo: Annotated[IAgentConfigRepository, Depends(get_config_repo)],
     current_user: Annotated[User, Depends(get_current_user)],
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
     """
-    Obtiene la configuración (nombre, descripción, proveedor y modelo) de un agente específico para el usuario autenticado.
+    Obtiene la configuración (nombre, descripción, proveedor, modelo y RAG) de un agente específico para el usuario autenticado.
     """
     try:
         profile = get_profile(role)
@@ -116,7 +131,9 @@ async def get_agent_config(
         "description": profile.description,
         "color_hex": profile.color_hex,
         "provider": config.provider if config else settings.default_provider,
-        "model_name": config.model_name if config else settings.default_model
+        "model_name": config.model_name if config else settings.default_model,
+        "rag_top_k": config.rag_top_k if (config and config.rag_top_k is not None) else settings.rag_top_k,
+        "rag_min_score": config.rag_min_score if (config and config.rag_min_score is not None) else settings.rag_min_score,
     }
 
 @router.put(
@@ -132,18 +149,21 @@ async def update_agent_config(
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     """
-    Actualiza la configuración (proveedor y modelo) de un agente específico para el usuario autenticado.
+    Actualiza la configuración (proveedor, modelo y parámetros RAG) de un agente específico para el usuario autenticado.
     """
     try:
         profile = get_profile(role)
     except KeyError:
         raise HTTPException(status_code=404, detail="Agent role not found")
 
+    existing = repo.find_by_role(profile.id, user_id=current_user.id)
     config = AgentConfig(
         role=profile.id,
         provider=update.provider,
         model_name=update.model_name,
         user_id=current_user.id,
+        rag_top_k=update.rag_top_k if update.rag_top_k is not None else (existing.rag_top_k if existing else None),
+        rag_min_score=update.rag_min_score if update.rag_min_score is not None else (existing.rag_min_score if existing else None),
     )
     repo.save(config)
     return {"ok": True}

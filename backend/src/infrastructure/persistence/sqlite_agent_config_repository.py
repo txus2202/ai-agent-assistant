@@ -8,20 +8,24 @@ from src.domain.value_objects.agent_config import AgentConfig
 
 _CREATE_AGENT_CONFIGS_TABLE = """
     CREATE TABLE IF NOT EXISTS agent_configs (
-        role        TEXT NOT NULL,
-        provider    TEXT NOT NULL,
-        model_name  TEXT NOT NULL,
-        user_id     TEXT NOT NULL DEFAULT '',
+        role          TEXT NOT NULL,
+        provider      TEXT NOT NULL,
+        model_name    TEXT NOT NULL,
+        user_id       TEXT NOT NULL DEFAULT '',
+        rag_top_k     INTEGER DEFAULT NULL,
+        rag_min_score REAL DEFAULT NULL,
         PRIMARY KEY (role, user_id)
     )
 """
 
 _UPSERT_AGENT_CONFIG = """
-    INSERT INTO agent_configs (role, provider, model_name, user_id)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO agent_configs (role, provider, model_name, user_id, rag_top_k, rag_min_score)
+    VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(role, user_id) DO UPDATE SET
-        provider   = excluded.provider,
-        model_name = excluded.model_name
+        provider      = excluded.provider,
+        model_name    = excluded.model_name,
+        rag_top_k     = COALESCE(excluded.rag_top_k, agent_configs.rag_top_k),
+        rag_min_score = COALESCE(excluded.rag_min_score, agent_configs.rag_min_score)
 """
 
 
@@ -36,7 +40,14 @@ class SqliteAgentConfigRepository(IAgentConfigRepository):
             with self._connection() as conn:
                 conn.execute(
                     _UPSERT_AGENT_CONFIG,
-                    (config.role, config.provider, config.model_name, user_id),
+                    (
+                        config.role,
+                        config.provider,
+                        config.model_name,
+                        user_id,
+                        config.rag_top_k,
+                        config.rag_min_score,
+                    ),
                 )
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to save agent config {config.role}: {exc}") from exc
@@ -162,6 +173,14 @@ class SqliteAgentConfigRepository(IAgentConfigRepository):
                         """)
                     conn.execute("DROP TABLE agent_configs")
                     conn.execute("ALTER TABLE agent_configs_v2 RENAME TO agent_configs")
+
+                # Ensure rag_top_k and rag_min_score columns exist (Phase 7 RAG per-agent config)
+                cursor = conn.execute("PRAGMA table_info(agent_configs)")
+                current_cols = {dict(c)["name"] for c in cursor.fetchall()}
+                if "rag_top_k" not in current_cols:
+                    conn.execute("ALTER TABLE agent_configs ADD COLUMN rag_top_k INTEGER DEFAULT NULL")
+                if "rag_min_score" not in current_cols:
+                    conn.execute("ALTER TABLE agent_configs ADD COLUMN rag_min_score REAL DEFAULT NULL")
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to initialise schema: {exc}") from exc
 
@@ -182,11 +201,15 @@ class SqliteAgentConfigRepository(IAgentConfigRepository):
     def _row_to_config(row: sqlite3.Row) -> AgentConfig:
         data = dict(row)
         uid = data.get("user_id")
+        raw_top_k = data.get("rag_top_k")
+        raw_min_score = data.get("rag_min_score")
         return AgentConfig(
             role=data["role"],
             provider=data["provider"],
             model_name=data["model_name"],
             user_id=uid if uid else None,
+            rag_top_k=int(raw_top_k) if raw_top_k is not None else None,
+            rag_min_score=float(raw_min_score) if raw_min_score is not None else None,
         )
 
 
@@ -206,6 +229,8 @@ class UserScopedAgentConfigRepository(IAgentConfigRepository):
             provider=config.provider,
             model_name=config.model_name,
             user_id=config.user_id or self._user_id,
+            rag_top_k=config.rag_top_k,
+            rag_min_score=config.rag_min_score,
         )
         self._inner.save(scoped)
 

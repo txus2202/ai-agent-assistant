@@ -195,5 +195,51 @@ describe('AgentCard.vue', () => {
     const progressBar = wrapper.find('[data-test="progress-bar"]')
     expect(progressBar.exists()).toBe(false)
   })
+
+  it('hides RAG configuration sliders when usesRag is false', () => {
+    const wrapper = mount(AgentCard, {
+      props: {
+        role: 'THE_JUDGE',
+        state: 'STANDBY',
+        usesRag: false,
+      }
+    })
+
+    expect(wrapper.find('[data-test="rag-config-controls"]').exists()).toBe(false)
+  })
+
+  it('renders RAG configuration sliders when usesRag is true and updates config store', async () => {
+    mockUpdateAgentConfig.mockClear()
+    const wrapper = mount(AgentCard, {
+      props: {
+        role: 'the_judge',
+        state: 'STANDBY',
+        usesRag: true,
+      }
+    })
+
+    const ragControls = wrapper.find('[data-test="rag-config-controls"]')
+    expect(ragControls.exists()).toBe(true)
+
+    const topKSlider = wrapper.find('[data-test="rag-top-k-slider"]')
+    const minScoreSlider = wrapper.find('[data-test="rag-min-score-slider"]')
+    expect(topKSlider.exists()).toBe(true)
+    expect(minScoreSlider.exists()).toBe(true)
+
+    expect(wrapper.find('[data-test="rag-top-k-value"]').text()).toBe('5')
+    expect(wrapper.find('[data-test="rag-min-score-value"]').text()).toBe('0.30')
+
+    await topKSlider.setValue('12')
+    expect(mockUpdateAgentConfig).toHaveBeenCalledWith('the_judge', 'gemini', 'gemini-1.5-flash', 12, 0.3)
+    expect(wrapper.find('[data-test="rag-top-k-value"]').text()).toBe('12')
+
+    await minScoreSlider.setValue('0.55')
+    expect(mockUpdateAgentConfig).toHaveBeenCalledWith('the_judge', 'gemini', 'gemini-1.5-flash', 12, 0.55)
+    expect(wrapper.find('[data-test="rag-min-score-value"]').text()).toBe('0.55')
+
+    await topKSlider.setValue('0')
+    expect(wrapper.find('[data-test="rag-top-k-value"]').text()).toBe('OFF')
+    expect((minScoreSlider.element as HTMLInputElement).disabled).toBe(true)
+  })
 })
 

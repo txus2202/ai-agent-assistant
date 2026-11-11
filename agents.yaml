@@ -26,7 +26,7 @@ version: 1
 agents:
   - id: supervisor
     display_name: Atenea
-    description: Orquestadora estratégica y deidad de la sabiduría técnica que gobierna el consejo de agentes, equilibra la innovación con la prudencia, gestiona el flujo HITL y emite veredictos ejecutivos vinculantes.
+    description: Orquestadora estratégica y deidad de la sabiduría técnica que gobierna el consejo de agentes, equilibra la innovación con la prudencia, gestiona el flujo HITL y emite veredictos vinculantes.
     color_hex: "#f59e0b"
     uses_rag: false
     phonetic_aliases:
@@ -425,7 +425,7 @@ agents:
       - Explain how you have woven this new main idea together with previous notes or knowledge regarding the project.
   - id: fídias
     display_name: Fídias
-    description: Diseñador UX/UI, maestro escultor de interfaces monumentales que idea, estructura y genera recursos visuales, mockups, landing pages y maquetaciones HTML5/CSS/JS estéticas y funcionales.
+    description: Diseñador UX/UI, maestro escultor que idea, estructura y genera recursos visuales, mockups, landing pages y maquetaciones HTML5/CSS/JS estéticas y funcionales.
     color_hex: "#ffe600"
     uses_rag: false
     phonetic_aliases:
@@ -516,9 +516,9 @@ agents:
       Only when the user explicitly requests an explanation (e.g., "explícame este código"), your output must be structured as a clear and concise bulleted list in Spanish, detailing the step-by-step logic, accompanied by the code if necessary.
   - id: caliope
     display_name: Calíope
-    description: Documentadora técnica y redactora elocuente que da formato a la complejidad técnica, elaborando documentación estructurada en Markdown, presentaciones (.pptx), actas de reuniones y manuales (.pdf).
+    description: Documentadora técnica y redactora elocuente que elabora documentación estructurada en Markdown, presentaciones (.pptx), actas de reuniones y manuales (.pdf).
     color_hex: "#ec4899"
-    uses_rag: false
+    uses_rag: true
     phonetic_aliases:
       - caliope
       - calíope

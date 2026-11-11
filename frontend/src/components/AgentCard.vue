@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, useId } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 import { useConfigStore, type AgentConfig } from '../stores/config'
 
 const props = defineProps<{
@@ -26,6 +26,8 @@ const store = useConfigStore()
 const uid = useId()
 const providerId = `${uid}-provider`
 const modelId = `${uid}-model`
+const ragTopKId = `${uid}-rag-top-k`
+const ragMinScoreId = `${uid}-rag-min-score`
 
 const agentConfig = computed<AgentConfig>(() => {
   return store.agentsConfig.find(c => c.id === props.role) || {
@@ -33,10 +35,33 @@ const agentConfig = computed<AgentConfig>(() => {
     name: props.roleName || props.role,
     provider: 'gemini',
     model_name: 'gemini-1.5-flash',
+    rag_top_k: 5,
+    rag_min_score: 0.3,
     description: '',
     color_hex: '#00e5ff'
   }
 })
+
+const localRagTopK = ref<number | null>(null)
+const localRagMinScore = ref<number | null>(null)
+
+watch(
+  () => agentConfig.value.rag_top_k,
+  (val) => {
+    if (val !== undefined) {
+      localRagTopK.value = val
+    }
+  },
+)
+
+watch(
+  () => agentConfig.value.rag_min_score,
+  (val) => {
+    if (val !== undefined) {
+      localRagMinScore.value = val
+    }
+  },
+)
 
 const provider = computed({
   get: () => agentConfig.value.provider,
@@ -55,6 +80,36 @@ const modelName = computed({
   set: (val) => {
     void store.updateAgentConfig(props.role, provider.value, val)
   }
+})
+
+const ragTopK = computed({
+  get: () => localRagTopK.value ?? agentConfig.value.rag_top_k ?? 5,
+  set: (val: number) => {
+    const normalized = Number(val)
+    localRagTopK.value = normalized
+    void store.updateAgentConfig(
+      props.role,
+      provider.value,
+      modelName.value,
+      normalized,
+      ragMinScore.value,
+    )
+  },
+})
+
+const ragMinScore = computed({
+  get: () => localRagMinScore.value ?? agentConfig.value.rag_min_score ?? 0.3,
+  set: (val: number) => {
+    const normalized = Number(val)
+    localRagMinScore.value = normalized
+    void store.updateAgentConfig(
+      props.role,
+      provider.value,
+      modelName.value,
+      ragTopK.value,
+      normalized,
+    )
+  },
 })
 
 const isGlowActive = computed(() => props.state === 'ACTIVE')
@@ -200,10 +255,10 @@ const statusTagText = computed(() => {
         </span>
       </div>
 
-      <!-- Agent Mission Description (Clamped to max 4 lines) -->
+      <!-- Agent Mission Description (Clamped to max 3 lines for all agents) -->
       <p 
         data-test="agent-description" 
-        class="text-[11px] text-slate-400 font-sans leading-relaxed line-clamp-4 mt-1.5"
+        class="text-[11px] text-slate-400 font-sans leading-snug line-clamp-3 mt-1"
         :title="agentDescription"
       >
         {{ agentDescription }}
@@ -213,7 +268,7 @@ const statusTagText = computed(() => {
     <!-- Middle / Bottom Controls & Metrics -->
     <div>
       <!-- Progress Bar (Visible only when ACTIVE) -->
-      <div v-if="state === 'ACTIVE'" data-test="progress-bar" class="h-1 w-full bg-space-800 rounded-full overflow-hidden mb-2">
+      <div v-if="state === 'ACTIVE'" data-test="progress-bar" class="h-1 w-full bg-space-800 rounded-full overflow-hidden mb-1">
         <div 
           class="h-full opacity-70 animate-[shimmer_2s_infinite]" 
           :class="colorClass"
@@ -221,8 +276,54 @@ const statusTagText = computed(() => {
         ></div>
       </div>
 
+      <!-- RAG Retrieval Controls (Visible only for agents with uses_rag: true) -->
+      <div
+        v-if="isRag"
+        data-test="rag-config-controls"
+        class="pt-1.5 mb-2.5 border-t border-space-700/30 grid grid-cols-2 gap-2.5 items-center w-full"
+      >
+        <div class="flex flex-col min-w-0">
+          <div class="flex items-center justify-between text-[9px] font-mono text-slate-400 leading-none mb-0.5">
+            <label :for="ragTopKId" class="truncate cursor-pointer" title="Cantidad máxima de fragmentos recuperados de ChromaDB (0 desactiva RAG)">Chunks</label>
+            <span class="text-cyan-300 font-bold" data-test="rag-top-k-value">{{ ragTopK === 0 ? 'OFF' : ragTopK }}</span>
+          </div>
+          <input
+            :id="ragTopKId"
+            v-model.number="ragTopK"
+            type="range"
+            min="0"
+            max="20"
+            step="1"
+            data-test="rag-top-k-slider"
+            class="rag-slider w-full cursor-pointer"
+            :style="{ '--slider-progress': `${(Number(ragTopK) / 20) * 100}%` }"
+            title="Chunks (Top-K): 0 a 20"
+          />
+        </div>
+
+        <div class="flex flex-col min-w-0">
+          <div class="flex items-center justify-between text-[9px] font-mono text-slate-400 leading-none mb-0.5">
+            <label :for="ragMinScoreId" class="truncate cursor-pointer" title="Índice mínimo de similitud semántica (0.00 a 1.00)">Proximidad</label>
+            <span class="text-cyan-300 font-bold" data-test="rag-min-score-value">{{ Number(ragMinScore).toFixed(2) }}</span>
+          </div>
+          <input
+            :id="ragMinScoreId"
+            v-model.number="ragMinScore"
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            :disabled="ragTopK === 0"
+            data-test="rag-min-score-slider"
+            class="rag-slider w-full cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            :style="{ '--slider-progress': `${Number(ragMinScore) * 100}%` }"
+            title="Proximidad mínima (Min Score): 0.00 a 1.00"
+          />
+        </div>
+      </div>
+
       <!-- Config Selectors (Provider ~36%, Model flex-1) -->
-      <div class="pt-2 border-t border-space-700/50 flex items-center gap-1.5 w-full">
+      <div class="pt-2 border-t border-space-700/30 flex items-center gap-1.5 w-full">
         <label :for="providerId" class="sr-only">Proveedor de IA para {{ displayRole }}</label>
         <select 
           :id="providerId"
@@ -251,7 +352,7 @@ const statusTagText = computed(() => {
       </div>
 
       <!-- Observability Metrics Badges (50% Tokens Left, 50% Latency & Turns Right) -->
-      <div class="pt-2 mt-1 border-t border-space-800/80 grid grid-cols-2 items-center text-[10px] font-mono text-slate-400 w-full">
+      <div class="pt-1.5 mt-1 border-t border-space-800/60 grid grid-cols-2 items-center text-[10px] font-mono text-slate-400 w-full">
         <!-- Left Half (50%): Tokens In / Out -->
         <div 
           class="flex items-center space-x-1 justify-start min-w-0" 
@@ -287,5 +388,74 @@ const statusTagText = computed(() => {
 @keyframes shimmer {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(100%); }
+}
+
+.rag-slider {
+  --slider-track-size: 2px;
+  --slider-thumb-size: 9px;
+  --slider-track-radius: 999px;
+  --slider-thumb-radius: 50%;
+  --slider-track-color: rgba(51, 65, 85, 0.75);
+  --slider-fill-color: #22d3ee;
+  --slider-thumb-color: #22d3ee;
+
+  -webkit-appearance: none;
+  appearance: none;
+  inline-size: 100%;
+  block-size: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.rag-slider:focus-visible {
+  outline: 2px solid var(--slider-fill-color);
+  outline-offset: 2px;
+}
+
+.rag-slider::-webkit-slider-runnable-track {
+  block-size: var(--slider-track-size);
+  border: 0;
+  border-radius: var(--slider-track-radius);
+  background: linear-gradient(
+    to right,
+    var(--slider-fill-color) var(--slider-progress, 0%),
+    var(--slider-track-color) var(--slider-progress, 0%)
+  );
+}
+
+.rag-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  inline-size: var(--slider-thumb-size);
+  block-size: var(--slider-thumb-size);
+  margin-block-start: calc((var(--slider-track-size) - var(--slider-thumb-size)) / 2);
+  border: 0;
+  border-radius: var(--slider-thumb-radius);
+  background: var(--slider-thumb-color);
+  box-shadow: 0 0 6px rgba(34, 211, 238, 0.45);
+}
+
+.rag-slider::-moz-range-track {
+  block-size: var(--slider-track-size);
+  border: 0;
+  border-radius: var(--slider-track-radius);
+  background: var(--slider-track-color);
+}
+
+.rag-slider::-moz-range-progress {
+  block-size: var(--slider-track-size);
+  border-radius: var(--slider-track-radius);
+  background: var(--slider-fill-color);
+}
+
+.rag-slider::-moz-range-thumb {
+  inline-size: var(--slider-thumb-size);
+  block-size: var(--slider-thumb-size);
+  border: 0;
+  border-radius: var(--slider-thumb-radius);
+  background: var(--slider-thumb-color);
+  box-shadow: 0 0 6px rgba(34, 211, 238, 0.45);
 }
 </style>

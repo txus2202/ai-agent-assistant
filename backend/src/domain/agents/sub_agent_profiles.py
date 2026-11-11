@@ -48,6 +48,8 @@ class SubAgentProfile:
     is_supervisor: bool = False
     can_ingest_documents: bool = False
     tools: tuple[str, ...] = ()
+    default_provider: str = ""
+    default_model: str = ""
 
     @property
     def supports_image_generation(self) -> bool:
@@ -125,6 +127,8 @@ def _parse_profile(entry: Any, index: int) -> SubAgentProfile:
         is_supervisor=bool(entry.get("is_supervisor", False)),
         can_ingest_documents=bool(entry.get("can_ingest_documents", False)),
         tools=tuple(str(t) for t in entry.get("tools") or ()),
+        default_provider=str(entry.get("default_provider") or entry.get("provider") or "").strip(),
+        default_model=str(entry.get("default_model") or entry.get("model_name") or entry.get("model") or "").strip(),
     )
 
 

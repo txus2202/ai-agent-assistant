@@ -33,8 +33,8 @@ const agentConfig = computed<AgentConfig>(() => {
   return store.agentsConfig.find(c => c.id === props.role) || {
     id: props.role,
     name: props.roleName || props.role,
-    provider: 'gemini',
-    model_name: 'gemini-1.5-flash',
+    provider: '',
+    model_name: '',
     rag_top_k: 5,
     rag_min_score: 0.3,
     description: '',
@@ -332,6 +332,7 @@ const statusTagText = computed(() => {
           class="w-[36%] min-w-0 bg-space-800/90 border border-space-700 hover:border-cyan-500/40 rounded px-1.5 py-1 text-[10px] font-mono font-bold text-cyan-300 outline-none truncate cursor-pointer transition-colors"
           title="Provider"
         >
+          <option value="" disabled :selected="!provider">-- Proveedor --</option>
           <option v-for="p in store.providers" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
 
@@ -343,6 +344,7 @@ const statusTagText = computed(() => {
           class="flex-1 min-w-0 bg-space-800/90 border border-space-700 hover:border-cyan-500/40 rounded px-1.5 py-1 text-[10px] font-mono font-bold text-cyan-300 outline-none truncate cursor-pointer transition-colors"
           title="Model"
         >
+          <option value="" disabled :selected="!modelName">-- Modelo --</option>
           <template v-for="p in store.providers" :key="p.id">
             <template v-if="provider === p.id">
               <option v-for="m in p.models" :key="m.id" :value="m.id">{{ m.name }}</option>

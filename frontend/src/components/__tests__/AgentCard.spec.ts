@@ -107,6 +107,20 @@ describe('AgentCard.vue', () => {
     expect(mockUpdateAgentConfig).toHaveBeenCalledWith('the_judge', 'gemini', 'gemini-1.5-pro')
   })
 
+  it('renders empty placeholders when agent has no default provider or model', () => {
+    const wrapper = mount(AgentCard, {
+      props: {
+        role: 'unconfigured_agent',
+        state: 'STANDBY',
+        colorClass: 'text-cyan-400'
+      }
+    })
+    const providerSelect = wrapper.find('[data-test="provider-select"]')
+    const modelSelect = wrapper.find('[data-test="model-select"]')
+    expect((providerSelect.element as HTMLSelectElement).value).toBe('')
+    expect((modelSelect.element as HTMLSelectElement).value).toBe('')
+  })
+
   it('renders tokens consumed and latency badges when provided', () => {
     const wrapper = mount(AgentCard, {
       props: {

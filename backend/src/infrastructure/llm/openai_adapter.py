@@ -99,43 +99,45 @@ class OpenAIAdapter(ILLMProvider):
         return getattr(self, "_last_usage", {})
 
 
+    @staticmethod
+    def _is_chat_candidate(name_id: str) -> bool:
+        if not name_id.startswith(("gpt", "o1", "o3", "chatgpt")):
+            return False
+        excluded_keywords = ("instruct", "vision", "audio", "realtime", "transcription", "tts")
+        if any(x in name_id for x in excluded_keywords):
+            return False
+        if any(marker in name_id for marker in ("-0", "-1", "-20")):
+            return False
+        return True
+
+    def _probe_model(self, name_id: str) -> bool:
+        """1-token minimal probe: validates chat endpoint is accessible."""
+        try:
+            kwargs = (
+                {"max_completion_tokens": 1}
+                if name_id.startswith(("o1", "o3"))
+                else {"max_tokens": 1}
+            )
+            self._client.chat.completions.create(
+                model=name_id,
+                messages=[{"role": "user", "content": "ping"}],
+                **kwargs,
+            )
+            return True
+        except Exception:
+            return False
+
     def list_models(self, probe: bool = True) -> list[dict[str, str]]:
         try:
             models = self._client.models.list()
-            result = []
+            result: list[dict[str, str]] = []
             for m in models.data:
                 name_id = m.id
-
-                # Filter for chat / reasoning model families
-                if not name_id.startswith(("gpt", "o1", "o3", "chatgpt")):
+                if not self._is_chat_candidate(name_id):
                     continue
-
-                # Exclude non-chat, audio, realtime, or specialized system models
-                if any(x in name_id for x in ("instruct", "vision", "audio", "realtime", "transcription", "tts")):
+                if probe and not self._probe_model(name_id):
                     continue
-
-                # Exclude dated snapshot versions when standard aliases exist
-                if "-0" in name_id or "-1" in name_id or "-20" in name_id:
-                    continue
-
-                if probe:
-                    # 1-token minimal probe: validates chat endpoint is accessible
-                    try:
-                        kwargs = (
-                            {"max_completion_tokens": 1}
-                            if name_id.startswith(("o1", "o3"))
-                            else {"max_tokens": 1}
-                        )
-                        self._client.chat.completions.create(
-                            model=name_id,
-                            messages=[{"role": "user", "content": "ping"}],
-                            **kwargs,
-                        )
-                    except Exception:
-                        continue
-
                 result.append({"id": name_id, "name": name_id.upper()})
-
             return result
         except Exception as exc:
             raise LLMProviderError(str(exc)) from exc

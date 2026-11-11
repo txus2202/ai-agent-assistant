@@ -495,8 +495,10 @@ class DebateWebSocketHandler:
         config = self.agent_config_repo.find_by_role(profile.id)
         if not config:
             config = self.agent_config_repo.find_by_role(agent_role)
-        prov_name = config.provider if config else self.settings.default_provider
-        mod_name = config.model_name if config else self.settings.default_model
+        default_prov = getattr(profile, "default_provider", "") or self.settings.default_provider
+        default_mod = getattr(profile, "default_model", "") or self.settings.default_model
+        prov_name = config.provider if (config and config.provider) else default_prov
+        mod_name = config.model_name if (config and config.model_name) else default_mod
         return get_llm_provider(prov_name), mod_name
 
     async def _emit_sub_agent_completion(

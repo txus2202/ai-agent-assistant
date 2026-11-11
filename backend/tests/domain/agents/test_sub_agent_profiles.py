@@ -206,6 +206,30 @@ agents:
         with pytest.raises(ValueError, match="supervisor"):
             load_profiles_from_file(path)
 
+    def test_load_profiles_with_default_provider_and_model(self, tmp_path: Path):
+        body = """\
+agents:
+  - id: sup_id
+    display_name: Boss
+    description: Supervisor.
+    color_hex: "#111111"
+    system_prompt: Boss instructions.
+    is_supervisor: true
+    default_provider: gemini
+    default_model: gemini-3.1-pro-preview
+  - id: worker_id
+    display_name: Worker
+    description: Worker without default model.
+    color_hex: "#222222"
+    system_prompt: Worker instructions.
+"""
+        profiles = load_profiles_from_file(_write_catalog(tmp_path, body))
+        sup, worker = profiles
+        assert sup.default_provider == "gemini"
+        assert sup.default_model == "gemini-3.1-pro-preview"
+        assert worker.default_provider == ""
+        assert worker.default_model == ""
+
     def test_missing_file_raises_file_not_found(self, tmp_path: Path):
         with pytest.raises(FileNotFoundError):
             load_profiles_from_file(tmp_path / "nope.yaml")

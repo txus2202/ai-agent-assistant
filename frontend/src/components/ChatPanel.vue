@@ -18,7 +18,9 @@ import {
   Code2,
   ImageIcon,
   FileText,
-  Printer
+  Printer,
+  Square,
+  Info
 } from '@lucide/vue'
 import { useDebateStore, type ChatMessage } from '../stores/debate'
 import DiagramModal from './tools/DiagramModal.vue'
@@ -314,8 +316,30 @@ const handleClickOutsideAgent = (event: MouseEvent) => {
   }
 }
 
+// Cancel debate & info popover state
+const showCancelInfo = ref(false)
+const cancelInfoRef = ref<HTMLElement | null>(null)
+
+const toggleCancelInfo = () => {
+  showCancelInfo.value = !showCancelInfo.value
+}
+
+const handleCancelDebate = () => {
+  store.cancelDebate()
+  showCancelInfo.value = false
+}
+
+const handleClickOutsideCancelInfo = (event: MouseEvent) => {
+  if (!cancelInfoRef.value || !showCancelInfo.value) return
+  const path = event.composedPath()
+  if (!path.includes(cancelInfoRef.value)) {
+    showCancelInfo.value = false
+  }
+}
+
 onMounted(() => {
   document.addEventListener('click', handleClickOutsideAgent)
+  document.addEventListener('click', handleClickOutsideCancelInfo)
   if (typeof store.onTtsChunkReady === 'function') {
     store.onTtsChunkReady((chunk: string, role?: string) => {
       queueTtsSentence(chunk, role)
@@ -325,6 +349,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutsideAgent)
+  document.removeEventListener('click', handleClickOutsideCancelInfo)
 })
 
 // TTS Queue logic for gapless sentence-by-sentence playback with per-agent role tracking
@@ -1160,12 +1185,60 @@ defineExpose({
       </div>
       
       <!-- Typing indicator -->
-      <div v-if="isDebating" class="flex flex-col items-start max-w-[90%]">
-        <div class="flex items-center space-x-2 mb-2 opacity-70">
+      <div v-if="isDebating" class="flex flex-col items-start max-w-[90%] relative" data-test="typing-indicator">
+        <div class="flex items-center space-x-2 mb-2">
           <div class="w-5 h-5 rounded-full border border-neon-green/50 flex items-center justify-center bg-neon-green/10 text-neon-green">
             <Bot class="w-3 h-3" />
           </div>
           <span class="text-[11px] font-bold text-white tracking-widest font-mono">{{ store.projectName }}</span>
+
+          <!-- Cancel Button -->
+          <button
+            type="button"
+            @click="handleCancelDebate"
+            class="px-2 py-0.5 bg-red-950/40 hover:bg-red-900/80 border border-red-500/50 hover:border-red-400 text-red-300 hover:text-white text-[9px] font-mono uppercase tracking-widest rounded shadow-sm flex items-center space-x-1.5 transition-all cursor-pointer active:scale-95"
+            title="Cancelar deliberación del agente en curso"
+            data-test="cancel-debate-btn"
+          >
+            <Square class="w-2.5 h-2.5 fill-red-400 text-red-400" />
+            <span>Cancelar</span>
+          </button>
+
+          <!-- Toggle Informativo -->
+          <div ref="cancelInfoRef" class="relative inline-flex items-center">
+            <button
+              type="button"
+              @click.stop="toggleCancelInfo"
+              class="p-0.5 text-slate-400 hover:text-cyan-300 transition-colors cursor-pointer rounded hover:bg-space-800/60"
+              :class="{ 'text-cyan-300 bg-space-800': showCancelInfo }"
+              title="Información sobre la cancelación"
+              data-test="cancel-info-toggle-btn"
+            >
+              <Info class="w-3.5 h-3.5" />
+            </button>
+
+            <!-- Popover informativo -->
+            <div
+              v-if="showCancelInfo"
+              class="absolute left-6 top-0 z-50 w-64 p-2.5 bg-space-900 border border-cyan-500/40 rounded-lg shadow-[0_4px_20px_rgba(0,0,0,0.5)] text-slate-300 text-[11px] font-sans leading-normal animate-fade-in"
+              data-test="cancel-info-popover"
+            >
+              <div class="flex items-start justify-between gap-1 mb-1">
+                <span class="font-mono text-[10px] text-cyan-300 font-bold uppercase tracking-wider">Cancelar agente</span>
+                <button
+                  type="button"
+                  @click.stop="showCancelInfo = false"
+                  class="text-space-400 hover:text-white p-0.5 rounded cursor-pointer"
+                  data-test="cancel-info-close-btn"
+                >
+                  <X class="w-3 h-3" />
+                </button>
+              </div>
+              <p class="text-slate-300 text-[10px]">
+                Cancela la ejecución de los agentes en curso inmediatamente si la respuesta se demora o deseas reformular tu consulta sin tener que recargar la página (F5).
+              </p>
+            </div>
+          </div>
         </div>
         <div class="bg-[#030509] border border-neon-green/40 rounded-xl rounded-tl-none px-5 py-3 shadow-[0_0_15px_-3px_rgba(0,255,157,0.1)]">
           <div class="flex space-x-1 items-center h-4">

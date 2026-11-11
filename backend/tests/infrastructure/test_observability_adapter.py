@@ -105,7 +105,51 @@ def test_langfuse_adapter_with_active_mock_client():
     )
 
     adapter.end_trace(trace, status="SUCCESS", output="final consensus")
-    mock_trace.update.assert_called_once_with(status="SUCCESS", output="final consensus")
+    mock_trace.update.assert_called_once_with(
+        status="SUCCESS",
+        output="final consensus",
+        tags=["flow:sub_agent", "agent:fidias", "model:gemini-1.5-flash"],
+        metadata={"env": "test", "models": ["gemini-1.5-flash"]},
+    )
+
+
+def test_langfuse_adapter_tags_multiple_models_in_trace():
+    mock_langfuse_client = MagicMock()
+    mock_trace = MagicMock()
+    mock_trace.id = "lf-trace-multi"
+    mock_langfuse_client.trace.return_value = mock_trace
+
+    adapter = LangfuseObservabilityAdapter(client=mock_langfuse_client)
+    trace = adapter.start_trace(
+        name="multi_agent_debate",
+        session_id="session-multi",
+        tags=["flow:supervisor_debate", "agent:supervisor"],
+    )
+
+    span1 = adapter.start_agent_span(trace, "hermes", "prompt 1", model_name="gemini-3.8-flash")
+    adapter.end_agent_span(span1, output="out 1")
+
+    span2 = adapter.start_agent_span(trace, "icaro", "prompt 2", model_name="gemini-3.7-flash")
+    adapter.end_agent_span(span2, output="out 2")
+
+    span3 = adapter.start_agent_span(trace, "supervisor", "prompt 3", model_name="gemini-3.1-pro-preview")
+    adapter.end_agent_span(span3, output="out 3")
+
+    adapter.end_trace(trace, status="SUCCESS", output="consensus")
+    mock_trace.update.assert_called_once_with(
+        status="SUCCESS",
+        output="consensus",
+        tags=[
+            "flow:supervisor_debate",
+            "agent:supervisor",
+            "model:gemini-3.1-pro-preview",
+            "model:gemini-3.7-flash",
+            "model:gemini-3.8-flash",
+        ],
+        metadata={
+            "models": ["gemini-3.1-pro-preview", "gemini-3.7-flash", "gemini-3.8-flash"]
+        },
+    )
 
 
 def test_langfuse_adapter_fallback_to_span_if_no_generation():

@@ -165,7 +165,13 @@ class DebateWebSocketHandler:
             return
         role_val = event.role.value if hasattr(event.role, "value") else str(event.role)
         config = self.agent_config_repo.find_by_role(role_val)
-        model_name = config.model_name if config else self.settings.default_model
+        default_mod = ""
+        try:
+            profile = get_profile(role_val)
+            default_mod = getattr(profile, "default_model", "")
+        except KeyError:
+            pass
+        model_name = config.model_name if (config and config.model_name) else (default_mod or self.settings.default_model)
         input_prompt = self.debate_record.user_request if self.debate_record else ""
         self.active_spans[role_val] = self.observability.start_agent_span(
             trace_context=self.current_trace,

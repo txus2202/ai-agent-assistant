@@ -143,36 +143,48 @@ class GeminiAdapter(ILLMProvider):
         return getattr(self, "_last_usage", {})
 
 
+    @staticmethod
+    def _supports_generation(model: Any) -> bool:
+        methods = getattr(model, "supported_generation_methods", [])
+        actions = getattr(model, "supported_actions", [])
+        return (
+            "generateContent" in methods
+            or "generateContent" in actions
+            or (not methods and not actions)
+        )
+
+    @staticmethod
+    def _extract_model_identity(model: Any) -> tuple[str, str]:
+        raw_name = getattr(model, "name", None)
+        name_id = str(raw_name).replace("models/", "") if raw_name else str(model)
+        display_name = getattr(model, "display_name", name_id) or name_id
+        return name_id, display_name
+
+    @staticmethod
+    def _is_excluded(name_id: str) -> bool:
+        lowered = name_id.lower()
+        return "embedding" in lowered or "aqa" in lowered
+
+    def _probe_model(self, name_id: str) -> bool:
+        """Zero-cost lightweight probe: count_tokens validates model is currently active."""
+        try:
+            self._client.models.count_tokens(model=name_id, contents="ping")
+            return True
+        except Exception:
+            return False
+
     def list_models(self, probe: bool = True) -> list[dict[str, str]]:
         try:
             models = self._client.models.list()
-            result = []
+            result: list[dict[str, str]] = []
             for m in models:
-                methods = getattr(m, "supported_generation_methods", [])
-                actions = getattr(m, "supported_actions", [])
-                supports_generation = (
-                    "generateContent" in methods
-                    or "generateContent" in actions
-                    or (not methods and not actions)
-                )
-                if not supports_generation:
+                if not self._supports_generation(m):
                     continue
-
-                raw_name = getattr(m, "name", None)
-                name_id = str(raw_name).replace("models/", "") if raw_name else str(m)
-
-                if "embedding" in name_id.lower() or "aqa" in name_id.lower():
+                name_id, display_name = self._extract_model_identity(m)
+                if self._is_excluded(name_id):
                     continue
-
-                if probe:
-                    # Zero-cost lightweight probe: count_tokens validates model is currently active
-                    try:
-                        self._client.models.count_tokens(model=name_id, contents="ping")
-                    except Exception:
-                        # Model is deprecated, sunset, or inaccessible to this account
-                        continue
-
-                display_name = getattr(m, "display_name", name_id) or name_id
+                if probe and not self._probe_model(name_id):
+                    continue
                 result.append({"id": name_id, "name": display_name})
             return result
         except Exception as exc:

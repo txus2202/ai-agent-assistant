@@ -273,8 +273,10 @@ def _resolve_supervisor_config(
     settings: Any,
 ) -> tuple[str, str]:
     config = agent_config_repo.find_by_role(profile.display_name) or agent_config_repo.find_by_role(profile.id)
-    provider_name = config.provider if config else settings.default_provider
-    model_name = config.model_name if config else settings.default_model
+    default_prov = getattr(profile, "default_provider", "") or settings.default_provider
+    default_mod = getattr(profile, "default_model", "") or settings.default_model
+    provider_name = config.provider if (config and config.provider) else default_prov
+    model_name = config.model_name if (config and config.model_name) else default_mod
     return provider_name, model_name
 
 
@@ -446,8 +448,10 @@ def _build_role_runner(
         agent_name = profile.display_name
 
         config = agent_config_repo.find_by_role(agent_name) or agent_config_repo.find_by_role(profile.id)
-        provider_name = config.provider if config else settings.default_provider
-        model_name = config.model_name if config else settings.default_model
+        default_prov = getattr(profile, "default_provider", "") or settings.default_provider
+        default_mod = getattr(profile, "default_model", "") or settings.default_model
+        provider_name = config.provider if (config and config.provider) else default_prov
+        model_name = config.model_name if (config and config.model_name) else default_mod
 
         llm_provider = llm_factory(provider_name)
         runner_kwargs: dict[str, Any] = {"chat_history": chat_history} if chat_history else {}

@@ -49,8 +49,6 @@ def _build_agent_item(
     profile: Any,
     top: Any,
     repo: IAgentConfigRepository,
-    default_provider: str,
-    default_model: str,
     default_rag_top_k: int = 5,
     default_rag_min_score: float = 0.30,
     user_id: Optional[str] = None,
@@ -58,13 +56,16 @@ def _build_agent_item(
     role_value = profile.id
     config = repo.find_by_role(role_value, user_id=user_id) or repo.find_by_role(profile.display_name, user_id=user_id)
 
+    default_prov = getattr(profile, "default_provider", "") or ""
+    default_mod = getattr(profile, "default_model", "") or ""
+
     return {
         "id": role_value,
         "name": profile.display_name,
         "description": profile.description,
         "color_hex": profile.color_hex,
-        "provider": config.provider if config else default_provider,
-        "model_name": config.model_name if config else default_model,
+        "provider": config.provider if (config and config.provider) else default_prov,
+        "model_name": config.model_name if (config and config.model_name) else default_mod,
         "rag_top_k": config.rag_top_k if (config and config.rag_top_k is not None) else default_rag_top_k,
         "rag_min_score": config.rag_min_score if (config and config.rag_min_score is not None) else default_rag_min_score,
         "uses_rag": profile.uses_rag,
@@ -92,8 +93,6 @@ async def get_agents_config(
             profile,
             top,
             repo,
-            settings.default_provider,
-            settings.default_model,
             default_rag_top_k=settings.rag_top_k,
             default_rag_min_score=settings.rag_min_score,
             user_id=current_user.id,
@@ -125,13 +124,16 @@ async def get_agent_config(
     if not config:
         config = repo.find_by_role(profile.display_name, user_id=current_user.id)
     
+    default_prov = getattr(profile, "default_provider", "") or ""
+    default_mod = getattr(profile, "default_model", "") or ""
+
     return {
         "id": profile.id,
         "name": profile.display_name,
         "description": profile.description,
         "color_hex": profile.color_hex,
-        "provider": config.provider if config else settings.default_provider,
-        "model_name": config.model_name if config else settings.default_model,
+        "provider": config.provider if (config and config.provider) else default_prov,
+        "model_name": config.model_name if (config and config.model_name) else default_mod,
         "rag_top_k": config.rag_top_k if (config and config.rag_top_k is not None) else settings.rag_top_k,
         "rag_min_score": config.rag_min_score if (config and config.rag_min_score is not None) else settings.rag_min_score,
     }

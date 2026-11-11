@@ -59,6 +59,8 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
     SqliteDebateRepository(db_path)
     from src.infrastructure.persistence.sqlite_user_repository import SQLiteUserRepository
     SQLiteUserRepository(db_path)
+    from src.infrastructure.persistence.sqlite_model_cache_repository import SqliteModelCacheRepository
+    SqliteModelCacheRepository(db_path, app_version=getattr(settings, "api_version", "0.4.0"))
 
     # Initialize PostgreSQL pool if configured
     db_url = getattr(settings, "database_url", "")

@@ -162,6 +162,65 @@ class TestGeminiAdapter:
         with pytest.raises(LLMProviderError, match="google-genai"):
             gemini_adapter.GeminiAdapter(api_key="test-key")
 
+    def test_list_models_probes_with_count_tokens_and_prunes_deprecated(self):
+        from src.infrastructure.llm.gemini_adapter import GeminiAdapter
+
+        m_active = MagicMock()
+        m_active.name = "models/gemini-1.5-flash"
+        m_active.display_name = "Gemini 1.5 Flash"
+        m_active.supported_generation_methods = ["generateContent"]
+
+        m_deprecated = MagicMock()
+        m_deprecated.name = "models/gemini-2.5-flash"
+        m_deprecated.display_name = "Gemini 2.5 Flash"
+        m_deprecated.supported_generation_methods = ["generateContent"]
+
+        m_embedding = MagicMock()
+        m_embedding.name = "models/text-embedding-004"
+        m_embedding.display_name = "Embedding 004"
+        m_embedding.supported_generation_methods = ["embedContent"]
+
+        self._mock_genai.Client.return_value.models.list.return_value = [
+            m_active,
+            m_deprecated,
+            m_embedding,
+        ]
+
+        def _count_tokens_side_effect(model, contents):
+            if "2.5-flash" in model:
+                raise RuntimeError("404 NOT_FOUND: model is no longer available")
+            return DummyCountResp()
+
+        self._mock_genai.Client.return_value.models.count_tokens.side_effect = _count_tokens_side_effect
+
+        adapter = GeminiAdapter(api_key="test-key")
+        result = adapter.list_models()
+
+        ids = [m["id"] for m in result]
+        assert "gemini-1.5-flash" in ids
+        assert "gemini-2.5-flash" not in ids
+        assert "text-embedding-004" not in ids
+
+    def test_list_models_without_probe_returns_candidates_fast(self):
+        from src.infrastructure.llm.gemini_adapter import GeminiAdapter
+
+        m_active = MagicMock()
+        m_active.name = "models/gemini-1.5-flash"
+        m_active.display_name = "Gemini 1.5 Flash"
+        m_active.supported_generation_methods = ["generateContent"]
+
+        self._mock_genai.Client.return_value.models.list.return_value = [m_active]
+        self._mock_genai.Client.return_value.models.count_tokens.reset_mock()
+
+        adapter = GeminiAdapter(api_key="test-key")
+        result = adapter.list_models(probe=False)
+
+        assert len(result) == 1
+        assert result[0]["id"] == "gemini-1.5-flash"
+        self._mock_genai.Client.return_value.models.count_tokens.assert_not_called()
+
+
+
 
 # ===========================================================================
 # OpenAIAdapter
@@ -211,6 +270,58 @@ class TestOpenAIAdapter:
         with pytest.raises(LLMProviderError, match="OPENAI_API_KEY"):
             OpenAIAdapter()
 
+    def test_list_models_probes_with_one_token_and_filters_unusable(self):
+        from src.infrastructure.llm.openai_adapter import OpenAIAdapter
+
+        m_active = MagicMock()
+        m_active.id = "gpt-4o"
+
+        m_deprecated = MagicMock()
+        m_deprecated.id = "gpt-old-unusable"
+
+        m_audio = MagicMock()
+        m_audio.id = "whisper-1"
+
+        self._mock_openai.OpenAI.return_value.models.list.return_value.data = [
+            m_active,
+            m_deprecated,
+            m_audio,
+        ]
+
+        def _create_side_effect(**kwargs):
+            if kwargs.get("model") == "gpt-old-unusable":
+                raise RuntimeError("Model decommissioned")
+            resp = MagicMock()
+            resp.choices = [MagicMock(message=MagicMock(content="ok"))]
+            return resp
+
+        self._mock_openai.OpenAI.return_value.chat.completions.create.side_effect = _create_side_effect
+
+        adapter = OpenAIAdapter(api_key="test-key")
+        result = adapter.list_models()
+
+        ids = [m["id"] for m in result]
+        assert "gpt-4o" in ids
+        assert "gpt-old-unusable" not in ids
+        assert "whisper-1" not in ids
+
+    def test_list_models_without_probe_returns_candidates_fast(self):
+        from src.infrastructure.llm.openai_adapter import OpenAIAdapter
+
+        m_active = MagicMock()
+        m_active.id = "gpt-4o"
+        self._mock_openai.OpenAI.return_value.models.list.return_value.data = [m_active]
+        self._mock_openai.OpenAI.return_value.chat.completions.create.reset_mock()
+
+        adapter = OpenAIAdapter(api_key="test-key")
+        result = adapter.list_models(probe=False)
+
+        assert len(result) == 1
+        assert result[0]["id"] == "gpt-4o"
+        self._mock_openai.OpenAI.return_value.chat.completions.create.assert_not_called()
+
+
+
 
 # ===========================================================================
 # AnthropicAdapter
@@ -247,3 +358,52 @@ class TestAnthropicAdapter:
 
         with pytest.raises(LLMProviderError, match="ANTHROPIC_API_KEY"):
             AnthropicAdapter()
+
+    def test_list_models_probes_with_count_tokens_and_filters_unusable(self):
+        from src.infrastructure.llm.anthropic_adapter import AnthropicAdapter
+
+        m_active = MagicMock()
+        m_active.id = "claude-3-5-sonnet-latest"
+        m_active.display_name = "Claude 3.5 Sonnet"
+
+        m_unusable = MagicMock()
+        m_unusable.id = "claude-unusable"
+        m_unusable.display_name = "Claude Unusable"
+
+        self._mock_anthropic.Anthropic.return_value.models.list.return_value = [
+            m_active,
+            m_unusable,
+        ]
+
+        def _count_tokens_side_effect(model, messages):
+            if model == "claude-unusable":
+                raise RuntimeError("Model access denied")
+            return MagicMock(input_tokens=1)
+
+        self._mock_anthropic.Anthropic.return_value.messages.count_tokens.side_effect = _count_tokens_side_effect
+
+        adapter = AnthropicAdapter(api_key="test-key")
+        result = adapter.list_models()
+
+        ids = [m["id"] for m in result]
+        assert "claude-3-5-sonnet-latest" in ids
+        assert "claude-unusable" not in ids
+
+    def test_list_models_without_probe_returns_candidates_fast(self):
+        from src.infrastructure.llm.anthropic_adapter import AnthropicAdapter
+
+        m_active = MagicMock()
+        m_active.id = "claude-3-5-sonnet-latest"
+        m_active.display_name = "Claude 3.5 Sonnet"
+
+        self._mock_anthropic.Anthropic.return_value.models.list.return_value = [m_active]
+        self._mock_anthropic.Anthropic.return_value.messages.count_tokens.reset_mock()
+
+        adapter = AnthropicAdapter(api_key="test-key")
+        result = adapter.list_models(probe=False)
+
+        assert len(result) == 1
+        assert result[0]["id"] == "claude-3-5-sonnet-latest"
+        self._mock_anthropic.Anthropic.return_value.messages.count_tokens.assert_not_called()
+
+

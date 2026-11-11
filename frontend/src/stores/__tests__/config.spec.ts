@@ -109,6 +109,29 @@ describe('useConfigStore', () => {
     expect(store.providers[0]!.id).toBe('gemini')
   })
 
+  it('schedules a silent re-fetch when x-models-probing header is 1', async () => {
+    vi.useFakeTimers()
+    const mockProviders = [
+      { id: 'gemini', name: 'Gemini', models: [{ id: 'gemini-1.5-flash', name: 'Gemini Flash' }] }
+    ]
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: { get: (name: string) => (name.toLowerCase() === 'x-models-probing' ? '1' : null) },
+      json: () => Promise.resolve(mockProviders)
+    })
+
+    const store = useConfigStore()
+    await store.loadProviders()
+
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+
+    // Advance timers by 3500ms
+    await vi.advanceTimersByTimeAsync(3500)
+
+    expect(global.fetch).toHaveBeenCalledTimes(2)
+    vi.useRealTimers()
+  })
+
   it('handles loadProviders fetch error without throwing', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     global.fetch = vi.fn().mockRejectedValue(new Error('Network error'))

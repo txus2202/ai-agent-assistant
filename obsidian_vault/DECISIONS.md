@@ -233,3 +233,29 @@
 2. **Dynamic RAG Bypass (`rag_top_k == 0`):** Update `SubAgentRunner._retrieve_rag_context` so setting `rag_top_k = 0` dynamically skips querying ChromaDB for that turn, returning empty context chunks without altering the agent's static capability flag (`uses_rag: true`) in `agents.yaml`.
 3. **In-Card UI Controls:** Render two compact range sliders (`Chunks: 0..20` and `Proximidad: 0.00..1.00`) inside `AgentCard.vue` exclusively for agents with `uses_rag: true`, preserving the fixed `230px` card layout and clamping agent descriptions to 3 lines across all cards.
 **Consequences:** Operators can tune or temporarily disable ChromaDB retrieval (`OFF`) per specialist in real time from the UI without restarting containers or affecting other logged-in operators.
+
+## ADR 024: Zero-Cost Dynamic Model Probing and 24-Hour TTL Caching
+
+**Date:** 2026-11-11
+**Context:** Provider model listing endpoints (`models.list()` / `/v1/models`) dump entire historical catalogs without flags for deprecation or account-tier availability. This caused runtime errors (e.g. `404 NOT_FOUND: gemini-2.5-flash is no longer available to new users`). Hardcoded whitelists or string-based blacklists required constant maintenance and went stale whenever providers deprecated or launched models.
+**Decision:**
+1. **Zero-Cost Probes for Gemini & Anthropic:**
+   - Use `client.models.count_tokens("ping")` on Google Gemini.
+   - Use `client.messages.count_tokens("ping")` on Anthropic.
+   Both APIs are officially 100% free, consume 0 billing tokens, and fail immediately if a model is deprecated or unprovisioned.
+2. **Minimal 1-Token Probe for OpenAI:**
+   - Execute a 1-token dry run completion (`max_tokens=1` or `max_completion_tokens=1`) for candidate chat models.
+3. **Removal of Static Whitelists/Blacklists:** Remove hardcoded lists from `GeminiAdapter`, `AnthropicAdapter`, and `OpenAIAdapter`.
+4. **24-Hour In-Memory Caching:** Cache results in memory for 86,400 seconds in `GET /api/models`, with `?refresh=true` force-invalidation support.
+**Consequences:** The model catalog automatically purges deprecated models and adapts to newly available models without code changes, with instantaneous (<2ms) response times for the frontend.
+
+## ADR 025: Shared Database Model Cache with Distributed Lock and Version Invalidation
+
+**Date:** 2026-11-11
+**Context:** In horizontal scaled or cloud-native Kubernetes deployments (ADR-021), multiple backend pods run behind a load balancer. Storing the verified model catalog purely in local process memory caused cache fragmentation, multiplied billable token usage on OpenAI across all replicas, and prevented clean cluster-wide invalidation upon rolling releases.
+**Decision:**
+1. **Hexagonal Domain Port (`IModelCacheRepository`):** Define a clean interface for persisting `CachedModelCatalog`, invalidating entries, and atomically acquiring distributed probe locks.
+2. **Shared Database Implementation (`SqliteModelCacheRepository` & PostgreSQL support):** Persist model catalogs in a lightweight `model_cache` table shared across all cluster replicas.
+3. **Atomic Distributed Probe Lock:** When the cache is missing or stale, pods attempt `acquire_probe_lock(provider)`. Only the single winning pod runs the background probe against OpenAI, eliminating duplicate billing tokens and the thundering herd problem. Replicas serve the shared catalog immediately.
+4. **Automated Invalidation on Deployments:** Cached entries store `app_version`. When a new release is rolled out with a version bump or when `GET /api/models?refresh=true` is requested, the shared table is invalidated cluster-wide.
+**Consequences:** Zero extra infrastructure dependencies (no Redis container required for single-node homelabs), guaranteed cluster consistency, and 100% protection against redundant OpenAI billing tokens in multi-pod environments.

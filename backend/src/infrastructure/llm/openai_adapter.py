@@ -99,29 +99,43 @@ class OpenAIAdapter(ILLMProvider):
         return getattr(self, "_last_usage", {})
 
 
-    def list_models(self) -> list[dict[str, str]]:
+    def list_models(self, probe: bool = True) -> list[dict[str, str]]:
         try:
             models = self._client.models.list()
             result = []
             for m in models.data:
                 name_id = m.id
-                
-                # Keep only gpt, o1, o3 models
-                if not name_id.startswith(("gpt", "o1", "o3")):
+
+                # Filter for chat / reasoning model families
+                if not name_id.startswith(("gpt", "o1", "o3", "chatgpt")):
                     continue
-                    
-                # Exclude deprecated or non-chat specialized models
-                if "instruct" in name_id or "vision" in name_id or "audio" in name_id or "realtime" in name_id:
+
+                # Exclude non-chat, audio, realtime, or specialized system models
+                if any(x in name_id for x in ("instruct", "vision", "audio", "realtime", "transcription", "tts")):
                     continue
-                    
-                # Exclude snapshot versions (which typically end in dates like -0613, -2024-05-13)
-                # except we might want to keep some if they are the only ones, but standard aliases
-                # like gpt-4o, gpt-4-turbo, o1-preview are always better to use.
-                if "-0" in name_id or "-1" in name_id or "-2" in name_id:
+
+                # Exclude dated snapshot versions when standard aliases exist
+                if "-0" in name_id or "-1" in name_id or "-20" in name_id:
                     continue
-                    
+
+                if probe:
+                    # 1-token minimal probe: validates chat endpoint is accessible
+                    try:
+                        kwargs = (
+                            {"max_completion_tokens": 1}
+                            if name_id.startswith(("o1", "o3"))
+                            else {"max_tokens": 1}
+                        )
+                        self._client.chat.completions.create(
+                            model=name_id,
+                            messages=[{"role": "user", "content": "ping"}],
+                            **kwargs,
+                        )
+                    except Exception:
+                        continue
+
                 result.append({"id": name_id, "name": name_id.upper()})
-                
+
             return result
         except Exception as exc:
             raise LLMProviderError(str(exc)) from exc

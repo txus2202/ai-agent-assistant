@@ -38,6 +38,7 @@ class LangfuseObservabilityAdapter(IObservabilityService):
         self._fallback = NoOpObservabilityService()
         self._active_traces: dict[str, Any] = {}
         self._active_spans: dict[str, Any] = {}
+        self._trace_models: dict[str, set[str]] = {}
 
         if enabled and client is not None:
             self._client = client
@@ -155,9 +156,24 @@ class LangfuseObservabilityAdapter(IObservabilityService):
             return
 
         lf_trace = self._active_traces.pop(trace_context.trace_id, None)
+        models_used = sorted(self._trace_models.pop(trace_context.trace_id, set()))
+
         if lf_trace and hasattr(lf_trace, "update"):
             try:
-                lf_trace.update(status=status, output=output)
+                update_kwargs: dict[str, Any] = {"status": status, "output": output}
+                if models_used:
+                    current_tags = list(trace_context.tags or [])
+                    for m in models_used:
+                        tag = f"model:{m}"
+                        if tag not in current_tags:
+                            current_tags.append(tag)
+                    update_kwargs["tags"] = current_tags
+
+                    current_meta = dict(trace_context.metadata or {})
+                    current_meta["models"] = models_used
+                    update_kwargs["metadata"] = current_meta
+
+                lf_trace.update(**update_kwargs)
             except Exception as exc:
                 logger.warning("Failed to update Langfuse trace: %s", exc)
 
@@ -221,6 +237,8 @@ class LangfuseObservabilityAdapter(IObservabilityService):
             )
 
         lf_trace = self._active_traces.get(trace_context.trace_id)
+        if effective_model:
+            self._trace_models.setdefault(trace_context.trace_id, set()).add(effective_model)
         if lf_trace:
             try:
                 span_name = f"{agent_role}_execution"
@@ -262,13 +280,16 @@ class LangfuseObservabilityAdapter(IObservabilityService):
             return
 
         lf_span = self._active_spans.pop(span_context.span_id, None)
+        effective_model = (
+            model_name
+            or getattr(span_context, "model_name", "")
+            or str(span_context.metadata.get("model", ""))
+        )
+        if effective_model:
+            self._trace_models.setdefault(span_context.trace_id, set()).add(effective_model)
+
         if lf_span and hasattr(lf_span, "end"):
             try:
-                effective_model = (
-                    model_name
-                    or getattr(span_context, "model_name", "")
-                    or str(span_context.metadata.get("model", ""))
-                )
                 tokens = token_counts or {}
                 meta_dict: dict[str, Any] = {"latency": latency, "tokens": tokens}
                 if effective_model:

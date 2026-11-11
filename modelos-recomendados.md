@@ -49,3 +49,4 @@ Distribución optimizada dentro del catálogo de **Google Gemini**, aprovechando
 ### Resumen del Ahorro Estimado en Debates
 - **Reducción de coste/tokens estimada:** Entre un **65% y un 80%** frente a una configuración de gama alta ciega (`Opus / o3 / Pro` en todos los roles).
 - **Reducción de latencia media por turno:** De ~8-12 segundos a **~1.5-3 segundos** en agentes como Hermes, Aracne, Calíope y Fídias.
+

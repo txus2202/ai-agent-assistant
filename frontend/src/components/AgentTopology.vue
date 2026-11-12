@@ -39,23 +39,32 @@ const displayedAgents = computed(() => {
 })
 
 const isAgentActive = (agentRole: string, agentState: string) => {
+  const normAgent = (store.normalizeAgentRole ? store.normalizeAgentRole(agentRole) : agentRole).toLowerCase()
+  const isSupervisor = normAgent === 'supervisor' || normAgent === 'atenea'
+
+  // If it's Atenea and debate or TTS is running, she is actively coordinating the council and her card stays illuminated
+  if (isSupervisor && (store.isDebating || store.isTtsPlaying || Boolean(store.readingAgentRoles && store.readingAgentRoles.length > 0))) {
+    return true
+  }
+
   if (typeof store.isAgentReading === 'function' && store.isAgentReading(agentRole)) {
     return true
   }
   if (store.activeTtsRole) {
     const normTts = (store.normalizeAgentRole ? store.normalizeAgentRole(store.activeTtsRole) : store.activeTtsRole).toLowerCase()
-    const normAgent = (store.normalizeAgentRole ? store.normalizeAgentRole(agentRole) : agentRole).toLowerCase()
     if (normTts === normAgent) return true
-    if ((normTts === 'supervisor' || normTts === 'atenea') && (normAgent === 'supervisor' || normAgent === 'atenea')) return true
+    if (isSupervisor && (normTts === 'supervisor' || normTts === 'atenea')) return true
   }
   return agentState === 'ACTIVE'
 }
 
-// Watch for changes in displayedAgents, activeTtsRole or readingAgentRoles to trigger scrollIntoView on the active one
+// Watch for changes in displayedAgents, store.isDebating, activeTtsRole or readingAgentRoles to trigger scrollIntoView on the active one
 watch(
-  () => [displayedAgents.value, store.activeTtsRole, store.readingAgentRoles],
+  () => [displayedAgents.value, store.isDebating, store.activeTtsRole, store.readingAgentRoles],
   async () => {
-    const activeIndex = displayedAgents.value.findIndex(a => isAgentActive(a.role, a.state))
+    // Prioritize scrolling to an active delegated specialist if one is working; otherwise scroll to active supervisor
+    const delegatedActiveIndex = displayedAgents.value.findIndex(a => a.role !== 'supervisor' && isAgentActive(a.role, a.state))
+    const activeIndex = delegatedActiveIndex !== -1 ? delegatedActiveIndex : displayedAgents.value.findIndex(a => isAgentActive(a.role, a.state))
     if (activeIndex !== -1) {
       await nextTick()
       const activeEl = listContainer.value?.children[activeIndex] as HTMLElement | undefined

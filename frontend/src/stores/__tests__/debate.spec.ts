@@ -1078,6 +1078,69 @@ describe('useDebateStore', () => {
       global.fetch = originalFetch
     }
   })
+
+  it('immediately increments Atenea triage tokens and turns at debate start and preserves them on cancellation', () => {
+    const store = useDebateStore()
+    store.connect()
+    store.isConnected = true
+    store.agents = [
+      { role: 'supervisor', name: 'Atenea', state: 'STANDBY', turns: 0, promptTokens: 0, completionTokens: 0, tokens: 0 },
+      { role: 'nl_interpreter', name: 'Hermes', state: 'STANDBY' }
+    ]
+
+    store.startDebate('Diseña un sistema de login para esta aplicación.')
+
+    const atenea = store.agents.find(a => a.role === 'supervisor')!
+    expect(atenea.turns).toBe(1)
+    expect(atenea.promptTokens).toBeGreaterThan(100)
+    expect(atenea.completionTokens).toBe(25)
+    expect(atenea.tokens).toBeGreaterThan(125)
+    expect(atenea.state).toBe('ACTIVE')
+
+    // Delegated agent starts (Hermes starts Phase 1)
+    store.handleSupervisorEvent({
+      type: 'agent_started',
+      role: 'Hermes'
+    })
+
+    expect(atenea.state).toBe('STANDBY')
+    expect(atenea.latency).toBeDefined()
+
+    // User cancels the debate early
+    store.cancelDebate()
+
+    // Atenea metrics must remain intact and reflected even though debate ended prematurely
+    expect(atenea.turns).toBe(1)
+    expect(atenea.promptTokens).toBeGreaterThan(100)
+    expect(atenea.completionTokens).toBe(25)
+    expect(atenea.tokens).toBeGreaterThan(125)
+    expect(atenea.latency).toBeDefined()
+  })
+
+  it('progressively increments completion tokens in real-time as stream chunks arrive for an agent', () => {
+    const store = useDebateStore()
+    store.agents = [
+      { role: 'supervisor', name: 'Atenea', state: 'ACTIVE', turns: 1, promptTokens: 100, completionTokens: 0, tokens: 100 }
+    ]
+
+    store.handleSupervisorEvent({
+      type: 'stream_chunk',
+      role: 'Atenea',
+      content: 'Este es el primer fragmento de texto.'
+    })
+
+    const atenea = store.agents.find(a => a.role === 'supervisor')!
+    const tokensAfterFirstChunk = atenea.completionTokens || 0
+    expect(tokensAfterFirstChunk).toBeGreaterThan(0)
+
+    store.handleSupervisorEvent({
+      type: 'stream_chunk',
+      role: 'Atenea',
+      content: ' Y este es el segundo fragmento adicional.'
+    })
+
+    expect(atenea.completionTokens).toBeGreaterThan(tokensAfterFirstChunk)
+  })
 })
 
 
@@ -1258,5 +1321,80 @@ describe('learnSession action', () => {
     // Sphinx finishes reading its messages
     store.removeReadingAgentRole('the_judge')
     expect(sphinx.state).toBe('COMPLETED')
+  })
+
+  it('transitions interpreter Hermes to COMPLETED when HITL decision is submitted during active debate', () => {
+    const store = useDebateStore()
+    store.isDebating = true
+    store.agents = [
+      { role: 'supervisor', name: 'Atenea', state: 'STANDBY' },
+      { role: 'nl_interpreter', name: 'Hermes', state: 'ACTIVE' },
+      { role: 'innovator_architect', name: 'Ícaro', state: 'STANDBY' },
+      { role: 'conservative_architect', name: 'Hestia', state: 'STANDBY' }
+    ]
+
+    // HITL checkpoint after Hermes
+    store.handleSupervisorEvent({
+      type: 'hitl_required',
+      role: 'Hermes',
+      content: 'Requisitos formalizados',
+      metadata: { checkpoint: 'after_Hermes', agent: 'Hermes' }
+    })
+
+    expect(store.isHitlRequired).toBe(true)
+    const hermes = store.agents.find(a => a.role === 'nl_interpreter')!
+    expect(hermes.state).toBe('ACTIVE')
+
+    // Operator approves the HITL checkpoint
+    store.submitHitlDecision('approve')
+
+    // Hermes must transition to COMPLETED cleanly even while debate is active
+    expect(hermes.state).toBe('COMPLETED')
+    expect(store.isHitlRequired).toBe(false)
+  })
+
+  it('transitions agent to COMPLETED when finished reading during an ongoing debate', () => {
+    const store = useDebateStore()
+    store.isDebating = true
+    store.isVoiceOutputEnabled = true
+    store.agents = [
+      { role: 'nl_interpreter', name: 'Hermes', state: 'ACTIVE' }
+    ]
+
+    store.addReadingAgentRole('Hermes')
+    expect(store.isAgentReading('Hermes')).toBe(true)
+
+    // Reading finishes while debate is still active
+    store.removeReadingAgentRole('Hermes')
+    const hermes = store.agents.find(a => a.role === 'nl_interpreter')!
+    expect(hermes.state).toBe('COMPLETED')
+  })
+
+  it('records tokens, latency, and turns for supervisor Atenea on consolidation done event', () => {
+    const store = useDebateStore()
+    store.isDebating = true
+    store.agents = [
+      { role: 'supervisor', name: 'Atenea', state: 'STANDBY', turns: 1, promptTokens: 50, completionTokens: 25, tokens: 75 }
+    ]
+
+    store.handleSupervisorEvent({
+      type: 'done',
+      role: 'Atenea',
+      content: 'Consolidación de dictamen final de arquitectura.',
+      metadata: {
+        prompt_tokens: '400',
+        completion_tokens: '200',
+        total_tokens: '600',
+        latency_seconds: '2.45'
+      }
+    })
+
+    const atenea = store.agents.find(a => a.role === 'supervisor')!
+    expect(atenea.promptTokens).toBe(450)
+    expect(atenea.completionTokens).toBe(225)
+    expect(atenea.tokens).toBe(675)
+    expect(atenea.latency).toBe(2.45)
+    expect(atenea.turns).toBe(2)
+    expect(atenea.state).toBe('COMPLETED')
   })
 })

@@ -250,7 +250,7 @@ export const useDebateStore = defineStore('debate', () => {
       return true
     })
     const ag = findAgent(role) || (norm === 'supervisor' ? findAgent('supervisor') : undefined)
-    if (ag?.state === 'ACTIVE' && !isDebating.value) {
+    if (ag?.state === 'ACTIVE' && ag.role !== 'supervisor') {
       ag.state = 'COMPLETED'
     }
     if (activeTtsRole.value) {
@@ -264,14 +264,12 @@ export const useDebateStore = defineStore('debate', () => {
   function clearReadingAgentRoles() {
     const wasReading = [...readingAgentRoles.value]
     readingAgentRoles.value = []
-    if (!isDebating.value) {
-      wasReading.forEach(role => {
-        const ag = findAgent(role) || (normalizeAgentRole(role) === 'supervisor' ? findAgent('supervisor') : undefined)
-        if (ag?.state === 'ACTIVE') {
-          ag.state = 'COMPLETED'
-        }
-      })
-    }
+    wasReading.forEach(role => {
+      const ag = findAgent(role) || (normalizeAgentRole(role) === 'supervisor' ? findAgent('supervisor') : undefined)
+      if (ag?.state === 'ACTIVE' && ag.role !== 'supervisor') {
+        ag.state = 'COMPLETED'
+      }
+    })
   }
   
   // Auto-Listen (Wake-Word) State
@@ -669,8 +667,21 @@ export const useDebateStore = defineStore('debate', () => {
       if (startingAgent) {
         startingAgent.state = 'ACTIVE'
         startingAgent.startedAt = Date.now()
+        startingAgent.turns = (startingAgent.turns || 0) + 1
       }
     })
+
+    // Register Atenea triage tokens immediately as they are consumed for intent classification
+    const sup = findAgent('supervisor')
+    if (sup && (targetAgentsList.includes('supervisor') || targetAgentsList.includes('Atenea') || targetAgentsList.length === 0)) {
+      const words = userRequest.trim().split(/\s+/).filter(Boolean).length
+      const triagePromptTokens = Math.max(30, Math.round(words * 1.35) + 140)
+      const triageCompletionTokens = 25
+      sup.promptTokens = (sup.promptTokens || 0) + triagePromptTokens
+      sup.completionTokens = (sup.completionTokens || 0) + triageCompletionTokens
+      sup.tokens = (sup.tokens || 0) + triagePromptTokens + triageCompletionTokens
+      sessionTotalTokens.value += triagePromptTokens + triageCompletionTokens
+    }
     executionTrail.value = ['Atenea']
     
     // Capture session chat history before adding the new user message
@@ -716,6 +727,9 @@ export const useDebateStore = defineStore('debate', () => {
 
     agents.value.forEach(a => {
       if (a.state === 'ACTIVE') {
+        if (a.startedAt && !a.latency) {
+          a.latency = Number(((Date.now() - a.startedAt) / 1000).toFixed(2))
+        }
         a.state = 'STANDBY'
       }
     })
@@ -804,10 +818,13 @@ export const useDebateStore = defineStore('debate', () => {
     const agent = findAgent(event.role) || (normalizeAgentRole(event.role) === 'supervisor' ? findAgent('supervisor') : undefined)
     if (!agent) return
 
-    // If a delegated agent starts, transition supervisor to standby (her presence remains in the orb)
+    // If a delegated agent starts, transition supervisor to standby (her presence remains in the orb and topology)
     if (agent.role !== 'supervisor') {
       const sup = findAgent('supervisor')
       if (sup?.state === 'ACTIVE') {
+        if (sup.startedAt) {
+          sup.latency = Number(((Date.now() - sup.startedAt) / 1000).toFixed(2))
+        }
         sup.state = 'STANDBY'
       }
     }
@@ -1022,11 +1039,17 @@ export const useDebateStore = defineStore('debate', () => {
       targetMsg.content += chunk
     }
 
-    // Ensure the streaming agent's card is marked active without demoting other parallel agents
+    // Ensure the streaming agent's card is marked active and increment completion tokens progressively
     const targetRole = agentRole || event.role || 'supervisor'
     const streamingAgent = findAgent(targetRole)
-    if (streamingAgent && streamingAgent.state !== 'ACTIVE') {
-      streamingAgent.state = 'ACTIVE'
+    if (streamingAgent) {
+      if (streamingAgent.state !== 'ACTIVE') {
+        streamingAgent.state = 'ACTIVE'
+      }
+      const chunkTokens = Math.max(1, Math.round(chunk.length / 4))
+      streamingAgent.completionTokens = (streamingAgent.completionTokens || 0) + chunkTokens
+      streamingAgent.tokens = (streamingAgent.tokens || 0) + chunkTokens
+      sessionTotalTokens.value += chunkTokens
     }
 
     feedTtsStreamingChunk(chunk, agentRole || event.role || undefined)
@@ -1042,6 +1065,29 @@ export const useDebateStore = defineStore('debate', () => {
         a.state = 'COMPLETED'
       }
     })
+
+    // Update Atenea (supervisor) observability metrics from the DONE consolidation event
+    const sup = findAgent(event.role) || (normalizeAgentRole(event.role) === 'supervisor' ? findAgent('supervisor') : undefined) || findAgent('supervisor')
+    if (sup) {
+      if (event.metadata) {
+        updateAgentLatency(sup, event)
+        const estTokens = updateAgentTokens(sup, event)
+        updateCachedTokens(event, estTokens)
+        sessionTotalTokens.value += estTokens
+      } else if (event.content) {
+        const words = event.content.trim().split(/\s+/).filter(Boolean).length
+        const outTokens = Math.max(12, Math.round(words * 1.35))
+        const inTokens = Math.max(25, Math.round(outTokens * 1.4))
+        sup.tokens = (sup.tokens || 0) + outTokens + inTokens
+        sup.promptTokens = (sup.promptTokens || 0) + inTokens
+        sup.completionTokens = (sup.completionTokens || 0) + outTokens
+        sessionTotalTokens.value += outTokens + inTokens
+      }
+      sup.turns = Math.max(1, (sup.turns || 0) + 1)
+      if (!isAgentReading(sup.role)) {
+        sup.state = 'COMPLETED'
+      }
+    }
     
     if (streamingMessageId.value) {
       const targetMsg = messages.value.find(m => m.id === streamingMessageId.value)
@@ -1138,6 +1184,15 @@ export const useDebateStore = defineStore('debate', () => {
   ) {
     stopTts()
     isHitlRequired.value = false
+    if (hitlCheckpoint.value) {
+      const checkpointAgent = hitlCheckpoint.value.startsWith('after_')
+        ? hitlCheckpoint.value.replace('after_', '')
+        : hitlCheckpoint.value
+      const ag = findAgent(checkpointAgent)
+      if (ag && ag.state === 'ACTIVE' && ag.role !== 'supervisor') {
+        ag.state = 'COMPLETED'
+      }
+    }
     hitlCheckpoint.value = null
     resetWakeWordSession()
 

@@ -128,6 +128,27 @@ describe('AgentTopology.vue', () => {
     await flushPromises()
     expect(cards[0]?.props('state')).toBe('ACTIVE')
   })
+
+  it('activates supervisor card when isDebating is true because she is coordinating the council', async () => {
+    const { useDebateStore } = await import('../../stores/debate')
+    const store = useDebateStore()
+    store.isDebating = true
+    store.activeTtsRole = null
+
+    const wrapper = mount(AgentTopology, {
+      props: {
+        agents: [
+          { role: 'supervisor', name: 'Atenea', state: 'STANDBY', color_hex: '#f59e0b' },
+          { role: 'nl_interpreter', name: 'Hermes', state: 'ACTIVE', color_hex: '#00e5ff' }
+        ]
+      }
+    })
+
+    const cards = wrapper.findAllComponents({ name: 'AgentCard' })
+    expect(cards).toHaveLength(2)
+    expect(cards[0]?.props('state')).toBe('ACTIVE')
+    expect(cards[1]?.props('state')).toBe('ACTIVE')
+  })
 })
 
 

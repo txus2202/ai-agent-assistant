@@ -248,6 +248,8 @@ class DebateState:
         self.agent_critiques: dict[str, list[str]] = {}
         self.debate_history: list[dict[str, Any]] = []
         self.finish_early: bool = False
+        self.skip_consolidation: bool = False
+
 
     def get_agent_critiques(self, agent_name: str) -> list[str]:
         return self.agent_critiques.get(agent_name, [])
@@ -375,9 +377,18 @@ async def _run_single_agent_mode(
 ) -> AsyncGenerator[SupervisorEvent, None]:
     target_name = get_profile(target_agent).display_name
     yield SupervisorEvent(type=EventType.AGENT_STARTED, role=target_name, content="")
-    _, content = await run_role(target_name, user_request)
+    _, content, error = await _execute_role_safely(target_name, user_request, run_role)
     meta = state.agent_metadata.get(target_name, {})
-    yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=target_name, content=content, metadata=meta)
+    if error:
+        yield SupervisorEvent(
+            type=EventType.ERROR,
+            role=target_name,
+            content=f"Error en {target_name}: {error}",
+            metadata={"fatal": "false", "agent": target_name},
+        )
+        content = f"Error al generar respuesta en {target_name}: {error}"
+    else:
+        yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=target_name, content=content, metadata=meta)
     yield SupervisorEvent(type=EventType.DONE, role=target_name, content=content, metadata=meta)
 
 
@@ -402,15 +413,24 @@ async def _execute_target_agents(
     for a in agent_names:
         yield SupervisorEvent(type=EventType.AGENT_STARTED, role=a, content="")
     req = base_req + (f"\n\n## User Refinement\n{refinement}" if refinement else "")
-    results = await asyncio.gather(*(run_role(a, req) for a in agent_names))
-    for a, content in results:
-        state.agent_outputs[a] = content
-        yield SupervisorEvent(
-            type=EventType.AGENT_COMPLETED,
-            role=a,
-            content=content,
-            metadata=state.agent_metadata.get(a, {}),
-        )
+    results = await asyncio.gather(*(_execute_role_safely(a, req, run_role) for a in agent_names))
+    for a, content, error in results:
+        if error:
+            state.agent_outputs[a] = f"[Fallo en {a}: {error}]"
+            yield SupervisorEvent(
+                type=EventType.ERROR,
+                role=a,
+                content=f"Error en {a}: {error}",
+                metadata={"fatal": "false", "agent": a},
+            )
+        else:
+            state.agent_outputs[a] = content
+            yield SupervisorEvent(
+                type=EventType.AGENT_COMPLETED,
+                role=a,
+                content=content,
+                metadata=state.agent_metadata.get(a, {}),
+            )
 
 
 async def _maybe_divert_to_targets(
@@ -485,6 +505,25 @@ def _build_role_runner(
     return run_role
 
 
+async def _execute_role_safely(
+    role: str,
+    req: str,
+    run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
+) -> tuple[str, str, str | None]:
+    """Executes run_role, catching exceptions to allow graceful degradation."""
+    try:
+        agent_name, content = await run_role(role, req)
+        return agent_name, content, None
+    except Exception as exc:
+        try:
+            profile = get_profile(role)
+            agent_name = profile.display_name
+        except Exception:
+            agent_name = str(role)
+        return agent_name, "", str(exc)
+
+
+
 async def _run_phase_with_divert(
     phase_gen: AsyncGenerator[SupervisorEvent, None],
     state: DebateState,
@@ -518,9 +557,17 @@ async def _execute_phase_step(
     ):
         yield event
     if state.finish_early and not state.target_agents:
-        yield await _run_consolidation(
-            state, supervisor_provider, sup_model_name, supervisor_name=sup_agent_name, topology=active_topology
-        )
+        if state.skip_consolidation:
+            yield SupervisorEvent(
+                type=EventType.DONE,
+                role=sup_agent_name,
+                content="Debate finalizado por el usuario sin consolidación.",
+                metadata={"skip_consolidation": "true"}
+            )
+        else:
+            yield await _run_consolidation(
+                state, supervisor_provider, sup_model_name, supervisor_name=sup_agent_name, topology=active_topology
+            )
 
 
 def _should_halt_phases(state: DebateState) -> bool:
@@ -728,15 +775,48 @@ async def _execute_interpreters_round(
     for agent_name in interpreter_roles:
         yield SupervisorEvent(type=EventType.AGENT_STARTED, role=agent_name, content="")
 
-    results = await asyncio.gather(*(run_role(agent_name, req) for agent_name in interpreter_roles))
-    for agent_name, nl_content in results:
-        state.agent_outputs[agent_name] = nl_content
-        yield SupervisorEvent(
-            type=EventType.AGENT_COMPLETED,
-            role=agent_name,
-            content=nl_content,
-            metadata=state.agent_metadata.get(agent_name, {}),
-        )
+    results = await asyncio.gather(*(_execute_role_safely(agent_name, req, run_role) for agent_name in interpreter_roles))
+    for agent_name, nl_content, error in results:
+        if error:
+            state.agent_outputs[agent_name] = f"[Error en {agent_name}: {error}]"
+            yield SupervisorEvent(
+                type=EventType.ERROR,
+                role=agent_name,
+                content=f"Error en {agent_name}: {error}",
+                metadata={"fatal": "false", "agent": agent_name},
+            )
+        else:
+            state.agent_outputs[agent_name] = nl_content
+            yield SupervisorEvent(
+                type=EventType.AGENT_COMPLETED,
+                role=agent_name,
+                content=nl_content,
+                metadata=state.agent_metadata.get(agent_name, {}),
+            )
+
+
+def _determine_retry_targets(
+    phase_roles: tuple[str, ...],
+    state: DebateState,
+    target_agents: list[str] | None = None,
+) -> tuple[str, ...]:
+    """
+    Option C: Determine which agents to execute during a RETRY.
+    1. If target_agents is provided and non-empty: return intersection with phase_roles (or target_agents).
+    2. Else: return only the roles in phase_roles that failed ([Fallo or [Error in state.agent_outputs, or not present).
+    3. If none failed: return all phase_roles.
+    """
+    if target_agents:
+        matched = tuple(r for r in phase_roles if r in target_agents)
+        return matched if matched else tuple(target_agents)
+
+    failed = tuple(
+        r for r in phase_roles
+        if "[Fallo" in state.agent_outputs.get(r, "") or "[Error" in state.agent_outputs.get(r, "") or r not in state.agent_outputs
+    )
+    if failed:
+        return failed
+    return phase_roles
 
 
 def _process_phase_1_hitl(
@@ -746,6 +826,13 @@ def _process_phase_1_hitl(
 ) -> tuple[bool, str]:
     if hitl.decision == HITLDecision.FINISH:
         state.finish_early = True
+        state.skip_consolidation = True
+        state.formalized = combined_content
+        return True, ""
+
+    if hitl.decision == HITLDecision.CONSOLIDATE:
+        state.finish_early = True
+        state.skip_consolidation = False
         state.formalized = combined_content
         return True, ""
 
@@ -778,25 +865,41 @@ async def _run_phase_1(
         return
 
     refinement = ""
+    roles_to_run = interpreter_roles
     lead_agent = interpreter_roles[0]
     while True:
         req = user_request + (f"\n\n## User Refinement\n{refinement}" if refinement else "")
-        async for event in _execute_interpreters_round(interpreter_roles, req, run_role, state):
+        async for event in _execute_interpreters_round(roles_to_run, req, run_role, state):
             yield event
 
         combined_content = _SECTION_SEPARATOR.join(state.agent_outputs.get(a, "") for a in interpreter_roles)
+        has_error = any("[Error" in state.agent_outputs.get(a, "") for a in interpreter_roles)
+        hitl_metadata = {"checkpoint": f"after_{lead_agent}", "agent": lead_agent}
+        if has_error:
+            hitl_metadata["error_recovery"] = "true"
         hitl_event = SupervisorEvent(
             type=EventType.HITL_REQUIRED,
             role=lead_agent,
             content=combined_content,
-            metadata={"checkpoint": f"after_{lead_agent}", "agent": lead_agent},
+            metadata=hitl_metadata,
         )
         yield hitl_event
         hitl = await hitl_callback(hitl_event)
 
-        should_break, refinement = _process_phase_1_hitl(state, hitl, combined_content)
+        if hitl.decision == HITLDecision.RETRY:
+            roles_to_run = _determine_retry_targets(interpreter_roles, state, hitl.target_agents)
+            continue
+
+        successful_outputs = [
+            state.agent_outputs.get(a, "")
+            for a in interpreter_roles
+            if not ("[Error" in state.agent_outputs.get(a, "") or "[Fallo" in state.agent_outputs.get(a, ""))
+        ]
+        effective_formalized = _SECTION_SEPARATOR.join(successful_outputs) if successful_outputs else user_request
+        should_break, refinement = _process_phase_1_hitl(state, hitl, effective_formalized)
         if should_break:
             break
+        roles_to_run = interpreter_roles
 
 
 
@@ -809,15 +912,24 @@ async def _run_proposers_round(
     for role in roles:
         yield SupervisorEvent(type=EventType.AGENT_STARTED, role=role, content="")
 
-    results = await asyncio.gather(*(run_role(r, req) for r in roles))
-    for role, content in results:
-        state.agent_outputs[role] = content
-        yield SupervisorEvent(
-            type=EventType.AGENT_COMPLETED,
-            role=role,
-            content=content,
-            metadata=state.agent_metadata.get(role, {}),
-        )
+    results = await asyncio.gather(*(_execute_role_safely(r, req, run_role) for r in roles))
+    for role, content, error in results:
+        if error:
+            state.agent_outputs[role] = f"[Fallo al generar propuesta de {role}: {error}]"
+            yield SupervisorEvent(
+                type=EventType.ERROR,
+                role=role,
+                content=f"Error en {role}: {error}",
+                metadata={"fatal": "false", "agent": role},
+            )
+        else:
+            state.agent_outputs[role] = content
+            yield SupervisorEvent(
+                type=EventType.AGENT_COMPLETED,
+                role=role,
+                content=content,
+                metadata=state.agent_metadata.get(role, {}),
+            )
 
 
 def _build_reviewer_prompt(
@@ -866,14 +978,24 @@ async def _run_review_rounds(
     for round_idx in range(max(0, review_rounds)):
         yield SupervisorEvent(type=EventType.AGENT_STARTED, role=reviewer_role, content="")
         prompt = _build_reviewer_prompt(reviewer_role, roles, round_idx, state)
-        _, reviewer_critique = await run_role(reviewer_role, prompt)
-        state.add_agent_critique(reviewer_role, reviewer_critique)
-        yield SupervisorEvent(
-            type=EventType.AGENT_COMPLETED,
-            role=reviewer_role,
-            content=reviewer_critique,
-            metadata=state.agent_metadata.get(reviewer_role, {}),
-        )
+        _, reviewer_critique, rev_error = await _execute_role_safely(reviewer_role, prompt, run_role)
+        if rev_error:
+            yield SupervisorEvent(
+                type=EventType.ERROR,
+                role=reviewer_role,
+                content=f"Error en {reviewer_role}: {rev_error}",
+                metadata={"fatal": "false", "agent": reviewer_role},
+            )
+            reviewer_critique = f"[Crítica no disponible debido a error: {rev_error}]"
+        else:
+            state.add_agent_critique(reviewer_role, reviewer_critique)
+            state.agent_outputs[reviewer_role] = reviewer_critique
+            yield SupervisorEvent(
+                type=EventType.AGENT_COMPLETED,
+                role=reviewer_role,
+                content=reviewer_critique,
+                metadata=state.agent_metadata.get(reviewer_role, {}),
+            )
 
         for role in roles:
             yield SupervisorEvent(type=EventType.AGENT_STARTED, role=role, content="")
@@ -888,17 +1010,26 @@ async def _run_review_rounds(
             )
 
         results_refine = await asyncio.gather(
-            *(run_role(r, _build_refine_prompt(r)) for r in roles)
+            *(_execute_role_safely(r, _build_refine_prompt(r), run_role) for r in roles)
         )
 
-        for role, content in results_refine:
-            state.agent_outputs[role] = content
-            yield SupervisorEvent(
-                type=EventType.AGENT_COMPLETED,
-                role=role,
-                content=content,
-                metadata=state.agent_metadata.get(role, {}),
-            )
+        for role, content, error in results_refine:
+            if error:
+                state.agent_outputs[role] = f"[Fallo al refinar propuesta de {role}: {error}]"
+                yield SupervisorEvent(
+                    type=EventType.ERROR,
+                    role=role,
+                    content=f"Error en {role}: {error}",
+                    metadata={"fatal": "false", "agent": role},
+                )
+            else:
+                state.agent_outputs[role] = content
+                yield SupervisorEvent(
+                    type=EventType.AGENT_COMPLETED,
+                    role=role,
+                    content=content,
+                    metadata=state.agent_metadata.get(role, {}),
+                )
 
 
 def _process_phase_2_hitl(state: DebateState, hitl: HITLResponse) -> tuple[bool, str]:
@@ -907,6 +1038,13 @@ def _process_phase_2_hitl(state: DebateState, hitl: HITLResponse) -> tuple[bool,
 
     if hitl.decision == HITLDecision.FINISH:
         state.finish_early = True
+        state.skip_consolidation = True
+        state.selected_solutions = hitl.selected_options
+        return True, ""
+
+    if hitl.decision == HITLDecision.CONSOLIDATE:
+        state.finish_early = True
+        state.skip_consolidation = False
         state.selected_solutions = hitl.selected_options
         return True, ""
 
@@ -946,29 +1084,38 @@ async def _run_phase_2(
         return
 
     refinement = ""
-    roles = proposer_roles
-    lead_agent = roles[0]
+    roles_to_run = proposer_roles
+    lead_agent = proposer_roles[0]
     while True:
         req = state.formalized + (f"\n\n## User Refinement\n{refinement}" if refinement else "")
-        async for event in _run_proposers_round(roles, req, run_role, state):
+        async for event in _run_proposers_round(roles_to_run, req, run_role, state):
             yield event
 
-        async for event in _execute_reviewers(state, run_role, roles, reviewer_roles, review_rounds, req):
+        async for event in _execute_reviewers(state, run_role, roles_to_run, reviewer_roles, review_rounds, req):
             yield event
 
-        state.hitl2_content = _SECTION_SEPARATOR.join(state.agent_outputs.get(r, "") for r in roles)
+        state.hitl2_content = _SECTION_SEPARATOR.join(state.agent_outputs.get(r, "") for r in proposer_roles)
+        has_error = any("[Fallo" in state.agent_outputs.get(r, "") or "[Error" in state.agent_outputs.get(r, "") for r in proposer_roles)
+        hitl_metadata = {"checkpoint": f"after_{lead_agent}", "agent": lead_agent}
+        if has_error:
+            hitl_metadata["error_recovery"] = "true"
         hitl_event = SupervisorEvent(
             type=EventType.HITL_REQUIRED,
             role=lead_agent,
             content=state.hitl2_content,
-            metadata={"checkpoint": f"after_{lead_agent}", "agent": lead_agent},
+            metadata=hitl_metadata,
         )
         yield hitl_event
         hitl = await hitl_callback(hitl_event)
 
+        if hitl.decision == HITLDecision.RETRY:
+            roles_to_run = _determine_retry_targets(proposer_roles, state, hitl.target_agents)
+            continue
+
         should_break, refinement = _process_phase_2_hitl(state, hitl)
         if should_break:
             break
+        roles_to_run = proposer_roles
 
 
 
@@ -1001,6 +1148,13 @@ def _process_phase_3_hitl(state: DebateState, hitl: HITLResponse) -> tuple[bool,
 
     if hitl.decision == HITLDecision.FINISH:
         state.finish_early = True
+        state.skip_consolidation = True
+        state.final_solutions = hitl.selected_options or state.selected_solutions
+        return True, ""
+
+    if hitl.decision == HITLDecision.CONSOLIDATE:
+        state.finish_early = True
+        state.skip_consolidation = False
         state.final_solutions = hitl.selected_options or state.selected_solutions
         return True, ""
 
@@ -1023,38 +1177,58 @@ async def _run_phase_3(
         return
 
     refinement = ""
+    roles_to_run = evaluator_roles
     lead_agent = evaluator_roles[0]
 
     while True:
-        for agent_name in evaluator_roles:
+        for agent_name in roles_to_run:
             yield SupervisorEvent(type=EventType.AGENT_STARTED, role=agent_name, content="")
 
-        reqs = {a: _build_phase_3_prompt(state, a, refinement) for a in evaluator_roles}
-        results = await asyncio.gather(*(run_role(a, reqs[a]) for a in evaluator_roles))
+        reqs = {a: _build_phase_3_prompt(state, a, refinement) for a in roles_to_run}
+        results = await asyncio.gather(*(_execute_role_safely(a, reqs[a], run_role) for a in roles_to_run))
 
-        for agent_name, verdict in results:
-            state.agent_outputs[agent_name] = verdict
-            state.add_agent_critique(agent_name, verdict)
-            yield SupervisorEvent(
-                type=EventType.AGENT_COMPLETED,
-                role=agent_name,
-                content=verdict,
-                metadata=state.agent_metadata.get(agent_name, {}),
-            )
+        for agent_name, verdict, error in results:
+            if error:
+                state.agent_outputs[agent_name] = f"[Fallo en evaluación de {agent_name}: {error}]"
+                state.add_agent_critique(agent_name, f"Error: {error}")
+                yield SupervisorEvent(
+                    type=EventType.ERROR,
+                    role=agent_name,
+                    content=f"Error en {agent_name}: {error}",
+                    metadata={"fatal": "false", "agent": agent_name},
+                )
+            else:
+                state.agent_outputs[agent_name] = verdict
+                state.add_agent_critique(agent_name, verdict)
+                yield SupervisorEvent(
+                    type=EventType.AGENT_COMPLETED,
+                    role=agent_name,
+                    content=verdict,
+                    metadata=state.agent_metadata.get(agent_name, {}),
+                )
 
         combined_verdict = _SECTION_SEPARATOR.join(state.agent_outputs.get(a, "") for a in evaluator_roles)
+        has_error = any("[Fallo" in state.agent_outputs.get(a, "") for a in evaluator_roles)
+        hitl_metadata = {"checkpoint": f"after_{lead_agent}", "agent": lead_agent}
+        if has_error:
+            hitl_metadata["error_recovery"] = "true"
         hitl_event = SupervisorEvent(
             type=EventType.HITL_REQUIRED,
             role=lead_agent,
             content=combined_verdict,
-            metadata={"checkpoint": f"after_{lead_agent}", "agent": lead_agent},
+            metadata=hitl_metadata,
         )
         yield hitl_event
         hitl = await hitl_callback(hitl_event)
 
+        if hitl.decision == HITLDecision.RETRY:
+            roles_to_run = _determine_retry_targets(evaluator_roles, state, hitl.target_agents)
+            continue
+
         should_break, refinement = _process_phase_3_hitl(state, hitl)
         if should_break:
             break
+        roles_to_run = evaluator_roles
 
 
 async def _run_phase_4(
@@ -1072,16 +1246,25 @@ async def _run_phase_4(
     for role in roles_impl:
         yield SupervisorEvent(type=EventType.AGENT_STARTED, role=role, content="")
         
-    results_impl = await asyncio.gather(*(run_role(r, req) for r in roles_impl))
+    results_impl = await asyncio.gather(*(_execute_role_safely(r, req, run_role) for r in roles_impl))
     
-    for role, content in results_impl:
-        state.agent_outputs[role] = content
-        yield SupervisorEvent(
-            type=EventType.AGENT_COMPLETED,
-            role=role,
-            content=content,
-            metadata=state.agent_metadata.get(role, {}),
-        )
+    for role, content, error in results_impl:
+        if error:
+            state.agent_outputs[role] = f"[Fallo en {role}: {error}]"
+            yield SupervisorEvent(
+                type=EventType.ERROR,
+                role=role,
+                content=f"Error en {role}: {error}",
+                metadata={"fatal": "false", "agent": role},
+            )
+        else:
+            state.agent_outputs[role] = content
+            yield SupervisorEvent(
+                type=EventType.AGENT_COMPLETED,
+                role=role,
+                content=content,
+                metadata=state.agent_metadata.get(role, {}),
+            )
 
 
 async def _run_consolidation(

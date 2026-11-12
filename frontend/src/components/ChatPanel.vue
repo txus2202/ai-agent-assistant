@@ -13,13 +13,14 @@ import {
   X, 
   Edit3, 
   GitFork, 
-  Flag,
   Download,
   Code2,
   ImageIcon,
   FileText,
   Printer,
   Square,
+  Sparkles,
+  RotateCcw,
   Info
 } from '@lucide/vue'
 import { useDebateStore, type ChatMessage } from '../stores/debate'
@@ -345,6 +346,11 @@ onMounted(() => {
       queueTtsSentence(chunk, role)
     })
   }
+  if (typeof store.onTtsStop === 'function') {
+    store.onTtsStop(() => {
+      clearTtsQueues()
+    })
+  }
 })
 
 onUnmounted(() => {
@@ -357,28 +363,43 @@ interface TtsTextItem {
   id: string
   text: string
   role: string
+  sessionId: number
 }
 
 interface TtsAudioItem {
   id: string
   audio: ArrayBuffer
   role: string
+  sessionId: number
 }
 
+let ttsSessionId = 0
+let prefetchAbortController: AbortController | null = null
 let ttsTextQueue: TtsTextItem[] = []
 let ttsAudioQueue: TtsAudioItem[] = []
 let isPrefetching = false
 let isPlayingAudio = false
 
-// Watch store.isTtsPlaying to abort playback
+const clearTtsQueues = () => {
+  ttsSessionId++
+  if (prefetchAbortController) {
+    try {
+      prefetchAbortController.abort()
+    } catch {}
+    prefetchAbortController = null
+  }
+  ttsTextQueue = []
+  ttsAudioQueue = []
+  isPrefetching = false
+  isPlayingAudio = false
+}
+
+// Watch store.isTtsPlaying to abort playback immediately
 watch(() => store.isTtsPlaying, (isPlaying) => {
   if (!isPlaying) {
-    ttsTextQueue = []
-    ttsAudioQueue = []
-    isPrefetching = false
-    isPlayingAudio = false
+    clearTtsQueues()
   }
-})
+}, { flush: 'sync' })
 
 const queueTtsSentence = (sentence: string, role?: string) => {
   if (!store.isVoiceOutputEnabled || !sentence) return
@@ -395,11 +416,13 @@ const queueTtsSentence = (sentence: string, role?: string) => {
   }
 
   const chunks = splitTextIntoTtsChunks(clean)
+  const currentSession = ttsSessionId
   chunks.forEach(chunk => {
     ttsTextQueue.push({
       id: crypto.randomUUID(),
       text: chunk,
-      role: targetRole
+      role: targetRole,
+      sessionId: currentSession
     })
   })
 
@@ -428,11 +451,13 @@ const playVoiceResponse = (text: string, role?: string) => {
 
   // Split by punctuation (., ?, !, \n, ,, ;, :) for immediate low-latency Time-To-First-Audio
   const sentences = splitTextIntoTtsChunks(cleanText)
+  const currentSession = ttsSessionId
   sentences.forEach(sentence => {
     ttsTextQueue.push({
       id: crypto.randomUUID(),
       text: sentence,
-      role: targetRole
+      role: targetRole,
+      sessionId: currentSession
     })
   })
 
@@ -449,48 +474,65 @@ const prefetchTtsQueue = async () => {
     return
   }
   
+  const currentSession = ttsSessionId
   isPrefetching = true
   const item = ttsTextQueue.shift()!
   
   try {
+    prefetchAbortController = new AbortController()
     const response = await fetch('/api/audio/synthesize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: item.text, add_silence: false })
+      body: JSON.stringify({ text: item.text, add_silence: false }),
+      signal: prefetchAbortController.signal
     })
     
+    // If the session changed or TTS stopped while fetching, discard this result
+    if (currentSession !== ttsSessionId || !store.isTtsPlaying) {
+      isPrefetching = false
+      return
+    }
+
     if (response.ok) {
-      // If the user pressed stop while we were fetching, discard this result
-      if (!store.isTtsPlaying) {
+      const audioBuffer = await response.arrayBuffer()
+      
+      // Re-verify session after arrayBuffer resolution
+      if (currentSession !== ttsSessionId || !store.isTtsPlaying) {
         isPrefetching = false
         return
       }
 
-      const audioBuffer = await response.arrayBuffer()
       ttsAudioQueue.push({
         id: item.id,
         audio: audioBuffer,
-        role: item.role
+        role: item.role,
+        sessionId: currentSession
       })
       
       // If audio player is idle, start playing immediately
-      if (store.isTtsPlaying && !isPlayingAudio) {
+      if (store.isTtsPlaying && !isPlayingAudio && currentSession === ttsSessionId) {
         playNextAudio().catch(err => {
           console.error("Error starting audio playback:", err)
         })
       }
     }
-  } catch (e) {
-    console.error("Error synthesizing speech:", e)
-  }
-  
-  // Fetch next sentence immediately
-  if (store.isTtsPlaying) {
-    prefetchTtsQueue().catch(err => {
-      console.error("Error prefetching next sentence:", err)
-    })
-  } else {
-    isPrefetching = false
+  } catch (e: unknown) {
+    if (e && typeof e === 'object' && 'name' in e && e.name === 'AbortError') {
+      // Aborted cleanly on stop/flush
+    } else {
+      console.error("Error synthesizing speech:", e)
+    }
+  } finally {
+    if (currentSession === ttsSessionId) {
+      // Fetch next sentence immediately
+      if (store.isTtsPlaying && ttsTextQueue.length > 0) {
+        prefetchTtsQueue().catch(err => {
+          console.error("Error prefetching next sentence:", err)
+        })
+      } else {
+        isPrefetching = false
+      }
+    }
   }
 }
 
@@ -507,9 +549,16 @@ const playNextAudio = async () => {
   
   if (!store.isTtsPlaying) return
   
+  const currentSession = ttsSessionId
   isPlayingAudio = true
   const currentItem = ttsAudioQueue.shift()!
   
+  // Discard items from stale sessions
+  if (currentItem.sessionId !== currentSession) {
+    isPlayingAudio = false
+    return
+  }
+
   // Update speaking role so the active orb & UI reflect the speaking agent
   store.activeTtsRole = currentItem.role
 
@@ -521,21 +570,25 @@ const playNextAudio = async () => {
     console.error("Play error:", e)
   } finally {
     isPlayingAudio = false
-    
-    // Check if this agent finished all remaining audio and text in the queues
-    const stillHasAudio = ttsAudioQueue.some(a => a.role === currentItem.role)
-    const stillHasText = ttsTextQueue.some(t => t.role === currentItem.role)
-    if (!stillHasAudio && !stillHasText) {
-      if (typeof store.removeReadingAgentRole === 'function') {
-        store.removeReadingAgentRole(currentItem.role)
-      }
-    }
+  }
 
-    if (store.isTtsPlaying) {
-      playNextAudio().catch(err => {
-        console.error("Error playing next audio chunk:", err)
-      })
+  if (currentSession !== ttsSessionId) {
+    return
+  }
+
+  // Check if this agent finished all remaining audio and text in the queues
+  const stillHasAudio = ttsAudioQueue.some(a => a.role === currentItem.role && a.sessionId === currentSession)
+  const stillHasText = ttsTextQueue.some(t => t.role === currentItem.role && t.sessionId === currentSession)
+  if (!stillHasAudio && !stillHasText) {
+    if (typeof store.removeReadingAgentRole === 'function') {
+      store.removeReadingAgentRole(currentItem.role)
     }
+  }
+
+  if (store.isTtsPlaying && currentSession === ttsSessionId) {
+    playNextAudio().catch(err => {
+      console.error("Error playing next audio chunk:", err)
+    })
   }
 }
 
@@ -606,12 +659,16 @@ const isTargetSelected = (role: string) => {
 }
 
 const handleHitlApprove = () => {
+  clearTtsQueues()
+  store.stopTts()
   const targets = store.hitlTargetAgents?.length ? store.hitlTargetAgents : selectedTargetAgents.value
   store.submitHitlDecision('approve', '', targets)
   selectedTargetAgents.value = []
 }
 
 const handleHitlDivert = () => {
+  clearTtsQueues()
+  store.stopTts()
   const targets = store.hitlTargetAgents?.length ? store.hitlTargetAgents : selectedTargetAgents.value
   if (targets.length === 0) {
     alert('Por favor selecciona al menos un agente en los chips para desviar la tarea.')
@@ -622,18 +679,46 @@ const handleHitlDivert = () => {
   selectedTargetAgents.value = []
 }
 
+const hasErrorRecovery = computed(() => {
+  const lastHitlEvent = store.rawEvents?.slice().reverse().find(e => e.type === 'hitl_required')
+  if (lastHitlEvent?.metadata?.error_recovery === 'true') {
+    return true
+  }
+  return store.agents?.some(a => a.state === 'ERROR') || false
+})
+
+const handleHitlRetry = () => {
+  clearTtsQueues()
+  store.stopTts()
+  const targets = store.hitlTargetAgents?.length ? store.hitlTargetAgents : selectedTargetAgents.value
+  store.submitHitlDecision('retry', '', targets)
+  selectedTargetAgents.value = []
+}
+
+const handleHitlConsolidate = () => {
+  clearTtsQueues()
+  store.stopTts()
+  store.submitHitlDecision('consolidate')
+  selectedTargetAgents.value = []
+}
+
 const handleHitlFinish = () => {
+  clearTtsQueues()
+  store.stopTts()
   store.submitHitlDecision('finish')
   selectedTargetAgents.value = []
 }
 
 const handleHitlReject = () => {
+  clearTtsQueues()
+  store.stopTts()
   const targets = store.hitlTargetAgents?.length ? store.hitlTargetAgents : selectedTargetAgents.value
   store.submitHitlDecision('reject', '', targets)
   selectedTargetAgents.value = []
 }
 
 const focusRefineInput = async () => {
+  clearTtsQueues()
   store.stopTts()
   await nextTick()
   chatInputRef.value?.focus()
@@ -641,6 +726,8 @@ const focusRefineInput = async () => {
 
 const onSubmit = async () => {
   if (store.isHitlRequired) {
+    clearTtsQueues()
+    store.stopTts()
     if (!store.draftMessage.trim()) {
       await focusRefineInput()
       return
@@ -1265,9 +1352,19 @@ defineExpose({
               Punto de Control (HITL)
             </span>
           </div>
-          <span class="text-[10px] font-mono text-slate-400">
-            Valida o redirige el debate
-          </span>
+          <button
+            type="button"
+            @click="handleHitlRetry"
+            data-test="hitl-retry-btn"
+            class="p-1.5 rounded-lg border transition-all flex items-center justify-center cursor-pointer group"
+            :class="hasErrorRecovery 
+              ? 'bg-amber-500/20 hover:bg-amber-500/35 border-amber-400 text-amber-300 ring-2 ring-amber-400/30 animate-pulse' 
+              : 'bg-space-800/60 hover:bg-space-700/80 border-space-700/80 text-slate-400 hover:text-amber-400 hover:border-amber-500/40'"
+            title="Reintentar ejecución de fase"
+            aria-label="Reintentar ejecución de fase"
+          >
+            <RotateCcw class="w-3.5 h-3.5 transition-transform group-hover:-rotate-90" />
+          </button>
         </div>
 
         <!-- Target Agents Chips Selector -->
@@ -1291,44 +1388,44 @@ defineExpose({
           </div>
         </div>
 
-        <!-- Quick Action Buttons (2 Rows: Row 1 = Aceptar, Rechazar, Finalizar | Row 2 = Refinar, Desviar) -->
+        <!-- Quick Action Buttons (2 Rows of 3: Row 1 = Aceptar, Consolidar, Finalizar | Row 2 = Refinar, Desviar, Rechazar) -->
         <div class="flex flex-col gap-1.5 pt-1 w-full">
-          <!-- Row 1: Aceptar, Rechazar y Finalizar -->
+          <!-- Row 1: Aceptar, Consolidar y Finalizar -->
           <div class="grid grid-cols-3 gap-1.5 w-full">
             <button
               type="button"
               @click="handleHitlApprove"
               data-test="hitl-approve-btn"
               class="h-8.5 w-full bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/60 text-emerald-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-              title="Aceptar dictamen y consolidar"
+              title="Aceptar dictamen y continuar"
             >
               <Check class="w-3.5 h-3.5 shrink-0" />
               <span>Aceptar</span>
             </button>
             <button
               type="button"
-              @click="handleHitlReject"
-              data-test="hitl-reject-btn"
-              class="h-8.5 w-full bg-red-500/15 hover:bg-red-500/30 border border-red-500/60 text-red-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-              title="Rechazar y abortar deliberación"
+              @click="handleHitlConsolidate"
+              data-test="hitl-consolidate-btn"
+              class="h-8.5 w-full bg-purple-500/15 hover:bg-purple-500/30 border border-purple-500/60 text-purple-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              title="Concluir el debate anticipadamente y consolidar dictamen final con Atenea"
             >
-              <X class="w-3.5 h-3.5 shrink-0" />
-              <span>Rechazar</span>
+              <Sparkles class="w-3.5 h-3.5 shrink-0" />
+              <span>Consolidar</span>
             </button>
             <button
               type="button"
               @click="handleHitlFinish"
               data-test="hitl-finish-btn"
-              class="h-8.5 w-full bg-purple-500/15 hover:bg-purple-500/30 border border-purple-500/60 text-purple-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-              title="Concluir el debate anticipadamente y consolidar dictamen final"
+              class="h-8.5 w-full bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/60 text-rose-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              title="Parar y finalizar el debate inmediatamente sin consolidar"
             >
-              <Flag class="w-3.5 h-3.5 shrink-0" />
+              <Square class="w-3.5 h-3.5 shrink-0" />
               <span>Finalizar</span>
             </button>
           </div>
 
-          <!-- Row 2: Refinar y Desviar -->
-          <div class="grid grid-cols-2 gap-1.5 w-full">
+          <!-- Row 2: Refinar, Desviar y Rechazar -->
+          <div class="grid grid-cols-3 gap-1.5 w-full">
             <button
               type="button"
               @click="focusRefineInput"
@@ -1348,6 +1445,16 @@ defineExpose({
             >
               <GitFork class="w-3.5 h-3.5 shrink-0" />
               <span>Desviar</span>
+            </button>
+            <button
+              type="button"
+              @click="handleHitlReject"
+              data-test="hitl-reject-btn"
+              class="h-8.5 w-full bg-red-500/15 hover:bg-red-500/30 border border-red-500/60 text-red-400 font-mono text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              title="Rechazar propuesta y reiniciar deliberación"
+            >
+              <X class="w-3.5 h-3.5 shrink-0" />
+              <span>Rechazar</span>
             </button>
           </div>
         </div>

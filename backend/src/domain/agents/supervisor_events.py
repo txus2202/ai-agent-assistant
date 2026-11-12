@@ -42,11 +42,13 @@ class SupervisorEvent:
 
 
 class HITLDecision(Enum):
-    APPROVE = "approve"
-    REJECT  = "reject"
-    REFINE  = "refine"   # user provides additional context; no re-run of previous agents
-    DIVERT  = "divert"   # divert flow to specific target agents
-    FINISH  = "finish"   # conclude debate immediately and consolidate
+    APPROVE     = "approve"
+    REJECT      = "reject"
+    REFINE      = "refine"   # user provides additional context; no re-run of previous agents
+    DIVERT      = "divert"   # divert flow to specific target agents
+    FINISH      = "finish"   # conclude debate immediately without consolidation
+    CONSOLIDATE = "consolidate" # conclude debate and run final consolidation
+    RETRY       = "retry"    # retry failed agents or specified target agents in current phase
 
 
 @dataclass

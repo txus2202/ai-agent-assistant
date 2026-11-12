@@ -152,16 +152,27 @@ def test_wake_word_service_detects_hitl_commands(mock_kaldi, mock_model_class):
     assert bool(det_refine) is True
     assert det_refine.command == "refine"
 
-    # Test "finalizar" / "terminar" -> finish
+    # Test "finalizar" / "terminar" / "detener" -> finish
     mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": "finalizar"})
     det_finish = service.process_chunk(audio_chunk)
     assert bool(det_finish) is True
     assert det_finish.command == "finish"
 
-    mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": "terminar"})
+    mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": "detener"})
     det_finish2 = service.process_chunk(audio_chunk)
     assert bool(det_finish2) is True
     assert det_finish2.command == "finish"
+
+    # Test "consolidar" / "consolida" -> consolidate
+    mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": "consolidar"})
+    det_cons = service.process_chunk(audio_chunk)
+    assert bool(det_cons) is True
+    assert det_cons.command == "consolidate"
+
+    mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": "consolida"})
+    det_cons2 = service.process_chunk(audio_chunk)
+    assert bool(det_cons2) is True
+    assert det_cons2.command == "consolidate"
 
     # Test "desviar" / "bifurcar" -> divert
     mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": "desviar"})
@@ -173,6 +184,22 @@ def test_wake_word_service_detects_hitl_commands(mock_kaldi, mock_model_class):
     det_divert2 = service.process_chunk(audio_chunk)
     assert bool(det_divert2) is True
     assert det_divert2.command == "divert"
+
+    # Test "reintentar" / "reintenta" / "repetir" -> retry
+    mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": "reintentar"})
+    det_retry = service.process_chunk(audio_chunk)
+    assert bool(det_retry) is True
+    assert det_retry.command == "retry"
+
+    mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": "reintenta"})
+    det_retry2 = service.process_chunk(audio_chunk)
+    assert bool(det_retry2) is True
+    assert det_retry2.command == "retry"
+
+    mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": "repetir"})
+    det_retry3 = service.process_chunk(audio_chunk)
+    assert bool(det_retry3) is True
+    assert det_retry3.command == "retry"
 
 
 @patch("src.infrastructure.audio.wake_word_service.Model")

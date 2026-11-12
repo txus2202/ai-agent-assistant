@@ -66,7 +66,7 @@ describe('App.vue', () => {
       }
     })
 
-    expect(wrapper.text()).toContain('INITIALIZING A.T.E.N.E.A...')
+    expect(wrapper.text()).toContain('INITIALIZING AI AGENT ASSISTANT...')
     expect(wrapper.find('[data-test="router-view-stub"]').exists()).toBe(false)
 
     await flushPromises()
@@ -89,6 +89,45 @@ describe('App.vue', () => {
     })
 
     expect(wrapper.find('[data-test="router-view-stub"]').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('INITIALIZING A.T.E.N.E.A...')
+    expect(wrapper.text()).not.toContain('INITIALIZING AI AGENT ASSISTANT...')
+  })
+
+  it('updates document.title and loading text dynamically from store.projectName', async () => {
+    const debateStore = useDebateStore()
+    debateStore.topology = {
+      project_name: 'PEPOTEZOTE',
+      supervisor: 'Atenea',
+      interpreters: [],
+      proposers: [],
+      reviewers: [],
+      evaluators: [],
+      implementers: []
+    }
+    const wrapper = mount(App, {
+      global: {
+        stubs: {
+          'router-view': { template: '<div data-test="router-view-stub">Route View</div>' }
+        }
+      }
+    })
+    expect(wrapper.text()).toContain('INITIALIZING PEPOTEZOTE...')
+    expect(document.title).toBe('PEPOTEZOTE')
+  })
+
+  it('renders BackendUnavailable component when backend is unavailable', async () => {
+    const authStore = useAuthStore()
+    authStore.isBackendAvailable = false
+    authStore.errorMessage = 'No se ha podido conectar con el servidor backend.'
+
+    const wrapper = mount(App, {
+      global: {
+        stubs: {
+          'router-view': { template: '<div data-test="router-view-stub">Route View</div>' }
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('Servidor Backend No Disponible')
+    expect(wrapper.find('[data-test="router-view-stub"]').exists()).toBe(false)
   })
 })

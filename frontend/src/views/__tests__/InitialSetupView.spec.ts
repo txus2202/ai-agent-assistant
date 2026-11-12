@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import InitialSetupView from '../InitialSetupView.vue'
 import { useAuthStore } from '../../stores/auth'
+import { useDebateStore } from '../../stores/debate'
 
 const mockPush = vi.fn()
 vi.mock('vue-router', () => ({
@@ -24,6 +25,21 @@ describe('InitialSetupView.vue', () => {
     expect(wrapper.find('input[data-test="password"]').exists()).toBe(true)
     expect(wrapper.find('input[data-test="confirm-password"]').exists()).toBe(true)
     expect(wrapper.find('button[type="submit"]').exists()).toBe(true)
+  })
+
+  it('renders dynamic project name from debateStore', () => {
+    const debateStore = useDebateStore()
+    debateStore.topology = {
+      project_name: 'PEPOTEZOTE',
+      supervisor: 'Atenea',
+      interpreters: [],
+      proposers: [],
+      reviewers: [],
+      evaluators: [],
+      implementers: []
+    }
+    const wrapper = mount(InitialSetupView)
+    expect(wrapper.text()).toContain('PEPOTEZOTE')
   })
 
   it('validates empty fields', async () => {

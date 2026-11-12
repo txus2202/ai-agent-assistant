@@ -1,17 +1,23 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ChevronDown } from '@lucide/vue'
 import { useDebateStore } from '../stores/debate'
+import { useTouchSwipe } from '../utils/touchSwipe'
 
 const props = withDefaults(defineProps<{
   activeAgentColor?: string
   isDebating?: boolean
   showViewSwitch?: boolean
   listenWakeWord?: boolean
+  collapsible?: boolean
+  initialCollapsed?: boolean
 }>(), {
   activeAgentColor: '#f59e0b',
   isDebating: false,
   showViewSwitch: false,
-  listenWakeWord: false
+  listenWakeWord: false,
+  collapsible: false,
+  initialCollapsed: true
 })
 
 const emit = defineEmits<{
@@ -234,7 +240,7 @@ const drawIdleWaveform = (
   centerY: number,
   isLight: boolean
 ) => {
-  wCtx.strokeStyle = isLight ? 'rgba(100, 116, 139, 0.45)' : 'rgba(255, 255, 255, 0.25)'
+  wCtx.strokeStyle = isLight ? 'rgba(100, 116, 139, 0.45)' : 'rgba(6, 182, 212, 0.35)'
   wCtx.lineWidth = 1.2
   wCtx.beginPath()
   wCtx.moveTo(0, centerY)
@@ -244,7 +250,7 @@ const drawIdleWaveform = (
   const pulseX = (waveOffset * 30) % width
   wCtx.beginPath()
   wCtx.arc(pulseX, centerY, 2.5, 0, Math.PI * 2)
-  wCtx.fillStyle = isLight ? '#0f172a' : '#ffffff'
+  wCtx.fillStyle = isLight ? '#0f172a' : '#00e5ff'
   wCtx.fill()
 
   waveOffset += 0.08
@@ -325,69 +331,198 @@ onUnmounted(() => {
   }
 })
 
+const isCollapsed = ref(props.initialCollapsed)
+const soundBarContainerRef = ref<HTMLElement | null>(null)
+const dockPanelRef = ref<HTMLElement | null>(null)
+
+watch(() => props.initialCollapsed, (val) => {
+  isCollapsed.value = val
+})
+
+watch(() => props.collapsible, (isCol) => {
+  if (isCol && props.initialCollapsed) {
+    isCollapsed.value = true
+  }
+})
+
+const toggleCollapse = () => {
+  if (!props.collapsible) return
+  isCollapsed.value = !isCollapsed.value
+}
+
+const expand = () => {
+  if (!props.collapsible) return
+  isCollapsed.value = false
+}
+
+const collapse = () => {
+  if (!props.collapsible) return
+  isCollapsed.value = true
+}
+
+useTouchSwipe(soundBarContainerRef, {
+  onSwipeUp: () => {
+    if (props.collapsible && isCollapsed.value) {
+      expand()
+    }
+  },
+  onSwipeDown: () => {
+    if (props.collapsible && !isCollapsed.value) {
+      collapse()
+    }
+  }
+})
+
 defineExpose({
-  toggleRecording
+  toggleRecording,
+  isCollapsed,
+  toggleCollapse,
+  expand,
+  collapse
 })
 </script>
 
 <template>
-  <div class="w-full flex flex-col items-center gap-1.5" data-test="sound-bar">
-    <!-- Row 1: MIC VOZ button + Waveform Canvas (both h-[44px]) + optional View Switch -->
-    <div class="flex items-center gap-2.5 w-full">
-      <!-- Microphone Button -->
-      <button
-        id="micButton"
-        type="button"
-        @click="toggleRecording"
-        :class="isRecording ? 'border-red-500 bg-red-900/30' : 'border-slate-700 hover:border-cyan-400 bg-space-850 hover:bg-space-800'"
-        class="relative group px-3 h-[44px] min-h-[44px] rounded-lg text-slate-300 hover:text-cyan-200 transition-all flex items-center space-x-2 shadow-md shrink-0 active:scale-95 border"
-        title="Activar micrófono para hablar (Pulsa para hablar)"
+  <div
+    ref="soundBarContainerRef"
+    class="w-full select-none"
+    :class="collapsible ? 'relative h-[34px] z-30 pointer-events-auto' : 'flex flex-col items-center'"
+    data-test="sound-bar"
+  >
+    <!-- Overlay Dock Panel: Anchored to bottom-0, expands upwards on top of screen content without displacing elements -->
+    <div
+      ref="dockPanelRef"
+      :class="collapsible ? 'absolute bottom-0 left-0 w-full flex flex-col items-center bg-[#080e1a]/95 backdrop-blur-md shadow-[0_-8px_24px_rgba(0,0,0,0.6)] border-t border-cyan-900/50 pointer-events-auto touch-none' : 'w-full flex flex-col items-center gap-1.5'"
+    >
+      <!-- Collapsible Handle Bar (Visible when props.collapsible is true) -->
+      <div
+        v-if="collapsible"
+        data-test="soundbar-collapse-handle"
+        @click="toggleCollapse"
+        class="w-full relative flex items-center justify-between px-3 py-1 cursor-pointer select-none min-h-[34px] touch-none border-b transition-colors duration-200"
+        :class="isCollapsed ? 'border-transparent hover:bg-space-850/60' : 'border-slate-800/40'"
+        title="Pulsa o desliza para alternar"
       >
-        <div v-if="isRecording" class="absolute w-2 h-2 rounded-full bg-red-500 -top-1 -right-1 animate-pulse"></div>
-        <div class="w-7 h-7 rounded-full bg-space-900 flex items-center justify-center border border-slate-700 group-hover:border-cyan-400 shrink-0" id="micIconRing">
-          <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-mic w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition"><path d="M12 19v3"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><rect x="9" y="2" width="6" height="13" rx="3"></rect></svg>
+        <!-- Left: Mini status ONLY when collapsed (never rendered when deployed to avoid stray dot over mic) -->
+        <div
+          v-if="isCollapsed"
+          class="flex items-center gap-2 min-w-0 max-w-[38%] sm:max-w-[42%] z-0 transition-opacity duration-200"
+        >
+          <span
+            class="w-2 h-2 rounded-full transition-colors duration-300 shrink-0"
+            :style="voiceDotStyle"
+          ></span>
+          <span class="text-[10px] font-mono text-slate-300 truncate">
+            {{ isRecording ? 'GRABANDO...' : voiceStateText }}
+          </span>
         </div>
-        <div class="text-left font-mono">
-          <div class="text-[10px] font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1">
-            <span>MIC VOZ</span>
-          </div>
-          <div class="text-[8px] text-slate-400" id="micStatusSub">{{ isRecording ? 'ESCUCHANDO...' : 'LISTO PARA ESCUCHAR' }}</div>
-        </div>
-      </button>
+        <div v-else class="w-6"></div>
 
-      <!-- Audio Spectrum Canvas (same height h-[44px] matching MIC button) -->
-      <div class="flex-1 h-[44px] min-w-0 flex items-center">
-        <canvas
-          ref="waveformCanvasRef"
-          id="waveformCanvas"
-          class="w-full h-[44px] rounded-lg bg-space-950/70 border border-slate-800/80 block"
-          width="400"
-          height="44"
-        ></canvas>
+        <!-- Center: Toggle arrow button - STRICTLY CENTERED AT 50% -->
+        <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center">
+          <button
+            type="button"
+            data-test="soundbar-collapse-toggle"
+            @click.stop="toggleCollapse"
+            class="min-w-[48px] min-h-[34px] px-4 py-1 rounded hover:bg-space-800 text-slate-400 hover:text-cyan-300 transition-colors flex items-center justify-center group"
+            :title="isCollapsed ? 'Desplegar barra de sonido (o desliza hacia arriba)' : 'Colapsar barra de sonido (o desliza hacia abajo)'"
+            :aria-expanded="!isCollapsed"
+            aria-label="Alternar colapso de la barra de sonido"
+          >
+            <ChevronDown
+              class="w-4 h-4 transition-transform duration-300 ease-out"
+              :class="[
+                isCollapsed ? 'rotate-180 text-cyan-400 group-hover:text-cyan-300' : 'rotate-0 text-slate-400 group-hover:text-cyan-300',
+                { 'text-red-400 animate-pulse': isRecording && isCollapsed }
+              ]"
+            />
+          </button>
+        </div>
+
+        <!-- Right: Minimal indicator ONLY when collapsed -->
+        <div
+          v-if="isCollapsed"
+          class="text-[10px] font-mono uppercase tracking-wider shrink-0 z-0 transition-opacity duration-200"
+        >
+          <span class="text-slate-300 font-bold">MIC</span>
+        </div>
+        <div v-else class="w-6"></div>
       </div>
 
-      <!-- Optional 3D View Switch Button (for mobile chat header) -->
-      <button
-        v-if="showViewSwitch"
-        type="button"
-        data-test="soundbar-view-switch"
-        @click="emit('open-voice')"
-        class="h-[44px] px-2.5 rounded-lg bg-cyan-950/50 hover:bg-cyan-900/60 border border-cyan-500/30 text-cyan-400 font-mono text-xs flex items-center gap-1 shrink-0 transition-colors"
-        title="Abrir Orbe de Voz 3D"
+      <!-- Main SoundBar Content: Collapsible Body with Smooth Expand/Collapse Animation -->
+      <Transition
+        enter-active-class="transition-all duration-300 ease-out overflow-hidden"
+        enter-from-class="opacity-0 max-h-0 !py-0"
+        enter-to-class="opacity-100 max-h-[140px] py-1"
+        leave-active-class="transition-all duration-300 ease-in-out overflow-hidden"
+        leave-from-class="opacity-100 max-h-[140px] py-1"
+        leave-to-class="opacity-0 max-h-0 !py-0"
       >
-        <span class="font-bold">3D</span>
-        <span class="text-[10px]">&gt;</span>
-      </button>
-    </div>
+        <div
+          v-show="!collapsible || !isCollapsed"
+          data-test="soundbar-body"
+          class="w-full flex flex-col items-center gap-1.5"
+          :class="collapsible ? 'px-3 pb-2 pt-1' : ''"
+        >
+          <!-- Row 1: MIC VOZ button + Waveform Canvas (both h-[44px]) + optional View Switch -->
+          <div class="flex items-center gap-2.5 w-full">
+            <!-- Microphone Button -->
+            <button
+              id="micButton"
+              type="button"
+              @click="toggleRecording"
+              :class="isRecording ? 'border-red-500 bg-red-900/30' : 'border-slate-700 hover:border-cyan-400 bg-space-850 hover:bg-space-800'"
+              class="relative group px-3 h-[44px] min-h-[44px] rounded-lg text-slate-300 hover:text-cyan-200 transition-all flex items-center space-x-2 shadow-md shrink-0 active:scale-95 border"
+              title="Activar micrófono para hablar (Pulsa para hablar)"
+            >
+              <div v-if="isRecording" class="absolute w-2 h-2 rounded-full bg-red-500 -top-1 -right-1 animate-pulse"></div>
+              <div class="w-7 h-7 rounded-full bg-space-900 flex items-center justify-center border border-slate-700 group-hover:border-cyan-400 shrink-0" id="micIconRing">
+                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-mic w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition"><path d="M12 19v3"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><rect x="9" y="2" width="6" height="13" rx="3"></rect></svg>
+              </div>
+              <div class="text-left font-mono">
+                <div class="text-[10px] font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1">
+                  <span>MIC VOZ</span>
+                </div>
+                <div class="text-[8px] text-slate-400" id="micStatusSub">{{ isRecording ? 'ESCUCHANDO...' : 'LISTO PARA ESCUCHAR' }}</div>
+              </div>
+            </button>
 
-    <!-- Row 2: Voice status caption, centered directly below button and waveform -->
-    <div class="w-full flex items-center justify-center space-x-2 text-[10px] font-mono text-slate-400 pt-0.5">
-      <span
-        class="w-2 h-2 rounded-full transition-colors duration-300 shrink-0"
-        id="voiceIndicatorDot"
-        :style="voiceDotStyle"
-      ></span>
-      <span class="text-slate-400 font-mono tracking-tight" id="voiceStateCaption">{{ voiceStateText }}</span>
+            <!-- Audio Spectrum Canvas (same height h-[44px] matching MIC button) -->
+            <div class="flex-1 h-[44px] min-w-0 flex items-center">
+              <canvas
+                ref="waveformCanvasRef"
+                id="waveformCanvas"
+                class="w-full h-[44px] rounded-lg bg-space-950/70 border border-slate-800/80 block"
+                width="400"
+                height="44"
+              ></canvas>
+            </div>
+
+            <!-- Optional 3D View Switch Button (for mobile chat header) -->
+            <button
+              v-if="showViewSwitch"
+              type="button"
+              data-test="soundbar-view-switch"
+              @click="emit('open-voice')"
+              class="h-[44px] px-2.5 rounded-lg bg-cyan-950/50 hover:bg-cyan-900/60 border border-cyan-500/30 text-cyan-400 font-mono text-xs flex items-center gap-1 shrink-0 transition-colors"
+              title="Abrir Orbe de Voz 3D"
+            >
+              <span class="font-bold">3D</span>
+              <span class="text-[10px]">&gt;</span>
+            </button>
+          </div>
+
+          <!-- Row 2: Voice status caption, centered directly below button and waveform -->
+          <div class="w-full flex items-center justify-center space-x-2 text-[10px] font-mono text-slate-400 pt-0.5">
+            <span
+              class="w-2 h-2 rounded-full transition-colors duration-300 shrink-0"
+              id="voiceIndicatorDot"
+              :style="voiceDotStyle"
+            ></span>
+            <span class="text-slate-400 font-mono tracking-tight" id="voiceStateCaption">{{ voiceStateText }}</span>
+          </div>
+        </div>
+      </Transition>
     </div>
   </div>
 </template>

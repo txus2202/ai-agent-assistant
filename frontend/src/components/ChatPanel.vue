@@ -730,7 +730,7 @@ defineExpose({
 <template>
   <div class="flex flex-col h-full bg-[#060a11] border-r border-space-800 font-sans">
     <!-- Context Header -->
-    <div class="p-3.5 md:p-5 border-b border-space-800/50 relative">
+    <div class="p-3.5 md:px-4 md:py-5 border-b border-space-800/50 relative">
       <div class="flex justify-between items-center gap-2">
         <div class="min-w-0 flex items-center space-x-2">
           <div class="w-2 h-2 rounded-full bg-neon-cyan glow-cyan shrink-0"></div>
@@ -741,20 +741,20 @@ defineExpose({
           <button 
             @click="handleLearnSession"
             :disabled="store.isLearningSession || messages.length === 0 || props.isDebating"
-            class="text-[9px] border border-cyan-800/80 hover:border-neon-cyan text-neon-cyan font-mono px-2.5 md:px-3 py-1.5 min-h-[34px] md:min-h-0 rounded transition-all uppercase tracking-widest bg-[#040e1a] hover:bg-neon-cyan/15 flex items-center space-x-1.5 disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_0_10px_rgba(0,229,255,0.08)] cursor-pointer"
+            class="text-[9px] border border-cyan-800/80 hover:border-neon-cyan text-neon-cyan font-mono px-2.5 md:px-3 h-7 rounded transition-all uppercase tracking-widest bg-[#040e1a] hover:bg-neon-cyan/15 inline-flex items-center justify-center gap-1.5 leading-none disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_0_10px_rgba(0,229,255,0.08)] cursor-pointer"
             title="Pedir a Metis que sintetice y aprenda la sesión en Obsidian Vault"
             data-test="learn-session-btn"
           >
-            <Brain class="w-3.5 h-3.5" :class="{ 'animate-pulse': store.isLearningSession }" />
-            <span>{{ store.isLearningSession ? 'Asimilando...' : 'Aprender' }}</span>
+            <Brain class="w-3.5 h-3.5 shrink-0" :class="{ 'animate-pulse': store.isLearningSession }" />
+            <span class="leading-none">{{ store.isLearningSession ? 'Asimilando...' : 'Aprender' }}</span>
           </button>
 
           <!-- Clear Chat -->
           <button 
             @click="clearChat"
-            class="text-[9px] border border-space-700 hover:border-space-500 text-space-400 hover:text-slate-300 font-mono px-2.5 md:px-3 py-1.5 min-h-[34px] md:min-h-0 rounded transition-colors uppercase tracking-widest bg-space-900"
+            class="text-[9px] border border-space-700 hover:border-space-500 text-space-400 hover:text-slate-300 font-mono px-2.5 md:px-3 h-7 rounded transition-colors uppercase tracking-widest bg-space-900 inline-flex items-center justify-center leading-none cursor-pointer"
           >
-            Limpiar
+            <span class="leading-none">Limpiar</span>
           </button>
         </div>
       </div>
@@ -820,7 +820,7 @@ defineExpose({
     </div>
 
     <!-- Messages -->
-    <div ref="chatScroll" class="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-3.5 sm:p-5 space-y-6 min-w-0 max-w-full">
+    <div ref="chatScroll" class="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-3.5 md:px-4 md:py-5 space-y-6 min-w-0 max-w-full">
       <div 
         v-for="(msg, i) in messages" 
         :key="i"
@@ -1441,7 +1441,7 @@ defineExpose({
               v-model="store.draftMessage"
               :placeholder="store.isHitlRequired ? 'Introduce tus instrucciones de refinamiento...' : 'Escribe tu consulta...'"
               rows="3"
-              class="w-full bg-[#030509] border rounded-xl pl-3.5 md:pl-4 pr-12 py-3 text-sm text-slate-200 focus:outline-none transition-all placeholder:text-[11px] placeholder-space-600 font-mono shadow-inner resize-none custom-scrollbar min-h-[76px] sm:min-h-[88px]"
+              class="w-full bg-[#030509] border rounded-xl pl-3.5 md:pl-4 pr-12 py-3 text-base sm:text-sm text-slate-200 focus:outline-none transition-all placeholder:text-[11px] placeholder-space-600 font-mono shadow-inner resize-none custom-scrollbar min-h-[76px] sm:min-h-[88px]"
               :class="store.isHitlRequired ? 'border-neon-amber/60 focus:border-neon-amber focus:ring-1 focus:ring-neon-amber/50' : 'border-space-700 focus:border-neon-cyan'"
               :disabled="isDebating && !store.isHitlRequired"
               @keydown.enter.prevent="onSubmit"

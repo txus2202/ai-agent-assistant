@@ -15,6 +15,7 @@ import {
   Power,
 } from '@lucide/vue'
 import { useAuthStore, type User } from '../stores/auth'
+import { useDebateStore } from '../stores/debate'
 
 const props = withDefaults(
   defineProps<{
@@ -29,6 +30,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: 'close'): void
 }>()
+
+const debateStore = useDebateStore()
 
 const isTestEnv = import.meta !== undefined && import.meta.env?.MODE === 'test'
 const shouldDisableTeleport = computed(() => props.teleportDisabled || isTestEnv)
@@ -266,7 +269,7 @@ const formatDate = (isoString: string): string => {
                 </span>
               </h2>
               <p class="text-[11px] font-mono text-cyan-300/70 tracking-wide">
-                Administración de credenciales, roles y ciclo de vida de operadores A.T.E.N.E.A.
+                Administración de credenciales, roles y ciclo de vida de operadores {{ debateStore.projectName }}.
               </p>
             </div>
           </div>
@@ -327,7 +330,7 @@ const formatDate = (isoString: string): string => {
                     required
                     autocomplete="off"
                     placeholder="ej: operador_beta"
-                    class="w-full bg-space-900 border border-cyan-800/60 focus:border-cyan-400 focus:outline-none rounded px-3 py-2 text-xs font-mono text-cyan-100 placeholder-slate-600 transition"
+                    class="w-full bg-space-900 border border-cyan-800/60 focus:border-cyan-400 focus:outline-none rounded px-3 py-2 text-base sm:text-xs font-mono text-cyan-100 placeholder-slate-600 transition"
                   />
                 </div>
               </div>
@@ -345,7 +348,7 @@ const formatDate = (isoString: string): string => {
                     required
                     autocomplete="new-password"
                     placeholder="••••••••"
-                    class="w-full bg-space-900 border border-cyan-800/60 focus:border-cyan-400 focus:outline-none rounded px-3 py-2 text-xs font-mono text-cyan-100 placeholder-slate-600 transition"
+                    class="w-full bg-space-900 border border-cyan-800/60 focus:border-cyan-400 focus:outline-none rounded px-3 py-2 text-base sm:text-xs font-mono text-cyan-100 placeholder-slate-600 transition"
                   />
                 </div>
               </div>
@@ -363,7 +366,7 @@ const formatDate = (isoString: string): string => {
                     required
                     autocomplete="new-password"
                     placeholder="••••••••"
-                    class="w-full bg-space-900 border border-cyan-800/60 focus:border-cyan-400 focus:outline-none rounded px-3 py-2 text-xs font-mono text-cyan-100 placeholder-slate-600 transition"
+                    class="w-full bg-space-900 border border-cyan-800/60 focus:border-cyan-400 focus:outline-none rounded px-3 py-2 text-base sm:text-xs font-mono text-cyan-100 placeholder-slate-600 transition"
                   />
                 </div>
               </div>
@@ -579,7 +582,7 @@ const formatDate = (isoString: string): string => {
                         data-test="edit-password-input"
                         type="password"
                         placeholder="Nueva contraseña (opcional)"
-                        class="w-full bg-space-900 border border-cyan-800/60 focus:border-cyan-400 rounded px-2.5 py-1 text-xs font-mono text-cyan-100 placeholder-slate-600"
+                        class="w-full bg-space-900 border border-cyan-800/60 focus:border-cyan-400 rounded px-2.5 py-1 text-base sm:text-xs font-mono text-cyan-100 placeholder-slate-600"
                       />
                     </div>
                   </div>

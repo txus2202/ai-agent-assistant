@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useDebateStore } from '../stores/debate'
 import { Cpu, ShieldCheck, User, Lock, KeyRound, AlertCircle, Sparkles } from '@lucide/vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const debateStore = useDebateStore()
+
+onMounted(() => {
+  if (!debateStore.topology) {
+    void debateStore.fetchTopology()
+  }
+})
 
 const username = ref('')
 const password = ref('')
@@ -50,7 +58,7 @@ const handleSetup = async () => {
 </script>
 
 <template>
-  <div class="min-h-screen w-full bg-space-950 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+  <div class="min-h-screen min-h-dvh w-full bg-space-950 flex flex-col items-center justify-center p-4 relative overflow-hidden">
     <!-- Ambient ambient glow -->
     <div class="absolute -top-40 -right-40 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
     <div class="absolute -bottom-40 -left-40 w-96 h-96 bg-cyan-600/10 rounded-full blur-3xl pointer-events-none"></div>
@@ -62,7 +70,7 @@ const handleSetup = async () => {
           <Cpu class="w-8 h-8 text-amber-400 animate-pulse" />
         </div>
         <h1 class="text-xl sm:text-2xl font-bold tracking-widest uppercase font-mono text-cyan-100">
-          A.T.E.N.E.A.
+          {{ debateStore.projectName }}
         </h1>
         <p class="text-xs font-mono text-amber-300/80 tracking-wider mt-1 uppercase flex items-center justify-center gap-1.5">
           <Sparkles class="w-3.5 h-3.5" />
@@ -107,7 +115,7 @@ const handleSetup = async () => {
               type="text"
               autocomplete="username"
               placeholder="admin"
-              class="w-full px-3.5 py-2.5 bg-space-950 border border-space-800 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 rounded-lg text-sm text-cyan-50 placeholder-slate-600 font-mono transition-colors outline-none"
+              class="w-full px-3.5 py-2.5 bg-space-950 border border-space-800 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 rounded-lg text-base sm:text-sm text-cyan-50 placeholder-slate-600 font-mono transition-colors outline-none"
             />
           </div>
 
@@ -123,7 +131,7 @@ const handleSetup = async () => {
               type="password"
               autocomplete="new-password"
               placeholder="••••••••••••"
-              class="w-full px-3.5 py-2.5 bg-space-950 border border-space-800 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 rounded-lg text-sm text-cyan-50 placeholder-slate-600 font-mono transition-colors outline-none"
+              class="w-full px-3.5 py-2.5 bg-space-950 border border-space-800 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 rounded-lg text-base sm:text-sm text-cyan-50 placeholder-slate-600 font-mono transition-colors outline-none"
             />
           </div>
 
@@ -139,7 +147,7 @@ const handleSetup = async () => {
               type="password"
               autocomplete="new-password"
               placeholder="••••••••••••"
-              class="w-full px-3.5 py-2.5 bg-space-950 border border-space-800 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 rounded-lg text-sm text-cyan-50 placeholder-slate-600 font-mono transition-colors outline-none"
+              class="w-full px-3.5 py-2.5 bg-space-950 border border-space-800 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 rounded-lg text-base sm:text-sm text-cyan-50 placeholder-slate-600 font-mono transition-colors outline-none"
             />
           </div>
 
@@ -155,7 +163,7 @@ const handleSetup = async () => {
               type="password"
               autocomplete="off"
               placeholder="Token de seguridad del servidor"
-              class="w-full px-3.5 py-2.5 bg-space-950 border border-amber-500/40 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 rounded-lg text-sm text-cyan-50 placeholder-slate-600 font-mono transition-colors outline-none"
+              class="w-full px-3.5 py-2.5 bg-space-950 border border-amber-500/40 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 rounded-lg text-base sm:text-sm text-cyan-50 placeholder-slate-600 font-mono transition-colors outline-none"
             />
           </div>
 

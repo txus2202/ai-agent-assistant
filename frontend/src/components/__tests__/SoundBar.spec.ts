@@ -193,5 +193,67 @@ describe('SoundBar.vue', () => {
     wrapper.unmount()
     expect(cancelAnimationFrameSpy).toHaveBeenCalled()
   })
+
+  it('handles collapsible mode with arrow toggle button and touch swipe', async () => {
+    const wrapper = mount(SoundBar, {
+      props: {
+        collapsible: true,
+        initialCollapsed: false
+      }
+    })
+
+    // Handle bar is rendered when collapsible is true
+    const handle = wrapper.find('[data-test="soundbar-collapse-handle"]')
+    expect(handle.exists()).toBe(true)
+
+    expect(wrapper.find('[data-test="soundbar-body"]').attributes('style')).toBeFalsy()
+
+    // Click toggle button to collapse
+    const toggleBtn = wrapper.find('[data-test="soundbar-collapse-toggle"]')
+    await toggleBtn.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.isCollapsed).toBe(true)
+    expect(wrapper.find('[data-test="soundbar-body"]').attributes('style')).toContain('display: none')
+    // When collapsed, handle bar displays voice status and MIC tag
+    expect(handle.text()).toContain('ESTADO VOZ: EN REPOSO')
+    expect(handle.text()).toContain('MIC')
+
+    // Swipe up on container to expand
+    const container = wrapper.find('[data-test="sound-bar"]')
+    await container.trigger('touchstart', {
+      touches: [{ clientX: 100, clientY: 200 }],
+      changedTouches: [{ clientX: 100, clientY: 200 }]
+    })
+    await container.trigger('touchend', {
+      changedTouches: [{ clientX: 100, clientY: 100 }]
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.isCollapsed).toBe(false)
+    expect(wrapper.find('[data-test="soundbar-body"]').attributes('style')).toBeFalsy()
+    // When deployed, handle bar doesn't have the duplicate text or stray dot
+    expect(handle.text()).not.toContain('ESTADO VOZ')
+    expect(handle.text()).not.toContain('MIC')
+
+    // Swipe down to collapse
+    await container.trigger('touchstart', {
+      touches: [{ clientX: 100, clientY: 100 }],
+      changedTouches: [{ clientX: 100, clientY: 100 }]
+    })
+    await container.trigger('touchend', {
+      changedTouches: [{ clientX: 100, clientY: 200 }]
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.isCollapsed).toBe(true)
+    expect(wrapper.find('[data-test="soundbar-body"]').attributes('style')).toContain('display: none')
+
+    // Clicking handle bar when collapsed expands it
+    await handle.trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.vm.isCollapsed).toBe(false)
+    expect(wrapper.find('[data-test="soundbar-body"]').attributes('style')).toBeFalsy()
+  })
 })
 

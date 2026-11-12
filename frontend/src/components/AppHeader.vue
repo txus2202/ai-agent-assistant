@@ -1,15 +1,14 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useDebateStore } from '../stores/debate'
 import { useAuthStore } from '../stores/auth'
-import { Cpu, Volume2, VolumeX, History, Ear, EarOff, Sun, Moon, LogOut, Users, User as UserIcon, KeyRound, X } from '@lucide/vue'
+import { Cpu, Volume2, VolumeX, History, Ear, EarOff, Sun, Moon, LogOut, Users, User as UserIcon, KeyRound, X, ChevronDown } from '@lucide/vue'
 import { useTheme } from '../composables/useTheme'
-import packageJson from '../../package.json'
 import UserManagementModal from './UserManagementModal.vue'
 
 const router = useRouter()
-const version = packageJson.version
+const route = useRoute()
 const debateStore = useDebateStore()
 const authStore = useAuthStore()
 const { isDarkMode, toggleTheme } = useTheme()
@@ -82,31 +81,155 @@ const toggleAutoListen = () => {
     debateStore.startAutoListen()
   }
 }
+
+// User Profile Dropdown state & actions
+const isUserMenuOpen = ref(false)
+const userMenuRef = ref<HTMLElement | null>(null)
+
+const displayUsername = computed(() => {
+  const raw = authStore.user?.username || ''
+  return raw.trim().split(/\s+/)[0] || ''
+})
+
+const toggleUserMenu = () => {
+  isUserMenuOpen.value = !isUserMenuOpen.value
+}
+
+const openUserManagement = () => {
+  isUserMenuOpen.value = false
+  isUserModalOpen.value = true
+}
+
+const openChangePassword = () => {
+  isUserMenuOpen.value = false
+  openChangePasswordModal()
+}
+
+const handleUserLogout = async () => {
+  isUserMenuOpen.value = false
+  await handleLogout()
+}
+
+const handleClickOutsideUserMenu = (event: MouseEvent) => {
+  if (!userMenuRef.value || !isUserMenuOpen.value) return
+  const path = event.composedPath()
+  if (!path.includes(userMenuRef.value)) {
+    isUserMenuOpen.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutsideUserMenu)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutsideUserMenu)
+})
 </script>
 
 <template>
-  <header class="h-14 border-b border-cyan-900/40 bg-space-900/90 backdrop-blur-md flex items-center justify-between z-30 shrink-0 w-full">
-    <!-- Left branding & Status tag (centered relative to chat column on desktop) -->
-    <div class="flex items-center justify-start xl:justify-center px-3 sm:px-4 xl:w-[380px] 2xl:w-[400px] xl:shrink-0 shrink-0">
-      <span class="text-xs sm:text-sm font-mono font-bold tracking-widest uppercase text-slate-300 dark:text-cyan-100">SYSTEM CORE V{{ version }}</span>
-    </div>
+  <header class="border-b border-cyan-900/40 bg-space-900/90 backdrop-blur-md grid grid-cols-2 sm:flex sm:flex-row items-center sm:justify-between sm:h-14 z-30 shrink-0 w-full relative pt-2.5 pb-2.5 sm:py-0 gap-y-4 sm:gap-y-0">
+    <!-- Left Section: Operator Account Dropdown + Theme Switcher (Left-aligned with 16px padding & 16px gap across all viewports) -->
+    <div
+      data-test="header-left-section"
+      class="col-span-1 order-2 sm:order-1 flex items-center justify-start pl-4 gap-4 xl:w-[380px] 2xl:w-[400px] xl:shrink-0 shrink-0"
+    >
+      <!-- Authenticated User Dropdown Menu -->
+      <div v-if="authStore.isAuthenticated" ref="userMenuRef" class="relative">
+        <button
+          type="button"
+          @click="toggleUserMenu"
+          data-test="user-menu-btn"
+          class="h-[34px] min-h-[34px] px-2 sm:px-2.5 rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer text-slate-300 select-none"
+          :class="isUserMenuOpen 
+            ? 'border-cyan-400 bg-space-800 text-cyan-200 shadow-[0_0_12px_rgba(0,229,255,0.18)]' 
+            : 'border-cyan-800/40 bg-space-850 hover:bg-space-800 hover:text-cyan-200 hover:border-cyan-500/50'"
+          title="Menú de cuenta de operador"
+          aria-haspopup="true"
+          :aria-expanded="isUserMenuOpen"
+        >
+          <div class="w-5 h-5 rounded-full bg-space-900 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0">
+            <UserIcon class="w-3 h-3" />
+          </div>
+          
+          <span
+            data-test="user-badge"
+            class="h-5 flex items-center font-mono text-[10px] sm:text-[11px] tracking-wider uppercase text-cyan-300 font-bold leading-none translate-y-[1px]"
+          >
+            <span class="max-w-[120px] sm:max-w-[150px] truncate inline-block">
+              {{ displayUsername }}
+            </span>
+          </span>
 
-    <!-- Center App Title Banner -->
-    <div class="hidden sm:flex flex-1 justify-center items-center h-full min-w-0 px-2">
-      <div class="relative px-4 xl:px-8 pt-[5px] pb-[6px] bg-space-850 border border-cyan-500/30 rounded-t-sm shadow-[0_0_20px_rgba(0,229,255,0.08)] truncate">
-        <div class="absolute -top-[1px] left-1/2 -translate-x-1/2 w-16 h-[2px] bg-cyan-400 shadow-[0_0_10px_#00e5ff]"></div>
-        <h1 class="text-xs sm:text-sm font-semibold tracking-widest uppercase text-cyan-100 flex items-center justify-center space-x-2">
-          <Cpu class="w-4 h-4 text-cyan-400 shrink-0" />
-          <span class="font-bold tracking-widest">{{ debateStore.projectName }}</span>
-        </h1>
-        <div class="text-center hidden xl:block">
-          <span class="text-[9px] text-cyan-300/70 font-mono font-normal tracking-normal lowercase">({{ debateStore.projectDescription }})</span>
+          <ChevronDown class="w-3 h-3 text-slate-400 transition-transform duration-200 shrink-0" :class="{ 'rotate-180 text-cyan-400': isUserMenuOpen }" />
+        </button>
+
+        <!-- Dropdown Popover Menu -->
+        <div
+          v-if="isUserMenuOpen"
+          data-test="user-menu-dropdown"
+          class="absolute left-0 top-full mt-2 w-56 bg-space-900 border border-cyan-500/40 rounded-xl shadow-[0_12px_35px_rgba(0,0,0,0.7)] py-1.5 z-50 text-xs font-mono animate-fade-in backdrop-blur-md"
+        >
+          <!-- User Info Header -->
+          <div class="px-3.5 py-2.5 border-b border-space-800 flex flex-col gap-0.5">
+            <span class="text-[9px] uppercase tracking-widest text-slate-400">Operador Activo</span>
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-xs font-bold text-cyan-100 truncate">{{ authStore.user?.username }}</span>
+              <span
+                class="px-1.5 py-0.5 rounded text-[8px] tracking-widest font-bold uppercase shrink-0"
+                :class="authStore.isAdmin 
+                  ? 'bg-amber-500/15 border border-amber-500/40 text-amber-300' 
+                  : 'bg-cyan-500/15 border border-cyan-500/40 text-cyan-300'"
+              >
+                {{ authStore.isAdmin ? 'ADMIN' : 'OPERADOR' }}
+              </span>
+            </div>
+          </div>
+
+          <!-- Menu Actions -->
+          <div class="py-1">
+            <!-- Admin Only: Gestión de Operadores -->
+            <button
+              v-if="authStore.isAdmin"
+              type="button"
+              @click="openUserManagement"
+              data-test="manage-users-btn"
+              class="w-full px-3.5 py-2 text-left text-slate-300 hover:text-cyan-200 hover:bg-space-800/80 flex items-center gap-2.5 transition-colors cursor-pointer text-xs"
+            >
+              <Users class="w-4 h-4 text-cyan-400 shrink-0" />
+              <span>Gestión de Operadores</span>
+            </button>
+
+            <!-- Cambiar Contraseña -->
+            <button
+              type="button"
+              @click="openChangePassword"
+              data-test="change-password-btn"
+              class="w-full px-3.5 py-2 text-left text-slate-300 hover:text-cyan-200 hover:bg-space-800/80 flex items-center gap-2.5 transition-colors cursor-pointer text-xs"
+            >
+              <KeyRound class="w-4 h-4 text-slate-400 shrink-0" />
+              <span>Cambiar mi contraseña</span>
+            </button>
+          </div>
+
+          <!-- Divider -->
+          <div class="border-t border-space-800 my-1"></div>
+
+          <!-- Logout -->
+          <div class="p-1">
+            <button
+              type="button"
+              @click="handleUserLogout"
+              data-test="logout-btn"
+              class="w-full px-3 py-2 text-left text-red-400 hover:text-red-200 hover:bg-red-950/40 rounded-lg flex items-center gap-2.5 transition-colors cursor-pointer text-xs"
+            >
+              <LogOut class="w-4 h-4 text-red-400 shrink-0" />
+              <span>Cerrar Sesión</span>
+            </button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Right System Action Controls (Theme, Audio, Auto-Listen, History) -->
-    <div class="flex items-center justify-end xl:justify-center px-3 sm:px-4 xl:w-[380px] 2xl:w-[400px] xl:shrink-0 shrink-0 gap-2 sm:gap-3">
       <!-- Theme Switcher (On/Off Toggle with Moon / Sun icons) -->
       <button 
         type="button"
@@ -129,76 +252,79 @@ const toggleAutoListen = () => {
           <Sun v-else class="w-3 h-3 text-amber-500" />
         </span>
       </button>
+    </div>
 
-      <!-- Action Icons (centered with system column on desktop) -->
-      <div class="flex items-center space-x-1 sm:space-x-1.5 text-slate-400 pl-2 border-l border-space-800">
-        <button 
-          @click="toggleAudio"
-          class="min-w-[34px] min-h-[34px] sm:min-w-0 sm:min-h-0 p-1.5 flex items-center justify-center rounded transition border border-transparent cursor-pointer"
-          :class="debateStore.isVoiceOutputEnabled 
-            ? 'text-amber-600 dark:text-amber-400 xl:text-amber-400 bg-amber-500/15 dark:bg-amber-900/30 xl:bg-amber-900/30 border-amber-500/50' 
-            : 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 xl:hover:text-amber-200 hover:bg-space-800 hover:border-amber-500/40 dark:hover:border-amber-800/60'"
-          title="Toggle System Audio"
-        >
-          <VolumeX v-if="!debateStore.isVoiceOutputEnabled" class="w-4 h-4 text-slate-400" />
-          <Volume2 v-else class="w-4 h-4" />
-        </button>
-        <button 
-          @click="toggleAutoListen"
-          class="min-w-[34px] min-h-[34px] sm:min-w-0 sm:min-h-0 p-1.5 flex items-center justify-center rounded transition border border-transparent cursor-pointer"
-          :class="debateStore.isAutoListenEnabled 
-            ? 'text-amber-600 dark:text-amber-400 xl:text-amber-400 bg-amber-500/15 dark:bg-amber-900/30 xl:bg-amber-900/30 border-amber-500/50' 
-            : 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 xl:hover:text-amber-200 hover:bg-space-800 hover:border-amber-500/40 dark:hover:border-amber-800/60'"
-          title="Toggle Auto-Listen (Wake Word)"
-        >
-          <Ear v-if="debateStore.isAutoListenEnabled" class="w-4 h-4" />
-          <EarOff v-else class="w-4 h-4" />
-        </button>
-        <button 
-          @click="router.push('/history')"
-          class="min-w-[34px] min-h-[34px] sm:min-w-0 sm:min-h-0 p-1.5 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 xl:hover:text-amber-200 hover:bg-space-800 rounded transition border border-transparent hover:border-amber-500/40 dark:hover:border-amber-800/60 relative cursor-pointer" 
-          title="Debate History"
-        >
-          <History class="w-4 h-4" />
-        </button>
-
-        <!-- Authenticated User & Logout -->
-        <div v-if="authStore.isAuthenticated" class="flex items-center gap-1.5 pl-2 border-l border-space-800">
-          <button
-            v-if="authStore.isAdmin"
-            @click="isUserModalOpen = true"
-            data-test="manage-users-btn"
-            class="min-w-[34px] min-h-[34px] sm:min-w-0 sm:min-h-0 p-1.5 flex items-center justify-center text-slate-500 hover:text-cyan-300 hover:bg-space-800 rounded transition border border-transparent hover:border-cyan-500/40 cursor-pointer"
-            title="Gestión de Operadores"
-          >
-            <Users class="w-4 h-4 text-cyan-400" />
-          </button>
-          <span
-            data-test="user-badge"
-            class="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded bg-space-800 border border-cyan-800/40 text-cyan-300 font-mono text-[10px] tracking-wider uppercase"
-            :title="`Usuario: ${authStore.user?.username}`"
-          >
-            <UserIcon class="w-3 h-3 text-cyan-400" />
-            <span class="max-w-[80px] truncate">{{ authStore.user?.username }}</span>
-          </span>
-          <button
-            @click="openChangePasswordModal"
-            data-test="change-password-btn"
-            class="min-w-[34px] min-h-[34px] sm:min-w-0 sm:min-h-0 p-1.5 flex items-center justify-center text-slate-500 hover:text-cyan-300 hover:bg-space-800 rounded transition border border-transparent hover:border-cyan-500/40 cursor-pointer"
-            title="Cambiar mi contraseña"
-          >
-            <KeyRound class="w-4 h-4" />
-          </button>
-          <button
-            @click="handleLogout"
-            data-test="logout-btn"
-            class="min-w-[34px] min-h-[34px] sm:min-w-0 sm:min-h-0 p-1.5 flex items-center justify-center text-slate-500 hover:text-red-400 hover:bg-space-800 rounded transition border border-transparent hover:border-red-500/40 cursor-pointer"
-            title="Cerrar Sesión"
-          >
-            <LogOut class="w-4 h-4" />
-          </button>
+    <!-- Center App Title Banner (Present in mobile at top centered with 16px gap to buttons, and in center on sm+) -->
+    <div
+      data-test="header-center-banner"
+      class="col-span-2 sm:col-span-1 order-1 sm:order-2 flex sm:flex-1 justify-center items-center sm:h-full min-w-0 px-2"
+    >
+      <div class="relative px-5 sm:px-6 xl:px-8 py-2 sm:py-1.5 bg-space-850 border border-cyan-500/40 rounded-lg sm:rounded-t-sm shadow-[0_0_25px_rgba(0,229,255,0.12)] truncate">
+        <div class="absolute -top-[1px] left-1/2 -translate-x-1/2 w-20 sm:w-24 h-[2px] bg-cyan-400 shadow-[0_0_12px_#00e5ff]"></div>
+        <h1 class="text-sm sm:text-base font-semibold tracking-widest uppercase text-cyan-100 flex items-center justify-center space-x-2.5">
+          <Cpu class="w-4 h-4 sm:w-4.5 sm:h-4.5 text-cyan-400 shrink-0" />
+          <span class="font-bold tracking-widest">{{ debateStore.projectName }}</span>
+        </h1>
+        <div class="text-center hidden xl:block">
+          <span class="text-[9px] text-cyan-300/70 font-mono font-normal tracking-normal lowercase">({{ debateStore.projectDescription }})</span>
         </div>
       </div>
+    </div>
+
+    <!-- Right System Action Controls (Audio, Auto-Listen, History) -->
+    <div
+      data-test="header-right-section"
+      class="col-span-1 order-3 sm:order-3 flex items-center justify-end pr-4 gap-4 xl:w-[380px] 2xl:w-[400px] xl:shrink-0 shrink-0 text-slate-400"
+    >
+      <!-- Audio Output Button -->
+      <button 
+        type="button"
+        @click="toggleAudio"
+        data-test="toggle-audio-btn"
+        class="h-[34px] min-h-[34px] w-[34px] min-w-[34px] rounded-lg border transition-all flex items-center justify-center cursor-pointer select-none group"
+        :class="debateStore.isVoiceOutputEnabled 
+          ? 'border-cyan-400 bg-space-800 text-cyan-200 shadow-[0_0_12px_rgba(0,229,255,0.18)]' 
+          : 'border-cyan-800/40 bg-space-850 hover:bg-space-800 hover:text-cyan-200 hover:border-cyan-500/50 text-slate-400'"
+        title="Toggle System Audio"
+        aria-label="Toggle System Audio"
+      >
+        <Volume2 v-if="debateStore.isVoiceOutputEnabled" class="w-[18px] h-[18px] text-cyan-300" />
+        <VolumeX v-else class="w-[18px] h-[18px] text-slate-400 group-hover:text-cyan-300 transition-colors" />
+      </button>
+
+      <!-- Auto-Listen (Wake Word) Button -->
+      <button 
+        type="button"
+        @click="toggleAutoListen"
+        data-test="toggle-autolisten-btn"
+        class="h-[34px] min-h-[34px] w-[34px] min-w-[34px] rounded-lg border transition-all flex items-center justify-center cursor-pointer select-none group"
+        :class="debateStore.isAutoListenEnabled 
+          ? 'border-cyan-400 bg-space-800 text-cyan-200 shadow-[0_0_12px_rgba(0,229,255,0.18)]' 
+          : 'border-cyan-800/40 bg-space-850 hover:bg-space-800 hover:text-cyan-200 hover:border-cyan-500/50 text-slate-400'"
+        title="Toggle Auto-Listen (Wake Word)"
+        aria-label="Toggle Auto-Listen (Wake Word)"
+      >
+        <Ear v-if="debateStore.isAutoListenEnabled" class="w-[18px] h-[18px] text-cyan-300" />
+        <EarOff v-else class="w-[18px] h-[18px] text-slate-400 group-hover:text-cyan-300 transition-colors" />
+      </button>
+
+      <!-- History Navigation Button -->
+      <button 
+        type="button"
+        @click="router.push('/history')"
+        data-test="history-btn"
+        class="h-[34px] min-h-[34px] w-[34px] min-w-[34px] rounded-lg border transition-all flex items-center justify-center cursor-pointer select-none group"
+        :class="route?.path === '/history' 
+          ? 'border-cyan-400 bg-space-800 text-cyan-200 shadow-[0_0_12px_rgba(0,229,255,0.18)]' 
+          : 'border-cyan-800/40 bg-space-850 hover:bg-space-800 hover:text-cyan-200 hover:border-cyan-500/50 text-slate-400'"
+        title="Debate History"
+        aria-label="Debate History"
+      >
+        <History 
+          class="w-[18px] h-[18px] transition-colors" 
+          :class="route?.path === '/history' ? 'text-cyan-300' : 'text-slate-400 group-hover:text-cyan-300'"
+        />
+      </button>
     </div>
   </header>
 

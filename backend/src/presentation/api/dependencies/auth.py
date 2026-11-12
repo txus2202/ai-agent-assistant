@@ -76,12 +76,72 @@ def reset_auth_service() -> None:
 
 
 def validate_websocket_origin(websocket: WebSocket, settings: Settings) -> bool:
-    """Validates origin header against CORS settings for CSWSH defense."""
+    """
+    Validates origin header against CORS settings for CSWSH defense.
+    Allows:
+    1. Requests without an Origin header (non-browser clients, local tools).
+    2. Wildcard '*' in cors_origins.
+    3. Explicit origin matches in cors_origins.
+    4. Same-origin requests: when origin hostname matches Host or X-Forwarded-Host header.
+    5. Pattern matching in cors_origins (e.g. *.ts.net, https://*.ts.net, *.local).
+    6. Automatically allows Tailscale domains (*.ts.net) when accessing over Tailscale.
+    """
     origin = websocket.headers.get("origin")
-    if origin and "*" not in settings.cors_origins:
-        if origin not in set(settings.cors_origins):
-            return False
-    return True
+    if not origin:
+        return True
+
+    # 1. Wildcard allow-all
+    if "*" in settings.cors_origins:
+        return True
+
+    clean_origin = origin.strip().lower()
+
+    # 2. Direct match against cors_origins
+    cors_set = {o.strip().lower() for o in settings.cors_origins}
+    if clean_origin in cors_set:
+        return True
+
+    from urllib.parse import urlparse
+    origin_parsed = urlparse(clean_origin)
+    origin_host = (origin_parsed.hostname or "").lower()
+
+    # 3. Same-origin verification (Origin matches Host or X-Forwarded-Host)
+    candidate_hosts: set[str] = set()
+    for header_name in ("x-forwarded-host", "host"):
+        header_val = websocket.headers.get(header_name)
+        if header_val:
+            for item in header_val.split(","):
+                h = item.strip().lower()
+                if h:
+                    candidate_hosts.add(h)
+                    candidate_hosts.add(h.split(":")[0])
+
+    if origin_host and origin_host in candidate_hosts:
+        return True
+    if origin_parsed.netloc.lower() in candidate_hosts:
+        return True
+
+    # 4. Pattern matching in cors_origins (e.g. *.ts.net, https://*.ts.net, *.local)
+    for pattern in cors_set:
+        if pattern.startswith("*.") and origin_host.endswith(pattern[1:]):
+            return True
+        if "://" in pattern:
+            pat_parsed = urlparse(pattern)
+            if pat_parsed.scheme == origin_parsed.scheme:
+                pat_host = (pat_parsed.hostname or "").lower()
+                if pat_host.startswith("*.") and origin_host.endswith(pat_host[1:]):
+                    return True
+
+    # 5. Intra-tailnet verification: allow nodes only within the exact same tailnet (e.g. *.taild9f14f.ts.net)
+    for h in candidate_hosts:
+        if h.endswith(".ts.net"):
+            parts = h.split(".")
+            if len(parts) >= 4:
+                tailnet_suffix = "." + ".".join(parts[-3:])
+                if origin_host.endswith(tailnet_suffix):
+                    return True
+
+    return False
 
 
 async def authenticate_websocket(

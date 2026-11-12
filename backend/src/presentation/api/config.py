@@ -107,6 +107,20 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    import json
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
+
     @field_validator("default_provider")
     @classmethod
     def validate_provider(cls, v: str) -> str:

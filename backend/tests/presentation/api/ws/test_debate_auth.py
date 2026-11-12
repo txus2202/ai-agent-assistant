@@ -74,3 +74,57 @@ async def test_websocket_debate_accepted_with_valid_cookie(auth_setup):
         msg = ws.receive_json()
         assert msg["type"] == "error"
         assert "Expected 'start'" in msg["content"]
+
+
+@pytest.mark.asyncio
+async def test_websocket_origin_allowed_for_same_origin(auth_setup):
+    app, auth_service, _ = auth_setup
+    token, _ = await auth_service.setup_initial_admin(username="wsadmin", password="password123")
+
+    client = TestClient(app, cookies={"atenea_session": token})
+    # Same-origin request (Tailscale or domain host matches Origin)
+    headers = {
+        "origin": "https://n100-lab.taild9f14f.ts.net",
+        "host": "n100-lab.taild9f14f.ts.net",
+    }
+    with client.websocket_connect("/ws/debate", headers=headers) as ws:
+        ws.send_json({"type": "not_start"})
+        msg = ws.receive_json()
+        assert msg["type"] == "error"
+        assert "Expected 'start'" in msg["content"]
+
+
+@pytest.mark.asyncio
+async def test_websocket_origin_allowed_via_x_forwarded_host(auth_setup):
+    app, auth_service, _ = auth_setup
+    token, _ = await auth_service.setup_initial_admin(username="wsadmin", password="password123")
+
+    client = TestClient(app, cookies={"atenea_session": token})
+    # Reverse proxy behind Tailscale or Nginx
+    headers = {
+        "origin": "https://n100-lab.taild9f14f.ts.net",
+        "x-forwarded-host": "n100-lab.taild9f14f.ts.net",
+        "host": "localhost:8000",
+    }
+    with client.websocket_connect("/ws/debate", headers=headers) as ws:
+        ws.send_json({"type": "not_start"})
+        msg = ws.receive_json()
+        assert msg["type"] == "error"
+        assert "Expected 'start'" in msg["content"]
+
+
+@pytest.mark.asyncio
+async def test_websocket_origin_rejected_for_disallowed_cross_site_origin(auth_setup):
+    app, auth_service, _ = auth_setup
+    token, _ = await auth_service.setup_initial_admin(username="wsadmin", password="password123")
+
+    client = TestClient(app, cookies={"atenea_session": token})
+    # Untrusted cross-site origin attempt (CSWSH)
+    headers = {
+        "origin": "https://attacker.evil.com",
+        "host": "localhost:8000",
+    }
+    with pytest.raises(WebSocketDisconnect) as exc_info:
+        with client.websocket_connect("/ws/debate", headers=headers):
+            pass
+    assert exc_info.value.code == 1008

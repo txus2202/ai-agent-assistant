@@ -67,56 +67,22 @@ describe('HITLActionButton.vue', () => {
     expect(wrapper.emitted('action')).toBeFalsy()
   })
 
-  it('displays DIVERT text and emits divert event when decision is divert', async () => {
+  it.each([
+    { decision: 'divert' as const, expectedText: 'DIVERT / FORK' },
+    { decision: 'finish' as const, expectedText: 'FINISH / HALT' },
+    { decision: 'consolidate' as const, expectedText: 'CONSOLIDATE / MERGE' },
+    { decision: 'retry' as const, expectedText: 'RETRY / REINTENTAR' },
+  ])('displays $expectedText and emits $decision event when decision is $decision', async ({ decision, expectedText }) => {
     const wrapper = mount(HITLActionButton, {
       props: {
-        decision: 'divert',
+        decision,
         disabled: false
       }
     })
 
-    expect(wrapper.text()).toContain('DIVERT / FORK')
+    expect(wrapper.text()).toContain(expectedText)
     await wrapper.trigger('click')
-    expect(wrapper.emitted('action')![0]).toEqual(['divert'])
-  })
-
-  it('displays FINISH text and emits finish event when decision is finish', async () => {
-    const wrapper = mount(HITLActionButton, {
-      props: {
-        decision: 'finish',
-        disabled: false
-      }
-    })
-
-    expect(wrapper.text()).toContain('FINISH / HALT')
-    await wrapper.trigger('click')
-    expect(wrapper.emitted('action')![0]).toEqual(['finish'])
-  })
-
-  it('displays CONSOLIDATE text and emits consolidate event when decision is consolidate', async () => {
-    const wrapper = mount(HITLActionButton, {
-      props: {
-        decision: 'consolidate',
-        disabled: false
-      }
-    })
-
-    expect(wrapper.text()).toContain('CONSOLIDATE / MERGE')
-    await wrapper.trigger('click')
-    expect(wrapper.emitted('action')![0]).toEqual(['consolidate'])
-  })
-
-  it('displays RETRY text and emits retry event when decision is retry', async () => {
-    const wrapper = mount(HITLActionButton, {
-      props: {
-        decision: 'retry',
-        disabled: false
-      }
-    })
-
-    expect(wrapper.text()).toContain('RETRY / REINTENTAR')
-    await wrapper.trigger('click')
-    expect(wrapper.emitted('action')![0]).toEqual(['retry'])
+    expect(wrapper.emitted('action')![0]).toEqual([decision])
   })
 
   it('handles fallback decision value gracefully', () => {

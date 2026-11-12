@@ -858,9 +858,9 @@ export const useDebateStore = defineStore('debate', () => {
     // If content contains failed agent blocks ([Fallo... or [Error...), filter them out
     // so errors already published via handleError are not duplicated in the chat and TTS
     if (contentToPush.includes('[Fallo') || contentToPush.includes('[Error')) {
-      const sections = contentToPush.split(/\n*---\n*/).map(s => s.trim()).filter(Boolean)
+      const sections = contentToPush.split('---').map(s => s.trim()).filter(Boolean)
       const validSections = sections.filter(s => {
-        const withoutHeader = s.replace(/^##\s+[^\n]+\n+/, '').trim()
+        const withoutHeader = s.replace(/^##[^\r\n]*\r?\n+/, '').trim()
         return !withoutHeader.startsWith('[Fallo') && !withoutHeader.startsWith('[Error')
       })
       contentToPush = validSections.join('\n\n---\n\n')
@@ -1162,48 +1162,43 @@ export const useDebateStore = defineStore('debate', () => {
     recordExecutionTrail('Atenea')
   }
 
-  function handleError(event: SupervisorEvent) {
+  function handleNonFatalAgentError(event: SupervisorEvent): boolean {
     const isFatal = event.metadata?.fatal !== 'false'
-
-    if (!isFatal && event.role) {
-      // Non-fatal agent failure: isolate failure to the specific agent (Bulkhead pattern)
-      const failedAgent = findAgent(event.role) || (normalizeAgentRole(event.role) === 'supervisor' ? findAgent('supervisor') : undefined)
-      if (failedAgent) {
-        if (failedAgent.startedAt && !failedAgent.latency) {
-          failedAgent.latency = Number(((Date.now() - failedAgent.startedAt) / 1000).toFixed(2))
-        }
-        failedAgent.startedAt = undefined
-        failedAgent.state = 'ERROR'
-      }
-
-      const errorContent = `⚠️ ${event.content}`
-      const lastMsg = messages.value.at(-1)
-      if (
-        lastMsg?.role === 'assistant' &&
-        (lastMsg.content === errorContent ||
-          (Boolean(event.content) && (lastMsg.content === event.content || lastMsg.content.includes(event.content!))))
-      ) {
-        return
-      }
-
-      const { agentRole, agentName, colorHex } = resolveAgentDisplay(event.role)
-      messages.value.push({
-        role: 'assistant',
-        content: errorContent,
-        agentRole,
-        agentName,
-        colorHex
-      })
-      return
+    if (isFatal || !event.role) {
+      return false
     }
 
-    isDebating.value = false
-    streamingMessageId.value = null
-    ttsStreamBuffer = ''
-    stopTts()
-    resetWakeWordSession()
+    const failedAgent = findAgent(event.role) || (normalizeAgentRole(event.role) === 'supervisor' ? findAgent('supervisor') : undefined)
+    if (failedAgent) {
+      if (failedAgent.startedAt && !failedAgent.latency) {
+        failedAgent.latency = Number(((Date.now() - failedAgent.startedAt) / 1000).toFixed(2))
+      }
+      failedAgent.startedAt = undefined
+      failedAgent.state = 'ERROR'
+    }
 
-    // Stop timers and return active agents to inactive STANDBY state
+    const errorContent = `⚠️ ${event.content}`
+    const lastMsg = messages.value.at(-1)
+    if (
+      lastMsg?.role === 'assistant' &&
+      (lastMsg.content === errorContent ||
+        (Boolean(event.content) && (lastMsg.content === event.content || lastMsg.content.includes(event.content!))))
+    ) {
+      return true
+    }
+
+    const { agentRole, agentName, colorHex } = resolveAgentDisplay(event.role)
+    messages.value.push({
+      role: 'assistant',
+      content: errorContent,
+      agentRole,
+      agentName,
+      colorHex
+    })
+    return true
+  }
+
+  function resetActiveAgentsToStandby() {
     agents.value.forEach(a => {
       if (a.state === 'ACTIVE') {
         if (a.startedAt) {
@@ -1213,6 +1208,20 @@ export const useDebateStore = defineStore('debate', () => {
         a.state = 'STANDBY'
       }
     })
+  }
+
+  function handleError(event: SupervisorEvent) {
+    if (handleNonFatalAgentError(event)) {
+      return
+    }
+
+    isDebating.value = false
+    streamingMessageId.value = null
+    ttsStreamBuffer = ''
+    stopTts()
+    resetWakeWordSession()
+
+    resetActiveAgentsToStandby()
 
     const errorContent = `Error: ${event.content}`
     const lastMsg = messages.value.at(-1)
@@ -1268,6 +1277,39 @@ export const useDebateStore = defineStore('debate', () => {
     }
   }
 
+  function completeCheckpointAgent(checkpoint: string | null) {
+    if (!checkpoint) return
+    const checkpointAgent = checkpoint.startsWith('after_')
+      ? checkpoint.replace('after_', '')
+      : checkpoint
+    const ag = findAgent(checkpointAgent)
+    if (ag?.state === 'ACTIVE' && ag?.role !== 'supervisor') {
+      ag.state = 'COMPLETED'
+    }
+  }
+
+  function resolveHitlUserMessage(
+    decision: HitlDecisionType,
+    feedback?: string,
+    effectiveTargets?: string[]
+  ): string | null {
+    if ((decision === 'refine' || decision === 'divert') && feedback?.trim()) {
+      return feedback.trim()
+    }
+    if (decision === 'consolidate') {
+      return 'Concluir debate y consolidar dictamen final con Atenea.'
+    }
+    if (decision === 'finish') {
+      return 'Finalizar debate inmediatamente sin consolidación.'
+    }
+    if (decision === 'retry') {
+      return effectiveTargets?.length
+        ? `Reintentar ejecución de fase para agentes: ${effectiveTargets.join(', ')}.`
+        : 'Reintentar ejecución de la fase.'
+    }
+    return null
+  }
+
   function submitHitlDecision(
     decision: HitlDecisionType,
     feedback?: string,
@@ -1275,51 +1317,19 @@ export const useDebateStore = defineStore('debate', () => {
   ) {
     stopTts()
     isHitlRequired.value = false
-    if (hitlCheckpoint.value) {
-      const checkpointAgent = hitlCheckpoint.value.startsWith('after_')
-        ? hitlCheckpoint.value.replace('after_', '')
-        : hitlCheckpoint.value
-      const ag = findAgent(checkpointAgent)
-      if (ag && ag.state === 'ACTIVE' && ag.role !== 'supervisor') {
-        ag.state = 'COMPLETED'
-      }
-    }
+    completeCheckpointAgent(hitlCheckpoint.value)
     hitlCheckpoint.value = null
     resetWakeWordSession()
 
-
     const effectiveTargets = targetAgents ?? [...hitlTargetAgents.value]
     hitlTargetAgents.value = []
-    
-    if ((decision === 'refine' || decision === 'divert') && feedback?.trim()) {
+
+    const userMessageContent = resolveHitlUserMessage(decision, feedback, effectiveTargets)
+    if (userMessageContent) {
       messages.value.push({
         id: crypto.randomUUID(),
         role: 'user',
-        content: feedback.trim(),
-        timestamp: new Date().toISOString()
-      })
-    } else if (decision === 'consolidate') {
-      messages.value.push({
-        id: crypto.randomUUID(),
-        role: 'user',
-        content: 'Concluir debate y consolidar dictamen final con Atenea.',
-        timestamp: new Date().toISOString()
-      })
-    } else if (decision === 'finish') {
-      messages.value.push({
-        id: crypto.randomUUID(),
-        role: 'user',
-        content: 'Finalizar debate inmediatamente sin consolidación.',
-        timestamp: new Date().toISOString()
-      })
-    } else if (decision === 'retry') {
-      const msg = effectiveTargets.length > 0
-        ? `Reintentar ejecución de fase para agentes: ${effectiveTargets.join(', ')}.`
-        : 'Reintentar ejecución de la fase.'
-      messages.value.push({
-        id: crypto.randomUUID(),
-        role: 'user',
-        content: msg,
+        content: userMessageContent,
         timestamp: new Date().toISOString()
       })
     }

@@ -57,8 +57,8 @@ const handleRetry = async () => {
         if (!store.isAgentsLoaded) {
           await initializeAppData()
         }
-      } else {
-        if (router) await router.push('/login')
+      } else if (router) {
+        await router.push('/login')
       }
     }
   } finally {

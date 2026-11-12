@@ -468,16 +468,39 @@ const playVoiceResponse = (text: string, role?: string) => {
   }
 }
 
+const isTtsSessionActive = (session: number) => {
+  return session === ttsSessionId && store.isTtsPlaying
+}
+
+const handlePrefetchAudioResult = (
+  audioBuffer: ArrayBuffer,
+  item: TtsTextItem,
+  currentSession: number
+) => {
+  if (!isTtsSessionActive(currentSession)) return
+  ttsAudioQueue.push({
+    id: item.id,
+    audio: audioBuffer,
+    role: item.role,
+    sessionId: currentSession
+  })
+  if (store.isTtsPlaying && !isPlayingAudio && currentSession === ttsSessionId) {
+    playNextAudio().catch(err => {
+      console.error("Error starting audio playback:", err)
+    })
+  }
+}
+
 const prefetchTtsQueue = async () => {
   if (ttsTextQueue.length === 0) {
     isPrefetching = false
     return
   }
-  
+
   const currentSession = ttsSessionId
   isPrefetching = true
   const item = ttsTextQueue.shift()!
-  
+
   try {
     prefetchAbortController = new AbortController()
     const response = await fetch('/api/audio/synthesize', {
@@ -486,53 +509,33 @@ const prefetchTtsQueue = async () => {
       body: JSON.stringify({ text: item.text, add_silence: false }),
       signal: prefetchAbortController.signal
     })
-    
-    // If the session changed or TTS stopped while fetching, discard this result
-    if (currentSession !== ttsSessionId || !store.isTtsPlaying) {
-      isPrefetching = false
-      return
-    }
 
-    if (response.ok) {
+    if (isTtsSessionActive(currentSession) && response.ok) {
       const audioBuffer = await response.arrayBuffer()
-      
-      // Re-verify session after arrayBuffer resolution
-      if (currentSession !== ttsSessionId || !store.isTtsPlaying) {
-        isPrefetching = false
-        return
-      }
-
-      ttsAudioQueue.push({
-        id: item.id,
-        audio: audioBuffer,
-        role: item.role,
-        sessionId: currentSession
-      })
-      
-      // If audio player is idle, start playing immediately
-      if (store.isTtsPlaying && !isPlayingAudio && currentSession === ttsSessionId) {
-        playNextAudio().catch(err => {
-          console.error("Error starting audio playback:", err)
-        })
-      }
+      handlePrefetchAudioResult(audioBuffer, item, currentSession)
     }
   } catch (e: unknown) {
-    if (e && typeof e === 'object' && 'name' in e && e.name === 'AbortError') {
-      // Aborted cleanly on stop/flush
-    } else {
+    const isAbort = Boolean(e && typeof e === 'object' && 'name' in e && e.name === 'AbortError')
+    if (!isAbort) {
       console.error("Error synthesizing speech:", e)
     }
   } finally {
-    if (currentSession === ttsSessionId) {
-      // Fetch next sentence immediately
-      if (store.isTtsPlaying && ttsTextQueue.length > 0) {
-        prefetchTtsQueue().catch(err => {
-          console.error("Error prefetching next sentence:", err)
-        })
-      } else {
-        isPrefetching = false
-      }
+    const hasMore = isTtsSessionActive(currentSession) && ttsTextQueue.length > 0
+    if (hasMore) {
+      prefetchTtsQueue().catch(err => {
+        console.error("Error prefetching next sentence:", err)
+      })
+    } else if (currentSession === ttsSessionId) {
+      isPrefetching = false
     }
+  }
+}
+
+const finalizeAgentReadingIfDone = (role: string, currentSession: number) => {
+  const stillHasAudio = ttsAudioQueue.some(a => a.role === role && a.sessionId === currentSession)
+  const stillHasText = ttsTextQueue.some(t => t.role === role && t.sessionId === currentSession)
+  if (!stillHasAudio && !stillHasText) {
+    store.removeReadingAgentRole?.(role)
   }
 }
 
@@ -541,51 +544,37 @@ const playNextAudio = async () => {
 
   if (ttsAudioQueue.length === 0) {
     if (ttsTextQueue.length === 0 && !isPrefetching) {
-      // Completely done playing all queued TTS
       store.stopTts()
     }
     return
   }
-  
+
   if (!store.isTtsPlaying) return
-  
+
   const currentSession = ttsSessionId
   isPlayingAudio = true
   const currentItem = ttsAudioQueue.shift()!
-  
-  // Discard items from stale sessions
+
   if (currentItem.sessionId !== currentSession) {
     isPlayingAudio = false
     return
   }
 
-  // Update speaking role so the active orb & UI reflect the speaking agent
   store.activeTtsRole = currentItem.role
 
   try {
-    if (store.playTtsAudioChunk) {
-      await store.playTtsAudioChunk(currentItem.audio)
-    }
+    await store.playTtsAudioChunk?.(currentItem.audio)
   } catch (e) {
     console.error("Play error:", e)
   } finally {
     isPlayingAudio = false
   }
 
-  if (currentSession !== ttsSessionId) {
-    return
-  }
+  if (currentSession !== ttsSessionId) return
 
-  // Check if this agent finished all remaining audio and text in the queues
-  const stillHasAudio = ttsAudioQueue.some(a => a.role === currentItem.role && a.sessionId === currentSession)
-  const stillHasText = ttsTextQueue.some(t => t.role === currentItem.role && t.sessionId === currentSession)
-  if (!stillHasAudio && !stillHasText) {
-    if (typeof store.removeReadingAgentRole === 'function') {
-      store.removeReadingAgentRole(currentItem.role)
-    }
-  }
+  finalizeAgentReadingIfDone(currentItem.role, currentSession)
 
-  if (store.isTtsPlaying && currentSession === ttsSessionId) {
+  if (isTtsSessionActive(currentSession)) {
     playNextAudio().catch(err => {
       console.error("Error playing next audio chunk:", err)
     })

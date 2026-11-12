@@ -255,5 +255,66 @@ describe('SoundBar.vue', () => {
     expect(wrapper.vm.isCollapsed).toBe(false)
     expect(wrapper.find('[data-test="soundbar-body"]').attributes('style')).toBeFalsy()
   })
+
+  it('expands automatically and starts recording when store.isWakeWordTriggered becomes true while collapsed with listenWakeWord=true', async () => {
+    const store = useDebateStore()
+    const wrapper = mount(SoundBar, {
+      props: {
+        collapsible: true,
+        initialCollapsed: true,
+        listenWakeWord: true
+      }
+    })
+
+    expect(wrapper.vm.isCollapsed).toBe(true)
+
+    // Trigger wake word in store
+    store.isWakeWordTriggered = true
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.isCollapsed).toBe(false)
+    expect(wrapper.vm.isRecording).toBe(true)
+    expect(store.isRecording).toBe(true)
+  })
+
+  it('expands automatically when toggleRecording is invoked on a collapsed bar', async () => {
+    const wrapper = mount(SoundBar, {
+      props: {
+        collapsible: true,
+        initialCollapsed: true
+      }
+    })
+
+    expect(wrapper.vm.isCollapsed).toBe(true)
+    await wrapper.vm.toggleRecording()
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.isCollapsed).toBe(false)
+    expect(wrapper.vm.isRecording).toBe(true)
+  })
+
+  it('does NOT collapse automatically when submitting draft (only user can collapse)', async () => {
+    const wrapper = mount(SoundBar, {
+      props: {
+        collapsible: true,
+        initialCollapsed: false
+      }
+    })
+
+    expect(wrapper.vm.isCollapsed).toBe(false)
+    await wrapper.vm.toggleRecording()
+    await flushPromises()
+
+    // Stop recording and trigger transcription/submit
+    await wrapper.vm.toggleRecording()
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('submit-draft')).toHaveLength(1)
+    // Must remain expanded
+    expect(wrapper.vm.isCollapsed).toBe(false)
+  })
 })
 

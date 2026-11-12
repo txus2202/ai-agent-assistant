@@ -34,8 +34,8 @@ export function setupSwipeListener(
   }
 
   const handleTouchStart = (e: TouchEvent) => {
-    const list = (e.touches && e.touches.length > 0) ? e.touches : e.changedTouches
-    if (!list || list.length !== 1) return
+    const list = e.touches?.length ? e.touches : e.changedTouches
+    if (list?.length !== 1) return
     const touch = list[0]
     if (!touch) return
     touchStartY = touch.clientY

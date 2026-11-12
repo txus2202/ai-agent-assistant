@@ -44,6 +44,71 @@ let analyser: AnalyserNode | null = null
 let microphone: MediaStreamAudioSourceNode | null = null
 let silenceCheckInterval: ReturnType<typeof setInterval> | null = null
 
+const isCollapsed = ref(props.initialCollapsed)
+const soundBarContainerRef = ref<HTMLElement | null>(null)
+const dockPanelRef = ref<HTMLElement | null>(null)
+
+watch(() => props.initialCollapsed, (val) => {
+  isCollapsed.value = val
+})
+
+watch(() => props.collapsible, (isCol) => {
+  if (isCol && props.initialCollapsed) {
+    isCollapsed.value = true
+  }
+})
+
+const toggleCollapse = () => {
+  if (!props.collapsible) return
+  isCollapsed.value = !isCollapsed.value
+}
+
+const expand = () => {
+  if (!props.collapsible) return
+  isCollapsed.value = false
+}
+
+const collapse = () => {
+  if (!props.collapsible) return
+  isCollapsed.value = true
+}
+
+useTouchSwipe(soundBarContainerRef, {
+  onSwipeUp: () => {
+    if (props.collapsible && isCollapsed.value) {
+      expand()
+    }
+  },
+  onSwipeDown: () => {
+    if (props.collapsible && !isCollapsed.value) {
+      collapse()
+    }
+  }
+})
+
+const initMicrophoneAudio = async (stream: MediaStream) => {
+  try {
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    if (!AudioCtx) return
+    if (!audioContext || audioContext.state === 'closed') {
+      audioContext = new AudioCtx()
+    }
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume().catch(() => {})
+    }
+
+    analyser = audioContext.createAnalyser()
+    analyser.minDecibels = -70
+    analyser.smoothingTimeConstant = 0.2
+    analyser.fftSize = 256
+
+    microphone = audioContext.createMediaStreamSource(stream)
+    microphone.connect(analyser)
+  } catch (err) {
+    console.warn("Could not setup mic analyser", err)
+  }
+}
+
 const toggleRecording = async () => {
   if (isRecording.value) {
     if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
@@ -55,11 +120,17 @@ const toggleRecording = async () => {
     return
   }
 
+  if (props.collapsible && isCollapsed.value) {
+    expand()
+  }
+
   try {
     store.stopTts()
     store.unlockAudioContext()
 
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    await initMicrophoneAudio(stream)
+
     const recorder = new MediaRecorder(stream)
     audioChunks.value = []
 
@@ -83,7 +154,7 @@ const toggleRecording = async () => {
     isRecording.value = true
     store.isRecording = true
 
-    startSilenceDetection(stream)
+    startSilenceDetection()
   } catch (err) {
     console.error("Error accessing microphone:", err)
     alert("No se pudo acceder al micrófono para dictado de voz.")
@@ -114,18 +185,9 @@ const uploadAudioForTranscription = async (blob: Blob) => {
   }
 }
 
-const startSilenceDetection = (stream: MediaStream) => {
+const startSilenceDetection = () => {
   initialDelayTimeout = setTimeout(() => {
-    if (!isRecording.value) return
-
-    audioContext = new AudioContext()
-    analyser = audioContext.createAnalyser()
-    analyser.minDecibels = -70
-    analyser.smoothingTimeConstant = 0.2
-    analyser.fftSize = 256
-
-    microphone = audioContext.createMediaStreamSource(stream)
-    microphone.connect(analyser)
+    if (!isRecording.value || !analyser) return
 
     const dataArray = new Uint8Array(analyser.frequencyBinCount)
 
@@ -259,6 +321,9 @@ const drawIdleWaveform = (
 const animateWaveform = () => {
   if (!waveformCanvasRef.value) return
   const wCanvas = waveformCanvasRef.value
+  if (wCanvas.clientWidth > 0 && wCanvas.width !== wCanvas.clientWidth) {
+    wCanvas.width = wCanvas.clientWidth
+  }
   const wCtx = wCanvas.getContext('2d')
   if (!wCtx) return
 
@@ -277,6 +342,9 @@ const animateWaveform = () => {
 
 watch(() => store.isWakeWordTriggered, (triggered) => {
   if (props.listenWakeWord && triggered && !isRecording.value) {
+    if (props.collapsible && isCollapsed.value) {
+      expand()
+    }
     toggleRecording().catch(err => {
       console.error("Error toggling recording on wake word:", err)
     })
@@ -331,50 +399,9 @@ onUnmounted(() => {
   }
 })
 
-const isCollapsed = ref(props.initialCollapsed)
-const soundBarContainerRef = ref<HTMLElement | null>(null)
-const dockPanelRef = ref<HTMLElement | null>(null)
-
-watch(() => props.initialCollapsed, (val) => {
-  isCollapsed.value = val
-})
-
-watch(() => props.collapsible, (isCol) => {
-  if (isCol && props.initialCollapsed) {
-    isCollapsed.value = true
-  }
-})
-
-const toggleCollapse = () => {
-  if (!props.collapsible) return
-  isCollapsed.value = !isCollapsed.value
-}
-
-const expand = () => {
-  if (!props.collapsible) return
-  isCollapsed.value = false
-}
-
-const collapse = () => {
-  if (!props.collapsible) return
-  isCollapsed.value = true
-}
-
-useTouchSwipe(soundBarContainerRef, {
-  onSwipeUp: () => {
-    if (props.collapsible && isCollapsed.value) {
-      expand()
-    }
-  },
-  onSwipeDown: () => {
-    if (props.collapsible && !isCollapsed.value) {
-      collapse()
-    }
-  }
-})
-
 defineExpose({
   toggleRecording,
+  isRecording,
   isCollapsed,
   toggleCollapse,
   expand,
@@ -398,7 +425,10 @@ defineExpose({
       <div
         v-if="collapsible"
         data-test="soundbar-collapse-handle"
+        role="button"
+        tabindex="0"
         @click="toggleCollapse"
+        @keydown.enter.space.prevent="toggleCollapse"
         class="w-full relative flex items-center justify-between px-3 py-1 cursor-pointer select-none min-h-[34px] touch-none border-b transition-colors duration-200"
         :class="isCollapsed ? 'border-transparent hover:bg-space-850/60' : 'border-slate-800/40'"
         title="Pulsa o desliza para alternar"

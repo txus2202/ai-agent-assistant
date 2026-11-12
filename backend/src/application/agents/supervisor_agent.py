@@ -60,6 +60,8 @@ import re
 from dataclasses import dataclass, field
 
 _SECTION_SEPARATOR = "\n\n---\n\n"
+_ERROR_MARKER = "[Error"
+_FAILURE_MARKER = "[Fallo"
 
 # ---------------------------------------------------------------------------
 # Prompt template for final consolidation (in Spanish, authoritative)
@@ -812,7 +814,7 @@ def _determine_retry_targets(
 
     failed = tuple(
         r for r in phase_roles
-        if "[Fallo" in state.agent_outputs.get(r, "") or "[Error" in state.agent_outputs.get(r, "") or r not in state.agent_outputs
+        if _FAILURE_MARKER in state.agent_outputs.get(r, "") or _ERROR_MARKER in state.agent_outputs.get(r, "") or r not in state.agent_outputs
     )
     if failed:
         return failed
@@ -873,7 +875,7 @@ async def _run_phase_1(
             yield event
 
         combined_content = _SECTION_SEPARATOR.join(state.agent_outputs.get(a, "") for a in interpreter_roles)
-        has_error = any("[Error" in state.agent_outputs.get(a, "") for a in interpreter_roles)
+        has_error = any(_ERROR_MARKER in state.agent_outputs.get(a, "") for a in interpreter_roles)
         hitl_metadata = {"checkpoint": f"after_{lead_agent}", "agent": lead_agent}
         if has_error:
             hitl_metadata["error_recovery"] = "true"
@@ -893,7 +895,7 @@ async def _run_phase_1(
         successful_outputs = [
             state.agent_outputs.get(a, "")
             for a in interpreter_roles
-            if not ("[Error" in state.agent_outputs.get(a, "") or "[Fallo" in state.agent_outputs.get(a, ""))
+            if not (_ERROR_MARKER in state.agent_outputs.get(a, "") or _FAILURE_MARKER in state.agent_outputs.get(a, ""))
         ]
         effective_formalized = _SECTION_SEPARATOR.join(successful_outputs) if successful_outputs else user_request
         should_break, refinement = _process_phase_1_hitl(state, hitl, effective_formalized)
@@ -1095,7 +1097,7 @@ async def _run_phase_2(
             yield event
 
         state.hitl2_content = _SECTION_SEPARATOR.join(state.agent_outputs.get(r, "") for r in proposer_roles)
-        has_error = any("[Fallo" in state.agent_outputs.get(r, "") or "[Error" in state.agent_outputs.get(r, "") for r in proposer_roles)
+        has_error = any(_FAILURE_MARKER in state.agent_outputs.get(r, "") or _ERROR_MARKER in state.agent_outputs.get(r, "") for r in proposer_roles)
         hitl_metadata = {"checkpoint": f"after_{lead_agent}", "agent": lead_agent}
         if has_error:
             hitl_metadata["error_recovery"] = "true"
@@ -1167,6 +1169,39 @@ def _process_phase_3_hitl(state: DebateState, hitl: HITLResponse) -> tuple[bool,
     return False, ""
 
 
+async def _execute_evaluators_round(
+    roles_to_run: tuple[str, ...],
+    state: DebateState,
+    run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
+    refinement: str,
+) -> AsyncGenerator[SupervisorEvent, None]:
+    for agent_name in roles_to_run:
+        yield SupervisorEvent(type=EventType.AGENT_STARTED, role=agent_name, content="")
+
+    reqs = {a: _build_phase_3_prompt(state, a, refinement) for a in roles_to_run}
+    results = await asyncio.gather(*(_execute_role_safely(a, reqs[a], run_role) for a in roles_to_run))
+
+    for agent_name, verdict, error in results:
+        if error:
+            state.agent_outputs[agent_name] = f"[Fallo en evaluación de {agent_name}: {error}]"
+            state.add_agent_critique(agent_name, f"Error: {error}")
+            yield SupervisorEvent(
+                type=EventType.ERROR,
+                role=agent_name,
+                content=f"Error en {agent_name}: {error}",
+                metadata={"fatal": "false", "agent": agent_name},
+            )
+        else:
+            state.agent_outputs[agent_name] = verdict
+            state.add_agent_critique(agent_name, verdict)
+            yield SupervisorEvent(
+                type=EventType.AGENT_COMPLETED,
+                role=agent_name,
+                content=verdict,
+                metadata=state.agent_metadata.get(agent_name, {}),
+            )
+
+
 async def _run_phase_3(
     state: DebateState,
     run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
@@ -1181,34 +1216,11 @@ async def _run_phase_3(
     lead_agent = evaluator_roles[0]
 
     while True:
-        for agent_name in roles_to_run:
-            yield SupervisorEvent(type=EventType.AGENT_STARTED, role=agent_name, content="")
-
-        reqs = {a: _build_phase_3_prompt(state, a, refinement) for a in roles_to_run}
-        results = await asyncio.gather(*(_execute_role_safely(a, reqs[a], run_role) for a in roles_to_run))
-
-        for agent_name, verdict, error in results:
-            if error:
-                state.agent_outputs[agent_name] = f"[Fallo en evaluación de {agent_name}: {error}]"
-                state.add_agent_critique(agent_name, f"Error: {error}")
-                yield SupervisorEvent(
-                    type=EventType.ERROR,
-                    role=agent_name,
-                    content=f"Error en {agent_name}: {error}",
-                    metadata={"fatal": "false", "agent": agent_name},
-                )
-            else:
-                state.agent_outputs[agent_name] = verdict
-                state.add_agent_critique(agent_name, verdict)
-                yield SupervisorEvent(
-                    type=EventType.AGENT_COMPLETED,
-                    role=agent_name,
-                    content=verdict,
-                    metadata=state.agent_metadata.get(agent_name, {}),
-                )
+        async for event in _execute_evaluators_round(roles_to_run, state, run_role, refinement):
+            yield event
 
         combined_verdict = _SECTION_SEPARATOR.join(state.agent_outputs.get(a, "") for a in evaluator_roles)
-        has_error = any("[Fallo" in state.agent_outputs.get(a, "") for a in evaluator_roles)
+        has_error = any(_FAILURE_MARKER in state.agent_outputs.get(a, "") for a in evaluator_roles)
         hitl_metadata = {"checkpoint": f"after_{lead_agent}", "agent": lead_agent}
         if has_error:
             hitl_metadata["error_recovery"] = "true"

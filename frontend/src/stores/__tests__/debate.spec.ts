@@ -512,53 +512,23 @@ describe('useDebateStore', () => {
     expect(store.messages).toHaveLength(0)
   })
 
-  it('adds user message when consolidating via submitHitlDecision', () => {
+  it.each([
+    { decision: 'consolidate' as const, expectedText: 'consolidar dictamen final' },
+    { decision: 'finish' as const, expectedText: 'sin consolidación' },
+    { decision: 'retry' as const, expectedText: 'Reintentar ejecución' },
+  ])('adds user message and sends hitl_response when $decision is submitted', ({ decision, expectedText }) => {
     const store = useDebateStore()
     store.connect()
     store.isConnected = true
     store.isHitlRequired = true
     store.hitlCheckpoint = 'CP-A'
 
-    store.submitHitlDecision('consolidate')
+    store.submitHitlDecision(decision)
     expect(store.messages).toHaveLength(1)
-    expect(store.messages[0]?.content).toContain('consolidar dictamen final')
+    expect(store.messages[0]?.content).toContain(expectedText)
     expect(mockSend).toHaveBeenCalledWith(JSON.stringify({
       type: 'hitl_response',
-      decision: 'consolidate',
-      feedback: ''
-    }))
-  })
-
-  it('adds user message when finishing via submitHitlDecision', () => {
-    const store = useDebateStore()
-    store.connect()
-    store.isConnected = true
-    store.isHitlRequired = true
-    store.hitlCheckpoint = 'CP-A'
-
-    store.submitHitlDecision('finish')
-    expect(store.messages).toHaveLength(1)
-    expect(store.messages[0]?.content).toContain('sin consolidación')
-    expect(mockSend).toHaveBeenCalledWith(JSON.stringify({
-      type: 'hitl_response',
-      decision: 'finish',
-      feedback: ''
-    }))
-  })
-
-  it('adds user message and sends hitl_response when retrying via submitHitlDecision', () => {
-    const store = useDebateStore()
-    store.connect()
-    store.isConnected = true
-    store.isHitlRequired = true
-    store.hitlCheckpoint = 'CP-A'
-
-    store.submitHitlDecision('retry')
-    expect(store.messages).toHaveLength(1)
-    expect(store.messages[0]?.content).toContain('Reintentar ejecución')
-    expect(mockSend).toHaveBeenCalledWith(JSON.stringify({
-      type: 'hitl_response',
-      decision: 'retry',
+      decision,
       feedback: ''
     }))
   })

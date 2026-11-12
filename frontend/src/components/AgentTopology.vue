@@ -38,6 +38,20 @@ const displayedAgents = computed(() => {
   })
 })
 
+const isSupervisorActive = (normAgent: string) => {
+  const isSupervisor = normAgent === 'supervisor' || normAgent === 'atenea'
+  if (!isSupervisor) return false
+  return Boolean(store.isDebating || store.isTtsPlaying || store.readingAgentRoles?.length)
+}
+
+const isRoleSpeakingTts = (normAgent: string) => {
+  if (!store.activeTtsRole) return false
+  const normTts = (store.normalizeAgentRole ? store.normalizeAgentRole(store.activeTtsRole) : store.activeTtsRole).toLowerCase()
+  if (normTts === normAgent) return true
+  const isSupervisor = normAgent === 'supervisor' || normAgent === 'atenea'
+  return isSupervisor && (normTts === 'supervisor' || normTts === 'atenea')
+}
+
 const isAgentActive = (agentRole: string, agentState: string) => {
   if (agentState === 'ERROR') {
     return false
@@ -45,21 +59,17 @@ const isAgentActive = (agentRole: string, agentState: string) => {
   const normAgent = (store.normalizeAgentRole ? store.normalizeAgentRole(agentRole) : agentRole).toLowerCase()
   const isSupervisor = normAgent === 'supervisor' || normAgent === 'atenea'
 
-  // If it's Atenea and debate or TTS is running, she is actively coordinating the council and her card stays illuminated
-  if (isSupervisor && (store.isDebating || store.isTtsPlaying || Boolean(store.readingAgentRoles && store.readingAgentRoles.length > 0))) {
-    return true
+  if (isSupervisor) {
+    if (isSupervisorActive(normAgent)) return true
+    if (isRoleSpeakingTts(normAgent)) return true
+    return false
   }
 
-  if (typeof store.isAgentReading === 'function' && store.isAgentReading(agentRole)) {
+  if (store.isAgentReading?.(agentRole)) {
     return true
   }
-  if (store.activeTtsRole) {
-    const normTts = (store.normalizeAgentRole ? store.normalizeAgentRole(store.activeTtsRole) : store.activeTtsRole).toLowerCase()
-    if (normTts === normAgent) return true
-    if (isSupervisor && (normTts === 'supervisor' || normTts === 'atenea')) return true
-  }
-  if (isSupervisor && !store.isDebating && !store.isTtsPlaying && !(store.readingAgentRoles && store.readingAgentRoles.length > 0)) {
-    return false
+  if (isRoleSpeakingTts(normAgent)) {
+    return true
   }
   return agentState === 'ACTIVE'
 }

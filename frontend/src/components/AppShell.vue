@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, nextTick } from 'vue'
+import { computed, ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { useDebateStore } from '../stores/debate'
 import ChatPanel from './ChatPanel.vue'
 import ParticleOrb from './ParticleOrb.vue'
@@ -163,6 +163,22 @@ const selectMobileTab = async (tab: MobileTab) => {
   }
 }
 
+const isMobileViewport = ref(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
+const updateViewport = () => {
+  if (typeof window !== 'undefined') {
+    isMobileViewport.value = window.innerWidth < 768
+  }
+}
+
+onMounted(() => {
+  updateViewport()
+  window.addEventListener('resize', updateViewport)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', updateViewport)
+})
+
 const handleToggleMic = () => {
   if (typeof window !== 'undefined' && window.innerWidth < 768) {
     mobileSoundBarRef.value?.toggleRecording?.()
@@ -259,7 +275,7 @@ const handleToggleMic = () => {
         :collapsible="true"
         :initial-collapsed="true"
         :show-view-switch="false"
-        :listen-wake-word="true"
+        :listen-wake-word="isMobileViewport"
         @submit-draft="chatPanelRef?.onSubmit()"
       />
     </div>

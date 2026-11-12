@@ -413,11 +413,18 @@ const getInitialTabletCollapsible = () => {
   return width >= 768 && width < 1280
 }
 
+const getInitialDesktopOrTablet = () => {
+  if (typeof window === 'undefined') return true
+  return window.innerWidth >= 768
+}
+
 const isTabletCollapsible = ref(getInitialTabletCollapsible())
+const isDesktopOrTablet = ref(getInitialDesktopOrTablet())
 
 const checkTabletCollapsible = () => {
   if (typeof window === 'undefined') return
   const width = window.innerWidth
+  isDesktopOrTablet.value = width >= 768
   // Collapsible only on tablet (>= 768px and < 1280px). On desktop (>= 1280px), never collapsible, always visible.
   isTabletCollapsible.value = width >= 768 && width < 1280
 }
@@ -581,7 +588,7 @@ const ring3Style = computed(() => {
         ref="soundBarRef"
         :active-agent-color="activeAgentColor"
         :is-debating="isDebating"
-        :listen-wake-word="true"
+        :listen-wake-word="isDesktopOrTablet"
         :collapsible="isTabletCollapsible"
         :initial-collapsed="isTabletCollapsible"
         @submit-draft="emit('submit-draft')"

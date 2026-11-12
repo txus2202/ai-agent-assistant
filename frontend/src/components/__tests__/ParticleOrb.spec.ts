@@ -484,4 +484,78 @@ describe('ParticleOrb.vue', () => {
     expect(glow1.attributes('style')).toMatch(/29,\s*78,\s*216|1d4ed8/)
     expect(glow2.attributes('style')).toContain('conic-gradient')
   })
+
+  it('hides SoundBar on mobile viewports with hidden md:block, is always visible on desktop, and collapsible on tablet', async () => {
+    // Desktop width (1440px)
+    window.innerWidth = 1440
+    window.innerHeight = 900
+    const wrapper = mount(ParticleOrb, {
+      props: {
+        isDebating: false,
+        activeAgentColor: '#f59e0b'
+      }
+    })
+
+    const soundBarWrapper = wrapper.find('[data-test="soundbar-tablet-wrapper"]')
+    expect(soundBarWrapper.exists()).toBe(true)
+    expect(soundBarWrapper.classes()).toContain('hidden')
+    expect(soundBarWrapper.classes()).toContain('md:block')
+    expect(soundBarWrapper.classes()).toContain('relative')
+
+    const soundBar = wrapper.findComponent({ name: 'SoundBar' })
+    expect(soundBar.exists()).toBe(true)
+    // On desktop, never collapsible, always visible
+    expect(soundBar.props('collapsible')).toBe(false)
+    expect(soundBar.find('[data-test="soundbar-body"]').attributes('style')).toBeFalsy()
+
+    // Tablet width (820px)
+    window.innerWidth = 820
+    window.innerHeight = 900
+    wrapper.vm.checkTabletCollapsible()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.isTabletCollapsible).toBe(true)
+    expect(soundBar.props('collapsible')).toBe(true)
+    // Starts collapsed on tablet
+    expect(soundBar.vm.isCollapsed).toBe(true)
+    expect(soundBar.find('[data-test="soundbar-body"]').attributes('style')).toContain('display: none')
+
+    // Click toggle button to deploy on tablet
+    const toggleBtn = soundBar.find('[data-test="soundbar-collapse-toggle"]')
+    await toggleBtn.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(soundBar.vm.isCollapsed).toBe(false)
+    expect(soundBar.find('[data-test="soundbar-body"]').attributes('style')).toBeFalsy()
+
+    // Click again to collapse on tablet
+    await toggleBtn.trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(soundBar.vm.isCollapsed).toBe(true)
+    expect(soundBar.find('[data-test="soundbar-body"]').attributes('style')).toContain('display: none')
+
+    // Clicking handle bar also deploys on tablet
+    const handle = soundBar.find('[data-test="soundbar-collapse-handle"]')
+    await handle.trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(soundBar.vm.isCollapsed).toBe(false)
+    expect(soundBar.find('[data-test="soundbar-body"]').attributes('style')).toBeFalsy()
+  })
+
+  it('initializes SoundBar already collapsed without any contraction effect when mounted on tablet', () => {
+    window.innerWidth = 820
+    window.innerHeight = 900
+    const wrapper = mount(ParticleOrb, {
+      props: {
+        isDebating: false,
+        activeAgentColor: '#f59e0b'
+      }
+    })
+
+    expect(wrapper.vm.isTabletCollapsible).toBe(true)
+    const soundBar = wrapper.findComponent({ name: 'SoundBar' })
+    expect(soundBar.props('collapsible')).toBe(true)
+    expect(soundBar.vm.isCollapsed).toBe(true)
+    expect(soundBar.find('[data-test="soundbar-body"]').attributes('style')).toContain('display: none')
+  })
 })

@@ -181,9 +181,7 @@ async def update_agent_config(
 
 
 @router.get("/topology")
-async def get_topology(
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> Dict[str, Any]:
+async def get_topology() -> Dict[str, Any]:
     """
     Devuelve la topología de roles y asignación de agentes configurada en topology.yaml.
     """

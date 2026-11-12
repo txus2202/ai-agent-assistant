@@ -190,8 +190,8 @@ export const useDebateStore = defineStore('debate', () => {
   const isAgentsLoaded = ref(false)
   const executionTrail = ref<string[]>([])
   const topology = ref<DebateTopology | null>(null)
-  const projectName = computed(() => topology.value?.project_name || 'A.T.E.N.E.A.')
-  const projectDescription = computed(() => topology.value?.project_description || 'Asistente Técnica y Evaluadora de Nuevas Estructuras y Arquitecturas')
+  const projectName = computed(() => topology.value?.project_name || 'AI AGENT ASSISTANT')
+  const projectDescription = computed(() => topology.value?.project_description || 'Asistente de IA Multi-Agente')
 
   function recordExecutionTrail(name?: string | null) {
     if (!name) return
@@ -740,7 +740,7 @@ export const useDebateStore = defineStore('debate', () => {
     messages.value.push({
       id: crypto.randomUUID(),
       role: 'assistant',
-      agentName: 'A.T.E.N.E.A.',
+      agentName: projectName.value,
       agentRole: 'supervisor',
       content: '⚠️ Deliberación cancelada por el usuario. Puedes reformular tu consulta o iniciar una nueva cuando desees.',
       timestamp: new Date().toISOString()

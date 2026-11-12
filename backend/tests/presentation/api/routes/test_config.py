@@ -180,10 +180,12 @@ def test_put_agent_config_invalid_role(client):
     assert response.status_code == 404
 
 def test_get_topology(client):
+    from src.domain.agents.debate_topology import load_topology
+    top = load_topology()
     response = client.get("/config/topology")
     assert response.status_code == 200
     data = response.json()
-    assert data["project_name"] == "A.T.E.N.E.A."
+    assert data["project_name"] == top.project_name
     assert "Asistente Técnica y Evaluadora" in data["project_description"]
     assert "supervisor" in data
     assert data["supervisor"] == "Atenea"
@@ -193,4 +195,12 @@ def test_get_topology(client):
     assert "evaluators" in data
     assert "implementers" in data
     assert isinstance(data["interpreters"], list)
+
+def test_get_topology_unauthenticated():
+    raw_app = create_app()
+    raw_client = TestClient(raw_app)
+    response = raw_client.get("/config/topology")
+    assert response.status_code == 200
+    data = response.json()
+    assert "project_name" in data
 

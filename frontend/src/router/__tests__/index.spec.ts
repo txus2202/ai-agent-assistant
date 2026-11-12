@@ -51,6 +51,18 @@ describe('Router & Navigation Guards', () => {
     expect(router.currentRoute.value.path).toBe(expectedPath)
   })
 
+  it('does not redirect to /setup when backend is unavailable', async () => {
+    const authStore = useAuthStore()
+    authStore.isBackendAvailable = false
+    authStore.isInitialized = null
+    authStore.user = null
+
+    await router.push('/')
+    await router.isReady()
+
+    expect(router.currentRoute.value.path).not.toBe('/setup')
+  })
+
   it('redirects to /login with redirect query when trying to access /history while unauthenticated', async () => {
     const authStore = useAuthStore()
     authStore.isInitialized = true

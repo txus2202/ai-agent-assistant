@@ -69,14 +69,16 @@ watch(
 <template>
   <div class="h-full flex flex-col border-l border-space-800 bg-space-900/50 backdrop-blur-sm min-h-0">
     <!-- Header: Tabs for Agentes & Observabilidad (Desktop/Tablet only, redundant on mobile with bottom nav) -->
-    <div class="hidden md:flex p-3 sm:p-3.5 border-b border-space-800 items-center justify-between shrink-0">
+    <div class="hidden md:flex py-3.5 px-4 border-b border-space-800 items-center justify-between shrink-0">
       <div class="flex items-center gap-2 w-full">
         <button 
           type="button"
           @click="activeTab = 'agents'"
           data-test="tab-agents"
-          :class="activeTab === 'agents' ? 'text-neon-cyan border border-neon-cyan/40 bg-[#002b36] tab-active-btn' : 'text-space-500 hover:text-slate-400 border-transparent hover:bg-space-900/60'"
-          class="flex-1 h-8 flex items-center justify-center px-2.5 font-mono text-[10px] tracking-wider uppercase transition-colors rounded border cursor-pointer"
+          :class="activeTab === 'agents' 
+            ? 'border-cyan-400 bg-space-800 text-neon-cyan shadow-[0_0_12px_rgba(0,229,255,0.18)] tab-active-btn' 
+            : 'border-cyan-800/40 bg-space-850 hover:bg-space-800 hover:text-cyan-200 hover:border-cyan-500/50 text-slate-400'"
+          class="flex-1 h-[34px] min-h-[34px] flex items-center justify-center px-2.5 font-mono text-[10px] tracking-wider uppercase transition-all rounded-lg border cursor-pointer select-none group"
         >
           <div class="flex items-center space-x-1.5 min-w-0">
             <Bot class="w-3.5 h-3.5 shrink-0" />
@@ -88,8 +90,10 @@ watch(
           type="button"
           @click="activeTab = 'observability'"
           data-test="tab-observability"
-          :class="activeTab === 'observability' ? 'text-neon-cyan border border-neon-cyan/40 bg-[#002b36] tab-active-btn' : 'text-space-500 hover:text-slate-400 border-transparent hover:bg-space-900/60'"
-          class="flex-1 h-8 flex items-center justify-center px-2.5 font-mono text-[10px] tracking-wider uppercase transition-colors rounded border cursor-pointer"
+          :class="activeTab === 'observability' 
+            ? 'border-cyan-400 bg-space-800 text-neon-cyan shadow-[0_0_12px_rgba(0,229,255,0.18)] tab-active-btn' 
+            : 'border-cyan-800/40 bg-space-850 hover:bg-space-800 hover:text-cyan-200 hover:border-cyan-500/50 text-slate-400'"
+          class="flex-1 h-[34px] min-h-[34px] flex items-center justify-center px-2.5 font-mono text-[10px] tracking-wider uppercase transition-all rounded-lg border cursor-pointer select-none group"
         >
           <div class="flex items-center space-x-1.5 min-w-0">
             <Activity class="w-3.5 h-3.5 shrink-0" />

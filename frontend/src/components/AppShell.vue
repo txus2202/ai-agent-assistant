@@ -13,6 +13,7 @@ const store = useDebateStore()
 const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null)
 const particleOrbRef = ref<InstanceType<typeof ParticleOrb> | null>(null)
 const agentTopologyRef = ref<InstanceType<typeof AgentTopology> | null>(null)
+const mobileSoundBarRef = ref<InstanceType<typeof SoundBar> | null>(null)
 
 const mobileTab = ref<MobileTab>('chat')
 
@@ -163,12 +164,16 @@ const selectMobileTab = async (tab: MobileTab) => {
 }
 
 const handleToggleMic = () => {
-  particleOrbRef.value?.toggleRecording?.()
+  if (typeof window !== 'undefined' && window.innerWidth < 768) {
+    mobileSoundBarRef.value?.toggleRecording?.()
+  } else {
+    particleOrbRef.value?.toggleRecording?.()
+  }
 }
 </script>
 
 <template>
-  <div class="h-screen w-full bg-space-950 flex flex-col overflow-hidden text-slate-900 dark:text-slate-300 font-sans">
+  <div class="h-screen h-dvh w-full bg-space-950 flex flex-col overflow-hidden text-slate-900 dark:text-slate-300 font-sans">
     
     <!-- Top Header -->
     <AppHeader />
@@ -184,20 +189,6 @@ const handleToggleMic = () => {
         :class="mobileTab === 'chat' ? 'flex' : 'hidden'"
         class="w-full md:flex md:col-span-1 md:row-start-2 md:h-full xl:w-[380px] 2xl:w-[400px] xl:shrink-0 xl:order-1 flex-1 md:flex-none xl:h-full z-10 flex-col overflow-hidden min-h-0 md:border-r border-space-800"
       >
-        <!-- Mobile SoundBar (Visible on mobile in Chat view) -->
-        <div
-          v-if="mobileTab === 'chat'"
-          data-test="mobile-sound-bar"
-          class="md:hidden w-full bg-space-900/85 border-b border-slate-800/90 px-4 sm:px-6 py-2.5 shrink-0 backdrop-blur-md"
-        >
-          <SoundBar
-            :active-agent-color="activeAgentColor"
-            :is-debating="isOrbDebating"
-            :show-view-switch="false"
-            @submit-draft="chatPanelRef?.onSubmit()"
-          />
-        </div>
-
         <ChatPanel 
           ref="chatPanelRef"
           class="flex-1 min-h-0"
@@ -254,6 +245,23 @@ const handleToggleMic = () => {
         </AgentTopology>
       </div>
 
+    </div>
+
+    <!-- Mobile SoundBar Dock (Over the bottom screens navigation menu on ALL mobile tabs) -->
+    <div
+      data-test="mobile-sound-bar"
+      class="md:hidden w-full relative z-20 shrink-0 h-[34px]"
+    >
+      <SoundBar
+        ref="mobileSoundBarRef"
+        :active-agent-color="activeAgentColor"
+        :is-debating="isOrbDebating"
+        :collapsible="true"
+        :initial-collapsed="true"
+        :show-view-switch="false"
+        :listen-wake-word="true"
+        @submit-draft="chatPanelRef?.onSubmit()"
+      />
     </div>
 
     <!-- Mobile Bottom Navigation Bar (< 768px) -->

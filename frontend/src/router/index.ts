@@ -35,11 +35,16 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   const authStore = useAuthStore()
 
-  if (authStore.isInitialized === null) {
+  if (authStore.isInitialized === null && authStore.isBackendAvailable !== false) {
     await authStore.checkAuth()
   }
 
-  // System not yet configured with an initial admin
+  // If backend is not available, do not redirect to /setup or anywhere else
+  if (authStore.isBackendAvailable === false) {
+    return
+  }
+
+  // System not yet configured with an initial admin (backend is reachable and 0 users exist)
   if (authStore.isInitialized === false) {
     if (to.path !== '/setup') {
       return { path: '/setup' }

@@ -15,10 +15,39 @@ describe('useAuthStore', () => {
     const store = useAuthStore()
     expect(store.user).toBeNull()
     expect(store.isInitialized).toBeNull()
+    expect(store.isBackendAvailable).toBeNull()
     expect(store.isLoading).toBe(false)
     expect(store.errorMessage).toBeNull()
     expect(store.isAuthenticated).toBe(false)
     expect(store.isAdmin).toBe(false)
+  })
+
+  it('checks auth when backend is unavailable or throws network error', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error('Network error: Connection refused'))
+
+    const store = useAuthStore()
+    await store.checkAuth()
+
+    expect(store.isBackendAvailable).toBe(false)
+    expect(store.isInitialized).toBeNull()
+    expect(store.user).toBeNull()
+    expect(store.errorMessage).toContain('No se ha podido conectar')
+  })
+
+  it('checks auth when backend responds with 502/503 server error', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: () => Promise.resolve({ error: 'Bad Gateway' }),
+    })
+
+    const store = useAuthStore()
+    await store.checkAuth()
+
+    expect(store.isBackendAvailable).toBe(false)
+    expect(store.isInitialized).toBeNull()
+    expect(store.user).toBeNull()
+    expect(store.errorMessage).toContain('no está disponible')
   })
 
   it('checks auth when system is not initialized', async () => {

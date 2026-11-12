@@ -13,6 +13,7 @@ interface AuthState {
   user: User | null
   users: User[]
   isInitialized: boolean | null
+  isBackendAvailable: boolean | null
   setupTokenRequired: boolean
   isLoading: boolean
   usersLoading: boolean
@@ -42,6 +43,7 @@ export const useAuthStore = defineStore('auth', {
     user: null,
     users: [],
     isInitialized: null,
+    isBackendAvailable: null,
     setupTokenRequired: false,
     isLoading: false,
     usersLoading: false,
@@ -62,17 +64,24 @@ export const useAuthStore = defineStore('auth', {
         const statusRes = await fetch('/api/auth/status')
         if (statusRes.ok) {
           const statusData = await statusRes.json()
+          this.isBackendAvailable = true
           this.isInitialized = statusData.initialized
           this.setupTokenRequired = !!statusData.setup_token_required
           this.user = statusData.user || null
         } else {
-          this.isInitialized = false
+          this.isBackendAvailable = false
+          this.isInitialized = null
           this.setupTokenRequired = false
           this.user = null
+          this.errorMessage = 'El servidor backend no está disponible en este momento.'
         }
       } catch (err) {
         console.error('Failed to check auth status:', err)
+        this.isBackendAvailable = false
+        this.isInitialized = null
+        this.setupTokenRequired = false
         this.user = null
+        this.errorMessage = 'No se ha podido conectar con el servidor backend.'
       } finally {
         this.isLoading = false
       }

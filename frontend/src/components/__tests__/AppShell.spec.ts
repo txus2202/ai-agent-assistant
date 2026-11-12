@@ -47,7 +47,7 @@ describe('AppShell.vue', () => {
           SoundBar: {
             name: 'SoundBar',
             template: '<div data-test="sound-bar" @click="$emit(\'open-voice\')"><button data-test="soundbar-view-switch" @click.stop="$emit(\'open-voice\')">3D &gt;</button></div>',
-            props: ['activeAgentColor', 'isDebating', 'showViewSwitch', 'listenWakeWord'],
+            props: ['activeAgentColor', 'isDebating', 'showViewSwitch', 'listenWakeWord', 'collapsible', 'initialCollapsed'],
             methods: { toggleRecording: vi.fn() }
           }
         }
@@ -202,11 +202,30 @@ describe('AppShell.vue', () => {
     expect(setActiveTabSpy).toHaveBeenCalledWith('chat')
   })
 
-  it('renders mobile sound bar without 3D switch button in mobile chat view', () => {
+  it('renders mobile sound bar dock over the bottom navigation across all mobile tabs', async () => {
     const wrapper = createWrapper()
-    const soundBar = wrapper.findComponent({ name: 'SoundBar' })
+    const mobileSoundBarDock = wrapper.find('[data-test="mobile-sound-bar"]')
+    expect(mobileSoundBarDock.exists()).toBe(true)
+    expect(mobileSoundBarDock.classes()).toContain('md:hidden')
+
+    const soundBar = mobileSoundBarDock.findComponent({ name: 'SoundBar' })
     expect(soundBar.exists()).toBe(true)
+    expect(soundBar.props('collapsible')).toBe(true)
     expect(soundBar.props('showViewSwitch')).toBe(false)
+
+    // Mobile SoundBar is positioned directly above mobile-bottom-nav
+    const mobileNav = wrapper.find('[data-test="mobile-bottom-nav"]')
+    expect(mobileNav.exists()).toBe(true)
+
+    // When switching tabs, mobile-sound-bar dock remains present
+    await wrapper.find('[data-test="mobile-nav-voice"]').trigger('click')
+    expect(wrapper.find('[data-test="mobile-sound-bar"]').exists()).toBe(true)
+
+    await wrapper.find('[data-test="mobile-nav-agents"]').trigger('click')
+    expect(wrapper.find('[data-test="mobile-sound-bar"]').exists()).toBe(true)
+
+    await wrapper.find('[data-test="mobile-nav-telemetry"]').trigger('click')
+    expect(wrapper.find('[data-test="mobile-sound-bar"]').exists()).toBe(true)
   })
 
   it('configures Hero Centerpiece layout on tablet with top full-width orb and split bottom chat and agents', () => {

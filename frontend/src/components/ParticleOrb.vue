@@ -407,13 +407,35 @@ const animateOrb = () => {
 
 let resizeObserver: ResizeObserver | null = null
 
+const getInitialTabletCollapsible = () => {
+  if (typeof window === 'undefined') return false
+  const width = window.innerWidth
+  return width >= 768 && width < 1280
+}
+
+const isTabletCollapsible = ref(getInitialTabletCollapsible())
+
+const checkTabletCollapsible = () => {
+  if (typeof window === 'undefined') return
+  const width = window.innerWidth
+  // Collapsible only on tablet (>= 768px and < 1280px). On desktop (>= 1280px), never collapsible, always visible.
+  isTabletCollapsible.value = width >= 768 && width < 1280
+}
+
+const handleWindowResize = () => {
+  resizeCanvas()
+  checkTabletCollapsible()
+}
+
 onMounted(() => {
   resizeCanvas()
+  checkTabletCollapsible()
   initParticles()
-  window.addEventListener('resize', resizeCanvas)
+  window.addEventListener('resize', handleWindowResize)
   if (typeof ResizeObserver !== 'undefined' && orbCanvasRef.value?.parentElement) {
     resizeObserver = new ResizeObserver(() => {
       resizeCanvas()
+      checkTabletCollapsible()
     })
     resizeObserver.observe(orbCanvasRef.value.parentElement)
   }
@@ -422,7 +444,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   isComponentUnmounted = true
-  window.removeEventListener('resize', resizeCanvas)
+  window.removeEventListener('resize', handleWindowResize)
   if (resizeObserver) {
     resizeObserver.disconnect()
     resizeObserver = null
@@ -436,7 +458,9 @@ const toggleRecording = () => {
 
 defineExpose({
   toggleRecording,
-  resizeCanvas
+  resizeCanvas,
+  isTabletCollapsible,
+  checkTabletCollapsible
 })
 
 watch(() => props.isDebating, () => {
@@ -509,19 +533,8 @@ const ring3Style = computed(() => {
   <!-- CenterOrbCanvasCore -->
   <section class="flex flex-col relative w-full h-full border-x border-slate-800/80 overflow-hidden" data-purpose="neural-orb-centerpiece">
     
-    <!-- Waveform Audio Visualizer, Voice State Controller & Microphone HUD Deck via SoundBar (Floating Top on Mobile, Bottom Dock on Tablet/Desktop) -->
-    <div class="order-1 md:order-2 w-full bg-space-900/85 border-b md:border-b-0 md:border-t border-slate-800/90 px-4 sm:px-6 py-2.5 z-20 backdrop-blur-md shrink-0 absolute top-0 left-0 md:relative">
-      <SoundBar
-        ref="soundBarRef"
-        :active-agent-color="activeAgentColor"
-        :is-debating="isDebating"
-        :listen-wake-word="true"
-        @submit-draft="emit('submit-draft')"
-      />
-    </div>
-
     <!-- Interactive Cosmic Neural Orb Web Canvas (Centered in screen on mobile, flex-1 min-h-0 on tablet/desktop) -->
-    <div class="order-2 md:order-1 relative w-full h-full flex-1 flex items-center justify-center min-h-0 xl:min-h-[300px] overflow-hidden" id="orbContainer">
+    <div class="relative w-full h-full flex-1 flex items-center justify-center min-h-0 xl:min-h-[300px] overflow-hidden" id="orbContainer">
       <!-- Sci-Fi Telemetry Orbit Rings & Coordinate Markings -->
       <div 
         id="orbRing1"
@@ -552,6 +565,27 @@ const ring3Style = computed(() => {
       ></div>
 
       <canvas ref="orbCanvasRef" class="w-full h-full absolute inset-0 z-10"></canvas>
+    </div>
+
+    <!-- Waveform Audio Visualizer, Voice State Controller & Microphone HUD Deck via SoundBar (Hidden on mobile; on tablet collapsible at bottom dock; on desktop always visible) -->
+    <div
+      data-test="soundbar-tablet-wrapper"
+      :class="[
+        'hidden md:block w-full z-30 shrink-0 pointer-events-auto',
+        isTabletCollapsible
+          ? 'absolute bottom-0 left-0'
+          : 'bg-space-900/85 border-t border-slate-800/90 px-4 sm:px-6 py-2.5 backdrop-blur-md relative'
+      ]"
+    >
+      <SoundBar
+        ref="soundBarRef"
+        :active-agent-color="activeAgentColor"
+        :is-debating="isDebating"
+        :listen-wake-word="true"
+        :collapsible="isTabletCollapsible"
+        :initial-collapsed="isTabletCollapsible"
+        @submit-draft="emit('submit-draft')"
+      />
     </div>
     
   </section>

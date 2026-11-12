@@ -1064,5 +1064,266 @@ class TestAdaptiveSupervisorRouting:
         assert captured_kwargs["ImplOne"]["rag_min_score"] == pytest.approx(0.75)
 
 
+class TestSupervisorAgentFaultTolerance:
+    @pytest.mark.anyio
+    async def test_parallel_proposers_round_tolerates_single_agent_failure(self, monkeypatch):
+        from src.application.agents import supervisor_agent as _mod
+        from src.application.agents.supervisor_agent import SupervisorAgent
+        from src.application.agents.sub_agent_runner import SubAgentResponse
+
+        # Proposer 1 (e.g. Ícaro) fails with 503, others (Hestia) succeed
+        async def _failing_mock_runner(role, user_request, *args, **kwargs):
+            role_str = role.value if hasattr(role, "value") else str(role)
+            if any(k in role_str.lower() for k in ("ícaro", "icaro", "innovator", "propone")):
+                raise RuntimeError("503 UNAVAILABLE: Model overloaded")
+            return SubAgentResponse(
+                role=role_str,
+                content=f"Successful response from {role_str}",
+                model_name="test-model",
+                tokens={"input": 50, "output": 25, "total": 75},
+                latency=0.5,
+            )
+
+        monkeypatch.setattr(_mod.SubAgentRunner, "run", _failing_mock_runner)
+
+        events = await _collect(SupervisorAgent.run(
+            user_request="Design resilient architecture",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_approve_always,
+        ))
+
+        types = _event_types(events)
+        assert EventType.DONE in types
+
+        # An error event should be yielded for the failing agent with fatal="false"
+        error_events = [e for e in events if e.type == EventType.ERROR]
+        assert len(error_events) >= 1
+        assert error_events[0].metadata.get("fatal") == "false"
+        assert "503" in error_events[0].content
+
+        # Successful agents still have their AGENT_COMPLETED events
+        completed_roles = [e.role for e in events if e.type == EventType.AGENT_COMPLETED]
+        assert any(any(k in (r or "").lower() for k in ("hestia", "senior", "conservative", "proptwo")) for r in completed_roles)
+
+    @pytest.mark.anyio
+    async def test_sequential_agent_failure_emits_recovery_hitl(self, monkeypatch):
+        from src.application.agents import supervisor_agent as _mod
+        from src.application.agents.supervisor_agent import SupervisorAgent
+
+        async def _interpreter_failing_runner(role, user_request, *args, **kwargs):
+            role_str = role.value if hasattr(role, "value") else str(role)
+            if "interpreter" in role_str.lower():
+                raise RuntimeError("503 UNAVAILABLE: Gemini rate limit exceeded")
+            from src.application.agents.sub_agent_runner import SubAgentResponse
+            return SubAgentResponse(
+                role=role_str,
+                content=f"Response from {role_str}",
+                model_name="test-model",
+                tokens={"input": 50, "output": 25, "total": 75},
+                latency=0.5,
+            )
+
+        monkeypatch.setattr(_mod.SubAgentRunner, "run", _interpreter_failing_runner)
+
+        hitl_events_captured: list[SupervisorEvent] = []
+
+        async def _finish_on_recovery(event: SupervisorEvent) -> HITLResponse:
+            hitl_events_captured.append(event)
+            return HITLResponse(decision=HITLDecision.FINISH)
+
+        events = await _collect(SupervisorAgent.run(
+            user_request="Design authentication system",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_finish_on_recovery,
+        ))
+
+        # Check that a recovery HITL was emitted for the interpreter
+        assert len(hitl_events_captured) >= 1
+        rec_hitl = hitl_events_captured[0]
+        assert rec_hitl.type == EventType.HITL_REQUIRED
+        assert rec_hitl.metadata.get("error_recovery") == "true"
+        assert "503" in rec_hitl.content
+        assert events[-1].type == EventType.DONE
+
+    @pytest.mark.anyio
+    async def test_hitl_consolidate_triggers_consolidation(self, monkeypatch):
+        from src.application.agents import supervisor_agent as _mod
+        from src.application.agents.supervisor_agent import SupervisorAgent
+
+        monkeypatch.setattr(_mod.SubAgentRunner, "run", _make_mock_runner())
+
+        async def _consolidate_at_hitl1(event: SupervisorEvent) -> HITLResponse:
+            return HITLResponse(decision=HITLDecision.CONSOLIDATE)
+
+        events = await _collect(SupervisorAgent.run(
+            user_request="Design caching system",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_consolidate_at_hitl1,
+        ))
+
+        assert events[-1].type == EventType.DONE
+        assert "consolidated response from" in events[-1].content
+        assert events[-1].metadata.get("skip_consolidation") is None
+
+    @pytest.mark.anyio
+    async def test_hitl_finish_halts_without_consolidation(self, monkeypatch):
+        from src.application.agents import supervisor_agent as _mod
+        from src.application.agents.supervisor_agent import SupervisorAgent
+
+        monkeypatch.setattr(_mod.SubAgentRunner, "run", _make_mock_runner())
+
+        async def _finish_at_hitl1(event: SupervisorEvent) -> HITLResponse:
+            return HITLResponse(decision=HITLDecision.FINISH)
+
+        events = await _collect(SupervisorAgent.run(
+            user_request="Design caching system",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_finish_at_hitl1,
+        ))
+
+        assert events[-1].type == EventType.DONE
+        assert "sin consolidación" in events[-1].content
+        assert events[-1].metadata.get("skip_consolidation") == "true"
+
+    @pytest.mark.anyio
+    async def test_hitl_retry_reexecutes_only_failed_agents(self, monkeypatch):
+        """Option C: When RETRY is chosen without target agents, re-run only the failed agents."""
+        from src.application.agents import supervisor_agent as _mod
+        from src.application.agents.supervisor_agent import SupervisorAgent
+        from src.domain.agents.debate_topology import DebateTopology
+        from src.application.agents.sub_agent_runner import SubAgentResponse
+
+        test_topology = DebateTopology(
+            project_name="Test",
+            project_description="Test",
+            supervisor="Coordinator",
+            interpreters=(),
+            proposers=("PropOne", "PropTwo"),
+            evaluators=(),
+            implementers=(),
+        )
+
+        monkeypatch.setattr(
+            _mod,
+            "classify_intent",
+            lambda *args, **kwargs: _mod.TriageDecision(mode="adaptive_debate", skip_interpreter=True),
+        )
+
+        call_counts = {"PropOne": 0, "PropTwo": 0}
+
+        async def _mock_run(role, user_request, llm_provider, document_store, model_name, **kwargs):
+            key = role.value if hasattr(role, "value") else str(role)
+            call_counts[key] += 1
+            if key == "PropOne" and call_counts["PropOne"] == 1:
+                raise RuntimeError("503 Service Unavailable")
+            return SubAgentResponse(role=role, content=f"Success from {key}", context_chunks=[])
+
+        monkeypatch.setattr(_mod.SubAgentRunner, "run", _mock_run)
+
+        hitl_step = 0
+        hitl_events = []
+
+        async def _hitl_cb(event: SupervisorEvent) -> HITLResponse:
+            nonlocal hitl_step
+            hitl_events.append(event)
+            hitl_step += 1
+            if hitl_step == 1:
+                # First HITL after proposers: PropOne failed, PropTwo succeeded.
+                # User chooses RETRY with no target agents.
+                assert event.metadata.get("error_recovery") == "true"
+                return HITLResponse(decision=HITLDecision.RETRY)
+            # Second HITL after retry: both succeeded. Finish debate.
+            return HITLResponse(decision=HITLDecision.FINISH)
+
+        events = await _collect(SupervisorAgent.run(
+            user_request="Build resilient microservices",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_hitl_cb,
+            topology=test_topology,
+        ))
+
+        # PropOne failed on attempt 1, retried on attempt 2 -> called 2 times
+        assert call_counts["PropOne"] == 2
+        # PropTwo succeeded on attempt 1 -> Option C preserved result, NOT called again!
+        assert call_counts["PropTwo"] == 1
+
+        # Two HITL events were emitted: first with error recovery, second recovered
+        assert len(hitl_events) == 2
+        assert "Fallo al generar propuesta de PropOne" in hitl_events[0].content
+        assert "Success from PropOne" in hitl_events[1].content
+        assert "Success from PropTwo" in hitl_events[1].content
+        assert hitl_events[1].metadata.get("error_recovery") is None
+
+    @pytest.mark.anyio
+    async def test_hitl_retry_with_explicit_target_agents(self, monkeypatch):
+        """Option C: When RETRY is chosen with target agents, re-run only the specified agents."""
+        from src.application.agents import supervisor_agent as _mod
+        from src.application.agents.supervisor_agent import SupervisorAgent
+        from src.domain.agents.debate_topology import DebateTopology
+        from src.application.agents.sub_agent_runner import SubAgentResponse
+
+        test_topology = DebateTopology(
+            project_name="Test",
+            project_description="Test",
+            supervisor="Coordinator",
+            interpreters=(),
+            proposers=("PropOne", "PropTwo"),
+            evaluators=(),
+            implementers=(),
+        )
+
+        monkeypatch.setattr(
+            _mod,
+            "classify_intent",
+            lambda *args, **kwargs: _mod.TriageDecision(mode="adaptive_debate", skip_interpreter=True),
+        )
+
+        call_counts = {"PropOne": 0, "PropTwo": 0}
+
+        async def _mock_run(role, user_request, llm_provider, document_store, model_name, **kwargs):
+            key = role.value if hasattr(role, "value") else str(role)
+            call_counts[key] += 1
+            return SubAgentResponse(role=role, content=f"Output {call_counts[key]} from {key}", context_chunks=[])
+
+        monkeypatch.setattr(_mod.SubAgentRunner, "run", _mock_run)
+
+        hitl_step = 0
+
+        async def _hitl_cb(event: SupervisorEvent) -> HITLResponse:
+            nonlocal hitl_step
+            hitl_step += 1
+            if hitl_step == 1:
+                # Explicitly target only PropTwo for retry
+                return HITLResponse(decision=HITLDecision.RETRY, target_agents=["PropTwo"])
+            return HITLResponse(decision=HITLDecision.FINISH)
+
+        events = await _collect(SupervisorAgent.run(
+            user_request="Build high performance system",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_hitl_cb,
+            topology=test_topology,
+        ))
+
+        # PropOne was called only once initially
+        assert call_counts["PropOne"] == 1
+        # PropTwo was called twice (initial + explicit retry)
+        assert call_counts["PropTwo"] == 2
+
+
+
+
+
 
 

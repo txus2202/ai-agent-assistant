@@ -149,6 +149,54 @@ describe('AgentTopology.vue', () => {
     expect(cards[0]?.props('state')).toBe('ACTIVE')
     expect(cards[1]?.props('state')).toBe('ACTIVE')
   })
+
+  it('deactivates supervisor card when debate has ended or errored and TTS reading is finished', async () => {
+    const { useDebateStore } = await import('../../stores/debate')
+    const store = useDebateStore()
+    store.isDebating = false
+    store.isTtsPlaying = false
+    store.activeTtsRole = null
+    store.readingAgentRoles = []
+
+    const wrapper = mount(AgentTopology, {
+      props: {
+        agents: [
+          { role: 'supervisor', name: 'Atenea', state: 'STANDBY', color_hex: '#f59e0b' },
+          { role: 'nl_interpreter', name: 'Hermes', state: 'STANDBY', color_hex: '#00e5ff' }
+        ]
+      }
+    })
+
+    const cards = wrapper.findAllComponents({ name: 'AgentCard' })
+    expect(cards[0]?.props('state')).toBe('STANDBY')
+    expect(cards[1]?.props('state')).toBe('STANDBY')
+  })
+
+  it('preserves ERROR state on card when agent failed even during active debate', async () => {
+    const { useDebateStore } = await import('../../stores/debate')
+    const store = useDebateStore()
+    store.isDebating = true
+    store.activeTtsRole = null
+
+    const wrapper = mount(AgentTopology, {
+      props: {
+        agents: [
+          { role: 'supervisor', name: 'Atenea', state: 'STANDBY', color_hex: '#f59e0b' },
+          { role: 'innovator_architect', name: 'Ícaro', state: 'ERROR', color_hex: '#ffaa00' },
+          { role: 'conservative_architect', name: 'Hestia', state: 'ACTIVE', color_hex: '#00e5ff' }
+        ]
+      }
+    })
+
+    const cards = wrapper.findAllComponents({ name: 'AgentCard' })
+    expect(cards).toHaveLength(3)
+    // Atenea is coordinating -> ACTIVE
+    expect(cards[0]?.props('state')).toBe('ACTIVE')
+    // Ícaro is failed -> ERROR (not overwritten to ACTIVE)
+    expect(cards[1]?.props('state')).toBe('ERROR')
+    // Hestia is working -> ACTIVE
+    expect(cards[2]?.props('state')).toBe('ACTIVE')
+  })
 })
 
 

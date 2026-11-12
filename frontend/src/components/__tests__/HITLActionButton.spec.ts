@@ -88,9 +88,35 @@ describe('HITLActionButton.vue', () => {
       }
     })
 
-    expect(wrapper.text()).toContain('FINISH / CONCLUDE')
+    expect(wrapper.text()).toContain('FINISH / HALT')
     await wrapper.trigger('click')
     expect(wrapper.emitted('action')![0]).toEqual(['finish'])
+  })
+
+  it('displays CONSOLIDATE text and emits consolidate event when decision is consolidate', async () => {
+    const wrapper = mount(HITLActionButton, {
+      props: {
+        decision: 'consolidate',
+        disabled: false
+      }
+    })
+
+    expect(wrapper.text()).toContain('CONSOLIDATE / MERGE')
+    await wrapper.trigger('click')
+    expect(wrapper.emitted('action')![0]).toEqual(['consolidate'])
+  })
+
+  it('displays RETRY text and emits retry event when decision is retry', async () => {
+    const wrapper = mount(HITLActionButton, {
+      props: {
+        decision: 'retry',
+        disabled: false
+      }
+    })
+
+    expect(wrapper.text()).toContain('RETRY / REINTENTAR')
+    await wrapper.trigger('click')
+    expect(wrapper.emitted('action')![0]).toEqual(['retry'])
   })
 
   it('handles fallback decision value gracefully', () => {

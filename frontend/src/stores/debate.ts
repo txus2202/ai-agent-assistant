@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
 export type AgentState = 'STANDBY' | 'ACTIVE' | 'COMPLETED' | 'ERROR'
-export type HitlDecisionType = 'approve' | 'refine' | 'divert' | 'finish' | 'reject'
+export type HitlDecisionType = 'approve' | 'refine' | 'divert' | 'finish' | 'consolidate' | 'retry' | 'reject'
 
 export interface Agent {
   role: string
@@ -250,8 +250,10 @@ export const useDebateStore = defineStore('debate', () => {
       return true
     })
     const ag = findAgent(role) || (norm === 'supervisor' ? findAgent('supervisor') : undefined)
-    if (ag?.state === 'ACTIVE' && ag.role !== 'supervisor') {
-      ag.state = 'COMPLETED'
+    if (ag?.state === 'ACTIVE') {
+      if (ag.role !== 'supervisor' || !isDebating.value) {
+        ag.state = 'COMPLETED'
+      }
     }
     if (activeTtsRole.value) {
       const currentNorm = (normalizeAgentRole(activeTtsRole.value) || activeTtsRole.value).toLowerCase()
@@ -266,8 +268,10 @@ export const useDebateStore = defineStore('debate', () => {
     readingAgentRoles.value = []
     wasReading.forEach(role => {
       const ag = findAgent(role) || (normalizeAgentRole(role) === 'supervisor' ? findAgent('supervisor') : undefined)
-      if (ag?.state === 'ACTIVE' && ag.role !== 'supervisor') {
-        ag.state = 'COMPLETED'
+      if (ag?.state === 'ACTIVE') {
+        if (ag.role !== 'supervisor' || !isDebating.value) {
+          ag.state = 'COMPLETED'
+        }
       }
     })
   }
@@ -310,6 +314,12 @@ export const useDebateStore = defineStore('debate', () => {
   let globalAudioContext: AudioContext | null = null
   const globalAnalyser = ref<AnalyserNode | null>(null)
   let currentTtsSource: AudioBufferSourceNode | null = null
+  let audioPlaySessionId = 0
+  const ttsStopCallbacks: Array<() => void> = []
+
+  function onTtsStop(callback: () => void) {
+    ttsStopCallbacks.push(callback)
+  }
 
   let silentWavUrl: string | null = null
 
@@ -370,6 +380,7 @@ export const useDebateStore = defineStore('debate', () => {
   }
 
   async function playTtsAudioChunk(audioData: ArrayBuffer): Promise<void> {
+    const session = audioPlaySessionId
     if (!isTtsPlaying.value) return
     const ctx = getOrCreateAudioContext()
     if (!ctx?.decodeAudioData) return
@@ -381,8 +392,12 @@ export const useDebateStore = defineStore('debate', () => {
     const copy = audioData.slice(0)
     const audioBuffer = await ctx.decodeAudioData(copy)
 
+    if (session !== audioPlaySessionId || !isTtsPlaying.value) {
+      return
+    }
+
     return new Promise((resolve) => {
-      if (!isTtsPlaying.value) {
+      if (session !== audioPlaySessionId || !isTtsPlaying.value) {
         resolve()
         return
       }
@@ -410,6 +425,7 @@ export const useDebateStore = defineStore('debate', () => {
   }
 
   function stopTts() {
+    audioPlaySessionId++
     isTtsPlaying.value = false
     activeTtsRole.value = null
     ttsStreamBuffer = ''
@@ -425,6 +441,14 @@ export const useDebateStore = defineStore('debate', () => {
       globalAudioPlayer.pause()
       globalAudioPlayer.removeAttribute('src')
     } catch {}
+
+    for (const cb of ttsStopCallbacks) {
+      try {
+        cb()
+      } catch (err) {
+        console.error('Error in ttsStopCallback:', err)
+      }
+    }
 
     resetWakeWordSession()
   }
@@ -795,6 +819,20 @@ export const useDebateStore = defineStore('debate', () => {
   function pushAgentMessage(content: string, role?: string | null) {
     const { agentRole, agentName, colorHex } = resolveAgentDisplay(role)
     const cleanContent = cleanAgentMessageContent(content)
+    if (!cleanContent) return
+
+    const lastMsg = messages.value.at(-1)
+    if (lastMsg?.role === 'assistant') {
+      if (lastMsg.content === cleanContent || lastMsg.content === content) {
+        return
+      }
+      const rawLast = lastMsg.content.replace(/^⚠️\s*/, '').trim()
+      const rawNew = cleanContent.replace(/^⚠️\s*/, '').trim()
+      if (rawLast && rawNew && (rawLast.includes(rawNew) || rawNew.includes(rawLast))) {
+        return
+      }
+    }
+
     messages.value.push({
       role: 'assistant',
       content: cleanContent,
@@ -811,7 +849,26 @@ export const useDebateStore = defineStore('debate', () => {
     const checkpointAgent = checkpoint?.startsWith('after_') ? checkpoint.replace('after_', '') : undefined
     const metadataAgent = typeof event.metadata?.agent === 'string' ? event.metadata.agent : undefined
     const role = metadataAgent || event.role || checkpointAgent || 'Atenea'
-    pushAgentMessage(event.content || 'HITL Required', role)
+
+    let contentToPush = (event.content || '').trim()
+    if (!contentToPush || contentToPush === 'HITL Required') {
+      return
+    }
+
+    // If content contains failed agent blocks ([Fallo... or [Error...), filter them out
+    // so errors already published via handleError are not duplicated in the chat and TTS
+    if (contentToPush.includes('[Fallo') || contentToPush.includes('[Error')) {
+      const sections = contentToPush.split(/\n*---\n*/).map(s => s.trim()).filter(Boolean)
+      const validSections = sections.filter(s => {
+        const withoutHeader = s.replace(/^##\s+[^\n]+\n+/, '').trim()
+        return !withoutHeader.startsWith('[Fallo') && !withoutHeader.startsWith('[Error')
+      })
+      contentToPush = validSections.join('\n\n---\n\n')
+    }
+
+    if (contentToPush) {
+      pushAgentMessage(contentToPush, role)
+    }
   }
 
   function handleAgentStarted(event: SupervisorEvent) {
@@ -1106,6 +1163,40 @@ export const useDebateStore = defineStore('debate', () => {
   }
 
   function handleError(event: SupervisorEvent) {
+    const isFatal = event.metadata?.fatal !== 'false'
+
+    if (!isFatal && event.role) {
+      // Non-fatal agent failure: isolate failure to the specific agent (Bulkhead pattern)
+      const failedAgent = findAgent(event.role) || (normalizeAgentRole(event.role) === 'supervisor' ? findAgent('supervisor') : undefined)
+      if (failedAgent) {
+        if (failedAgent.startedAt && !failedAgent.latency) {
+          failedAgent.latency = Number(((Date.now() - failedAgent.startedAt) / 1000).toFixed(2))
+        }
+        failedAgent.startedAt = undefined
+        failedAgent.state = 'ERROR'
+      }
+
+      const errorContent = `⚠️ ${event.content}`
+      const lastMsg = messages.value.at(-1)
+      if (
+        lastMsg?.role === 'assistant' &&
+        (lastMsg.content === errorContent ||
+          (Boolean(event.content) && (lastMsg.content === event.content || lastMsg.content.includes(event.content!))))
+      ) {
+        return
+      }
+
+      const { agentRole, agentName, colorHex } = resolveAgentDisplay(event.role)
+      messages.value.push({
+        role: 'assistant',
+        content: errorContent,
+        agentRole,
+        agentName,
+        colorHex
+      })
+      return
+    }
+
     isDebating.value = false
     streamingMessageId.value = null
     ttsStreamBuffer = ''
@@ -1207,11 +1298,28 @@ export const useDebateStore = defineStore('debate', () => {
         content: feedback.trim(),
         timestamp: new Date().toISOString()
       })
+    } else if (decision === 'consolidate') {
+      messages.value.push({
+        id: crypto.randomUUID(),
+        role: 'user',
+        content: 'Concluir debate y consolidar dictamen final con Atenea.',
+        timestamp: new Date().toISOString()
+      })
     } else if (decision === 'finish') {
       messages.value.push({
         id: crypto.randomUUID(),
         role: 'user',
-        content: 'Finalizar debate anticipadamente y consolidar dictamen.',
+        content: 'Finalizar debate inmediatamente sin consolidación.',
+        timestamp: new Date().toISOString()
+      })
+    } else if (decision === 'retry') {
+      const msg = effectiveTargets.length > 0
+        ? `Reintentar ejecución de fase para agentes: ${effectiveTargets.join(', ')}.`
+        : 'Reintentar ejecución de la fase.'
+      messages.value.push({
+        id: crypto.randomUUID(),
+        role: 'user',
+        content: msg,
         timestamp: new Date().toISOString()
       })
     }
@@ -1345,6 +1453,8 @@ export const useDebateStore = defineStore('debate', () => {
         approve: 'approve',
         reject: 'reject',
         finish: 'finish',
+        consolidate: 'consolidate',
+        retry: 'retry',
         divert: 'divert',
       }
       const decision = decisionMap[command]
@@ -1516,6 +1626,7 @@ export const useDebateStore = defineStore('debate', () => {
     normalizeAgentRole,
     streamingMessageId,
     onTtsChunkReady,
+    onTtsStop,
     cleanAgentMessageContent,
     get ws() { return ws } // Getter for testing purposes
   }

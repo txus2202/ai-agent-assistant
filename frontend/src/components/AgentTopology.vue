@@ -39,6 +39,9 @@ const displayedAgents = computed(() => {
 })
 
 const isAgentActive = (agentRole: string, agentState: string) => {
+  if (agentState === 'ERROR') {
+    return false
+  }
   const normAgent = (store.normalizeAgentRole ? store.normalizeAgentRole(agentRole) : agentRole).toLowerCase()
   const isSupervisor = normAgent === 'supervisor' || normAgent === 'atenea'
 
@@ -54,6 +57,9 @@ const isAgentActive = (agentRole: string, agentState: string) => {
     const normTts = (store.normalizeAgentRole ? store.normalizeAgentRole(store.activeTtsRole) : store.activeTtsRole).toLowerCase()
     if (normTts === normAgent) return true
     if (isSupervisor && (normTts === 'supervisor' || normTts === 'atenea')) return true
+  }
+  if (isSupervisor && !store.isDebating && !store.isTtsPlaying && !(store.readingAgentRoles && store.readingAgentRoles.length > 0)) {
+    return false
   }
   return agentState === 'ACTIVE'
 }

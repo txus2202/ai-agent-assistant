@@ -512,6 +512,57 @@ describe('useDebateStore', () => {
     expect(store.messages).toHaveLength(0)
   })
 
+  it('adds user message when consolidating via submitHitlDecision', () => {
+    const store = useDebateStore()
+    store.connect()
+    store.isConnected = true
+    store.isHitlRequired = true
+    store.hitlCheckpoint = 'CP-A'
+
+    store.submitHitlDecision('consolidate')
+    expect(store.messages).toHaveLength(1)
+    expect(store.messages[0]?.content).toContain('consolidar dictamen final')
+    expect(mockSend).toHaveBeenCalledWith(JSON.stringify({
+      type: 'hitl_response',
+      decision: 'consolidate',
+      feedback: ''
+    }))
+  })
+
+  it('adds user message when finishing via submitHitlDecision', () => {
+    const store = useDebateStore()
+    store.connect()
+    store.isConnected = true
+    store.isHitlRequired = true
+    store.hitlCheckpoint = 'CP-A'
+
+    store.submitHitlDecision('finish')
+    expect(store.messages).toHaveLength(1)
+    expect(store.messages[0]?.content).toContain('sin consolidación')
+    expect(mockSend).toHaveBeenCalledWith(JSON.stringify({
+      type: 'hitl_response',
+      decision: 'finish',
+      feedback: ''
+    }))
+  })
+
+  it('adds user message and sends hitl_response when retrying via submitHitlDecision', () => {
+    const store = useDebateStore()
+    store.connect()
+    store.isConnected = true
+    store.isHitlRequired = true
+    store.hitlCheckpoint = 'CP-A'
+
+    store.submitHitlDecision('retry')
+    expect(store.messages).toHaveLength(1)
+    expect(store.messages[0]?.content).toContain('Reintentar ejecución')
+    expect(mockSend).toHaveBeenCalledWith(JSON.stringify({
+      type: 'hitl_response',
+      decision: 'retry',
+      feedback: ''
+    }))
+  })
+
   it('handles loadDebate by restoring sessions, agents to standby, and replaying events', () => {
     const store = useDebateStore()
     store.agents = [
@@ -614,6 +665,18 @@ describe('useDebateStore', () => {
 
     expect(store.isTtsPlaying).toBe(false)
     expect(store.activeTtsRole).toBeNull()
+  })
+
+  it('triggers onTtsStop callbacks when stopTts is invoked', () => {
+    const store = useDebateStore()
+    const stopCb = vi.fn()
+    store.onTtsStop(stopCb)
+
+    store.isTtsPlaying = true
+    store.stopTts()
+
+    expect(stopCb).toHaveBeenCalledTimes(1)
+    expect(store.isTtsPlaying).toBe(false)
   })
 
   it('handles cancelDebate stopping TTS, resetting agents and isDebating, sending abort and adding cancellation message', () => {
@@ -806,6 +869,38 @@ describe('useDebateStore', () => {
     expect(mockSend).toHaveBeenCalledWith(JSON.stringify({
       type: 'hitl_response',
       decision: 'finish',
+      feedback: ''
+    }))
+
+    // 2b. Voice command "consolidate" when HITL is required
+    store.isHitlRequired = true
+    wwSocket!.onmessage?.({
+      data: JSON.stringify({
+        type: 'HITL_VOICE_COMMAND',
+        command: 'consolidate'
+      })
+    })
+
+    expect(store.isHitlRequired).toBe(false)
+    expect(mockSend).toHaveBeenCalledWith(JSON.stringify({
+      type: 'hitl_response',
+      decision: 'consolidate',
+      feedback: ''
+    }))
+
+    // 2c. Voice command "retry" when HITL is required
+    store.isHitlRequired = true
+    wwSocket!.onmessage?.({
+      data: JSON.stringify({
+        type: 'HITL_VOICE_COMMAND',
+        command: 'retry'
+      })
+    })
+
+    expect(store.isHitlRequired).toBe(false)
+    expect(mockSend).toHaveBeenCalledWith(JSON.stringify({
+      type: 'hitl_response',
+      decision: 'retry',
       feedback: ''
     }))
 
@@ -1141,6 +1236,21 @@ describe('useDebateStore', () => {
 
     expect(atenea.completionTokens).toBeGreaterThan(tokensAfterFirstChunk)
   })
+
+  it('recovers agent from ERROR to ACTIVE when startDebate or divert targets that agent', () => {
+    const store = useDebateStore()
+    store.connect()
+    store.isConnected = true
+    store.agents = [
+      { role: 'supervisor', name: 'Atenea', state: 'STANDBY' },
+      { role: 'innovator_architect', name: 'Ícaro', state: 'ERROR' }
+    ]
+
+    store.startDebate('Reintenta propuesta', 'innovator_architect')
+
+    const icaro = store.agents.find(a => a.role === 'innovator_architect')!
+    expect(icaro.state).toBe('ACTIVE')
+  })
 })
 
 
@@ -1370,6 +1480,26 @@ describe('learnSession action', () => {
     expect(hermes.state).toBe('COMPLETED')
   })
 
+  it('transitions Atenea to COMPLETED when finished reading an error after debate has halted', () => {
+    const store = useDebateStore()
+    store.isDebating = false
+    store.isVoiceOutputEnabled = true
+    store.agents = [
+      { role: 'supervisor', name: 'Atenea', state: 'STANDBY' }
+    ]
+
+    // Voice reading starts for error message read by Atenea
+    store.addReadingAgentRole('supervisor')
+    expect(store.isAgentReading('supervisor')).toBe(true)
+    const atenea = store.agents.find(a => a.role === 'supervisor')!
+    expect(atenea.state).toBe('ACTIVE')
+
+    // Atenea finishes reading the error
+    store.removeReadingAgentRole('supervisor')
+    expect(store.isAgentReading('supervisor')).toBe(false)
+    expect(atenea.state).toBe('COMPLETED')
+  })
+
   it('records tokens, latency, and turns for supervisor Atenea on consolidation done event', () => {
     const store = useDebateStore()
     store.isDebating = true
@@ -1396,5 +1526,101 @@ describe('learnSession action', () => {
     expect(atenea.latency).toBe(2.45)
     expect(atenea.turns).toBe(2)
     expect(atenea.state).toBe('COMPLETED')
+  })
+
+  it('handles non-fatal agent error by setting agent to ERROR without aborting debate', () => {
+    const store = useDebateStore()
+    store.isDebating = true
+    store.agents = [
+      { role: 'supervisor', name: 'Atenea', state: 'STANDBY' },
+      { role: 'innovator_architect', name: 'Ícaro', state: 'ACTIVE', startedAt: Date.now() - 1000 },
+      { role: 'conservative_architect', name: 'Hestia', state: 'ACTIVE', startedAt: Date.now() - 1000 }
+    ]
+
+    store.handleSupervisorEvent({
+      type: 'error',
+      role: 'Ícaro',
+      content: '503 UNAVAILABLE: Model overloaded',
+      metadata: { fatal: 'false', agent: 'Ícaro' }
+    })
+
+    // Debate must remain active because Hestia is still working
+    expect(store.isDebating).toBe(true)
+
+    const icaro = store.agents.find(a => a.role === 'innovator_architect')!
+    const hestia = store.agents.find(a => a.role === 'conservative_architect')!
+
+    expect(icaro.state).toBe('ERROR')
+    expect(icaro.latency).toBeDefined()
+    expect(hestia.state).toBe('ACTIVE')
+    expect(store.messages.some(m => m.content.includes('503 UNAVAILABLE'))).toBe(true)
+  })
+
+  it('does not duplicate error message when subsequent hitl_required event contains the same error', () => {
+    const store = useDebateStore()
+    store.isDebating = true
+    store.agents = [
+      { role: 'supervisor', name: 'Atenea', state: 'STANDBY' },
+      { role: 'nl_interpreter', name: 'Hermes', state: 'ACTIVE' }
+    ]
+
+    // 1. Error event arrives from Hermes
+    store.handleSupervisorEvent({
+      type: 'error',
+      role: 'Hermes',
+      content: 'Error en Hermes: 503 UNAVAILABLE',
+      metadata: { fatal: 'false', agent: 'Hermes' }
+    })
+
+    expect(store.messages).toHaveLength(1)
+    expect(store.messages[0]!.content).toBe('⚠️ Error en Hermes: 503 UNAVAILABLE')
+
+    // 2. Immediate hitl_required event with error_recovery arrives
+    store.handleSupervisorEvent({
+      type: 'hitl_required',
+      role: 'Hermes',
+      content: '[Error en Hermes: 503 UNAVAILABLE]',
+      metadata: { checkpoint: 'after_Hermes', agent: 'Hermes', error_recovery: 'true' }
+    })
+
+    // Must NOT push a duplicate error message
+    expect(store.messages).toHaveLength(1)
+    expect(store.isHitlRequired).toBe(true)
+  })
+
+  it('filters out failed agent blocks from parallel proposers on hitl_required', () => {
+    const store = useDebateStore()
+    store.isDebating = true
+    store.agents = [
+      { role: 'supervisor', name: 'Atenea', state: 'STANDBY' },
+      { role: 'innovator_architect', name: 'Ícaro', state: 'ACTIVE' },
+      { role: 'conservative_architect', name: 'Hestia', state: 'ACTIVE' }
+    ]
+
+    // 1. Error for Ícaro
+    store.handleSupervisorEvent({
+      type: 'error',
+      role: 'Ícaro',
+      content: 'Error en Ícaro: 503 UNAVAILABLE',
+      metadata: { fatal: 'false', agent: 'Ícaro' }
+    })
+
+    expect(store.messages).toHaveLength(1)
+    expect(store.messages[0]!.content).toBe('⚠️ Error en Ícaro: 503 UNAVAILABLE')
+
+    // 2. HITL checkpoint with combined proposals (Hestia succeeded, Ícaro failed)
+    store.handleSupervisorEvent({
+      type: 'hitl_required',
+      role: 'Ícaro',
+      content: '## Hestia\nPropuesta arquitectónica de Hestia\n\n---\n\n## Ícaro\n[Fallo al generar propuesta de Ícaro: 503 UNAVAILABLE]',
+      metadata: { checkpoint: 'after_proposers', agent: 'Ícaro', error_recovery: 'true' }
+    })
+
+    // Messages must contain:
+    // 1: The error for Ícaro
+    // 2: Hestia's proposal ONLY (Ícaro's failure filtered out from Hestia's card)
+    expect(store.messages).toHaveLength(2)
+    expect(store.messages[1]!.content).toBe('Propuesta arquitectónica de Hestia')
+    expect(store.messages[1]!.content).not.toContain('Ícaro')
   })
 })

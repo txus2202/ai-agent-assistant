@@ -44,6 +44,7 @@ const mockStore = {
   selectedAgents: ['supervisor'] as string[],
   playTtsAudioChunk: vi.fn(),
   stopTts: vi.fn(),
+  onTtsStop: vi.fn(),
   unlockAudioContext: vi.fn(),
   clearSession: vi.fn(() => {
     mockStore.messages.splice(0, mockStore.messages.length)
@@ -446,9 +447,52 @@ describe('ChatPanel.vue', () => {
     expect(wrapper.find('[data-test="hitl-chat-card"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Punto de Control (HITL)')
     expect(wrapper.find('[data-test="hitl-approve-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="hitl-retry-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="hitl-consolidate-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="hitl-finish-btn"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="hitl-reject-btn"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="hitl-refine-btn"]').exists()).toBe(true)
     expect(wrapper.find('textarea').attributes('placeholder')).toContain('instrucciones de refinamiento')
+  })
+
+  it('handles HITL retry action calling submitHitlDecision with retry', async () => {
+    mockStore.isHitlRequired = true
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: true }
+    })
+
+    const retryBtn = wrapper.find('[data-test="hitl-retry-btn"]')
+    expect(retryBtn.exists()).toBe(true)
+    await retryBtn.trigger('click')
+
+    expect(mockStore.stopTts).toHaveBeenCalled()
+    expect(mockSubmitHitlDecision).toHaveBeenCalledWith('retry', '', [])
+  })
+
+  it('handles HITL consolidate action calling submitHitlDecision with consolidate', async () => {
+    mockStore.isHitlRequired = true
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: true }
+    })
+
+    const consolidateBtn = wrapper.find('[data-test="hitl-consolidate-btn"]')
+    expect(consolidateBtn.exists()).toBe(true)
+    await consolidateBtn.trigger('click')
+
+    expect(mockSubmitHitlDecision).toHaveBeenCalledWith('consolidate')
+  })
+
+  it('handles HITL finish action calling submitHitlDecision with finish', async () => {
+    mockStore.isHitlRequired = true
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: true }
+    })
+
+    const finishBtn = wrapper.find('[data-test="hitl-finish-btn"]')
+    expect(finishBtn.exists()).toBe(true)
+    await finishBtn.trigger('click')
+
+    expect(mockSubmitHitlDecision).toHaveBeenCalledWith('finish')
   })
 
   it('handles HITL approve action with target agents', async () => {
@@ -467,7 +511,22 @@ describe('ChatPanel.vue', () => {
     const approveBtn = wrapper.find('[data-test="hitl-approve-btn"]')
     await approveBtn.trigger('click')
 
+    expect(mockStore.stopTts).toHaveBeenCalled()
     expect(mockSubmitHitlDecision).toHaveBeenCalledWith('approve', '', ['diagrammer'])
+  })
+
+  it('stops TTS and clears queues immediately when HITL decision is selected', async () => {
+    mockStore.isHitlRequired = true
+    mockStore.isTtsPlaying = true
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: true }
+    })
+
+    const approveBtn = wrapper.find('[data-test="hitl-approve-btn"]')
+    await approveBtn.trigger('click')
+
+    expect(mockStore.stopTts).toHaveBeenCalled()
+    expect(mockSubmitHitlDecision).toHaveBeenCalledWith('approve', '', [])
   })
 
   it('handles HITL reject action with target agents', async () => {

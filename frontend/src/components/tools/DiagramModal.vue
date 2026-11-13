@@ -221,7 +221,7 @@ onUnmounted(() => {
                 type="button"
                 @click="resetZoom"
                 data-test="zoom-reset-btn"
-                class="hidden xs:inline-flex p-1 hover:text-neon-cyan border-l border-space-800 pl-1.5 sm:pl-2 transition-colors"
+                class="p-1 hover:text-neon-cyan border-l border-space-800 pl-1.5 sm:pl-2 transition-colors"
                 title="Restablecer tamaño"
                 aria-label="Restablecer tamaño"
               >

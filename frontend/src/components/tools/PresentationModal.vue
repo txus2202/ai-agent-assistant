@@ -181,7 +181,7 @@ const toggleFullscreen = () => {
 }
 
 const handleKeyDown = (e: KeyboardEvent) => {
-  if (!props.isOpen) return
+  if (!props.isOpen || e.defaultPrevented) return
 
   if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
     e.preventDefault()

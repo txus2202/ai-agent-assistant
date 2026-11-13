@@ -197,6 +197,7 @@ const restoreDebate = async (debate: DebateRecord) => {
         <div class="flex items-center space-x-3 sm:space-x-4">
           <button 
             @click="router.push('/')"
+            data-test="history-back-btn"
             class="p-2 sm:p-2.5 bg-space-850 hover:bg-space-800 border border-space-700/60 hover:border-cyan-500/40 rounded-xl transition-all text-slate-400 hover:text-cyan-300 shadow-sm shrink-0 cursor-pointer"
             title="Volver al chat"
           >
@@ -242,6 +243,7 @@ const restoreDebate = async (debate: DebateRecord) => {
             v-model="searchQuery" 
             type="text" 
             name="searchQuery"
+            data-test="history-search-input"
             placeholder="Buscar por objetivo, agente o ID de sesión..." 
             class="w-full bg-space-850/90 border border-space-700/80 focus:border-cyan-500/50 rounded-lg pl-10 pr-4 py-2 text-xs font-mono text-slate-200 placeholder-slate-500 outline-none transition-colors"
           />
@@ -337,6 +339,7 @@ const restoreDebate = async (debate: DebateRecord) => {
                   <button 
                     type="button"
                     @click="deleteDebate(debate.id, $event)"
+                    data-test="delete-session-btn"
                     class="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
                     title="Delete Session"
                     aria-label="Delete Session"
@@ -350,6 +353,7 @@ const restoreDebate = async (debate: DebateRecord) => {
               <button 
                 type="button"
                 @click="restoreDebate(debate)"
+                data-test="session-card"
                 class="session-card w-full text-left pt-3 flex flex-col flex-1 focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500/50 rounded-lg cursor-pointer"
               >
                 <!-- User prompt -->

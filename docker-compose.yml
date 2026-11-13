@@ -20,7 +20,12 @@ services:
     container_name: atenea-backend
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${BACKEND_BIND_IP:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - app-net
+      - data-net
     volumes:
       - ./obsidian_vault:/app/obsidian_vault
       - atenea_data:/app/data
@@ -84,7 +89,12 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "5173:8080"
+      - "${FRONTEND_BIND_IP:-127.0.0.1}:${FRONTEND_PORT:-5173}:8080"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - npm-network
+      - app-net
     deploy:
       resources:
         limits:
@@ -101,7 +111,11 @@ services:
       - full
     restart: unless-stopped
     ports:
-      - "8001:8000"
+      - "${CHROMA_BIND_IP:-127.0.0.1}:${CHROMA_PORT:-8001}:8000"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - data-net
     volumes:
       - atenea_chroma_data:/chroma/chroma
     environment:
@@ -131,7 +145,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-postgres}
     ports:
-      - "127.0.0.1:5432:5432"
+      - "${POSTGRES_BIND_IP:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - data-net
     volumes:
       - atenea_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -154,7 +172,11 @@ services:
     restart: unless-stopped
     command: redis-server --save "" --appendonly no
     ports:
-      - "127.0.0.1:6379:6379"
+      - "${REDIS_BIND_IP:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - data-net
     volumes:
       - atenea_redis_data:/data
     healthcheck:
@@ -187,7 +209,13 @@ services:
       minio:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - "${LANGFUSE_BIND_IP:-127.0.0.1}:${LANGFUSE_PORT:-3000}:3000"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - npm-network
+      - app-net
+      - data-net
     environment:
       NODE_ENV: production
       NODE_OPTIONS: "--max-old-space-size=1536"
@@ -238,6 +266,10 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - data-net
     environment:
       NODE_ENV: production
       NODE_OPTIONS: "--max-old-space-size=1024"
@@ -278,8 +310,12 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     ports:
-      - "127.0.0.1:8123:8123"
-      - "127.0.0.1:9000:9000"
+      - "${CLICKHOUSE_HTTP_BIND_IP:-127.0.0.1}:${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "${CLICKHOUSE_NATIVE_BIND_IP:-127.0.0.1}:${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - data-net
     volumes:
       - atenea_clickhouse_data:/var/lib/clickhouse
     healthcheck:
@@ -305,8 +341,12 @@ services:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: miniosecret
     ports:
-      - "127.0.0.1:9090:9000"
-      - "127.0.0.1:9091:9001"
+      - "${MINIO_API_BIND_IP:-127.0.0.1}:${MINIO_API_PORT:-9090}:9000"
+      - "${MINIO_CONSOLE_BIND_IP:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9091}:9001"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - data-net
     volumes:
       - atenea_minio_data:/data
     healthcheck:
@@ -326,3 +366,20 @@ volumes:
   atenea_clickhouse_data:
   atenea_redis_data:
   atenea_minio_data:
+
+networks:
+  # Network for Nginx Proxy Manager integration
+  # By default creates or connects to the bridge network used by NPM
+  npm-network:
+    name: ${NPM_NETWORK:-npm-network}
+    external: ${NPM_NETWORK_EXTERNAL:-false}
+
+  # Application internal network (Frontend <-> Backend)
+  app-net:
+    driver: bridge
+
+  # Data tier internal network (Backend <-> Databases & Storage)
+  # Isolated with internal: true so no external traffic or outbound leaks are possible
+  data-net:
+    driver: bridge
+    internal: true

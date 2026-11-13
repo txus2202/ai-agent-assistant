@@ -93,12 +93,10 @@ const handleScrollToggle = () => {
     } else {
       el.scrollTop = el.scrollHeight
     }
+  } else if (typeof el.scrollTo === 'function') {
+    el.scrollTo({ top: 0, behavior: 'smooth' })
   } else {
-    if (typeof el.scrollTo === 'function') {
-      el.scrollTo({ top: 0, behavior: 'smooth' })
-    } else {
-      el.scrollTop = 0
-    }
+    el.scrollTop = 0
   }
 }
 
@@ -463,7 +461,7 @@ onMounted(() => {
       clearTtsQueues()
     })
   }
-  nextTick(() => {
+  void nextTick(() => {
     updateChatScrollState()
     if (typeof ResizeObserver !== 'undefined' && chatScroll.value) {
       scrollResizeObserver = new ResizeObserver(() => {

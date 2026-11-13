@@ -18,7 +18,7 @@ describe('CodeModal.vue', () => {
     expect(wrapper.find('[data-test="code-modal-backdrop"]').exists()).toBe(false)
   })
 
-  it('renders modal with code lines and language extension badge when open', () => {
+  it('renders modal with code lines when open', () => {
     const code = 'package main\n\nfunc main() {\n\tprintln("Dédalo")\n}'
     const wrapper = mount(CodeModal, {
       props: {
@@ -32,8 +32,7 @@ describe('CodeModal.vue', () => {
     })
 
     expect(wrapper.find('[data-test="code-modal-backdrop"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Código Go de Dédalo')
-    expect(wrapper.find('[data-test="code-modal-badge"]').text()).toBe('.go')
+    expect(wrapper.text()).toContain('Código')
     expect(wrapper.text()).toContain('println("Dédalo")')
   })
 

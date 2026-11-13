@@ -588,6 +588,66 @@ describe('useDebateStore', () => {
     expect(store.messages[3]!.content).toBe('Respuesta Hefesto')
   })
 
+  it('ensures HITL controls are closed when loading a historical debate that contains hitl_required events', () => {
+    const store = useDebateStore()
+    const historicalHitlDebate = {
+      id: 'session-hitl-archive',
+      status: 'completed' as const,
+      created_at: '2026-10-11T10:00:00Z',
+      user_request: 'Plan de despliegue',
+      events: [
+        { type: 'agent_started', role: 'devops_secops', content: 'Preparando despliegue' },
+        {
+          type: 'hitl_required',
+          role: 'devops_secops',
+          content: '¿Autorizas el despliegue a producción?',
+          metadata: { checkpoint: 'after_devops_secops' }
+        },
+        { type: 'done', role: 'the_judge', content: 'Debate concluido' }
+      ]
+    }
+
+    store.loadDebate(historicalHitlDebate)
+
+    expect(store.currentSessionId).toBe('session-hitl-archive')
+    expect(store.isHitlRequired).toBe(false)
+    expect(store.hitlCheckpoint).toBeNull()
+    expect(store.hitlTargetAgents).toEqual([])
+    expect(store.isDebating).toBe(false)
+    // The message from the HITL prompt is still visible in the chat history
+    expect(store.messages.some(m => m.content.includes('¿Autorizas el despliegue'))).toBe(true)
+  })
+
+  it('ensures HITL controls are closed and agents finalized even if historical debate ended at hitl_required without done event', () => {
+    const store = useDebateStore()
+    store.agents = [
+      { role: 'devops_secops', name: 'Hefesto', state: 'STANDBY' }
+    ]
+    const historicalInterruptedHitl = {
+      id: 'session-interrupted',
+      status: 'completed' as const,
+      created_at: '2026-10-11T10:00:00Z',
+      user_request: 'Despliegue crítico',
+      events: [
+        { type: 'agent_started', role: 'devops_secops', content: 'Iniciando verificación' },
+        {
+          type: 'hitl_required',
+          role: 'devops_secops',
+          content: 'Esperando validación de seguridad',
+          metadata: { checkpoint: 'after_devops_secops' }
+        }
+      ]
+    }
+
+    store.loadDebate(historicalInterruptedHitl)
+
+    expect(store.isHitlRequired).toBe(false)
+    expect(store.hitlCheckpoint).toBeNull()
+    expect(store.hitlTargetAgents).toEqual([])
+    expect(store.isDebating).toBe(false)
+    expect(store.agents[0]!.state).toBe('COMPLETED')
+  })
+
   it('handles loadAgents error when backend API fails by clearing agents and resetting isAgentsLoaded', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     global.fetch = vi.fn().mockRejectedValue(new Error('Network error'))

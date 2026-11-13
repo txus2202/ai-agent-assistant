@@ -128,7 +128,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <header class="border-b border-cyan-900/40 bg-space-900/90 backdrop-blur-md grid grid-cols-2 sm:flex sm:flex-row items-center sm:justify-between sm:h-14 z-30 shrink-0 w-full relative pt-2.5 pb-2.5 sm:py-0 gap-y-4 sm:gap-y-0">
+  <header class="border-b border-cyan-900/40 bg-space-900/90 backdrop-blur-md grid grid-cols-2 sm:flex sm:flex-row items-center sm:justify-between sm:min-h-14 sm:h-auto z-30 shrink-0 w-full relative pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5 sm:py-0 sm:pt-[env(safe-area-inset-top)] gap-y-4 sm:gap-y-0">
     <!-- Left Section: Operator Account Dropdown + Theme Switcher (Left-aligned with 16px padding & 16px gap across all viewports) -->
     <div
       data-test="header-left-section"

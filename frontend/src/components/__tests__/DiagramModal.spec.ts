@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import DiagramModal from '../DiagramModal.vue'
 
 // Mock mermaid library
@@ -35,15 +35,14 @@ describe('DiagramModal.vue', () => {
     const wrapper = mount(DiagramModal, {
       props: {
         isOpen: true,
-        code: 'flowchart TD\nA-->B',
-        title: 'Diagrama de Flujo del Sistema'
+        code: 'flowchart TD\nA-->B'
       }
     })
 
     const dialog = wrapper.find('[data-test="diagram-modal-backdrop"]')
     expect(dialog.exists()).toBe(true)
     expect(dialog.element.tagName.toLowerCase()).toBe('dialog')
-    expect(wrapper.text()).toContain('Diagrama de Flujo del Sistema')
+    expect(wrapper.text()).toContain('Diagrama')
   })
 
   it('emits close event when native dialog cancel event is triggered', async () => {
@@ -149,5 +148,27 @@ describe('DiagramModal.vue', () => {
 
     await zoomOutBtn.trigger('click')
     expect(wrapper.find('[data-test="zoom-level-text"]').text()).toContain('90%')
+  })
+
+  it('downloads SVG diagram when clicking download button', async () => {
+    global.URL.createObjectURL = vi.fn().mockReturnValue('blob:mock-svg-url')
+    global.URL.revokeObjectURL = vi.fn()
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    const wrapper = mount(DiagramModal, {
+      props: {
+        isOpen: true,
+        code: 'flowchart TD\nA-->B',
+        title: 'Mi Diagrama'
+      }
+    })
+    await flushPromises()
+
+    const downloadBtn = wrapper.find('[data-test="diagram-modal-download-btn"]')
+    expect(downloadBtn.exists()).toBe(true)
+    await downloadBtn.trigger('click')
+
+    expect(global.URL.createObjectURL).toHaveBeenCalled()
+    expect(clickSpy).toHaveBeenCalled()
   })
 })

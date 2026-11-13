@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { setupSwipeListener } from '../touchSwipe'
+import { ref, nextTick } from 'vue'
+import { setupSwipeListener, useTouchSwipe } from '../touchSwipe'
 
 describe('touchSwipe utility', () => {
   it('triggers onSwipeUp on upward touch gesture', () => {
@@ -88,13 +89,46 @@ describe('touchSwipe utility', () => {
     cleanup()
   })
 
-  it('ignores horizontal swipes', () => {
+  it('triggers onSwipeLeft on leftward touch gesture', () => {
     const el = document.createElement('div')
+    const onSwipeLeft = vi.fn()
+    const onSwipeRight = vi.fn()
     const onSwipeUp = vi.fn()
+
+    const cleanup = setupSwipeListener(el, {
+      onSwipeLeft,
+      onSwipeRight,
+      onSwipeUp,
+      threshold: 30,
+    })
+
+    const startEvent = new TouchEvent('touchstart', {
+      touches: [{ clientX: 200, clientY: 100 } as unknown as Touch],
+    })
+    el.dispatchEvent(startEvent)
+
+    // Move left: clientX from 200 to 140 (deltaX = -60, deltaY = 5)
+    const endEvent = new TouchEvent('touchend', {
+      changedTouches: [{ clientX: 140, clientY: 105 } as unknown as Touch],
+    })
+    el.dispatchEvent(endEvent)
+
+    expect(onSwipeLeft).toHaveBeenCalledTimes(1)
+    expect(onSwipeRight).not.toHaveBeenCalled()
+    expect(onSwipeUp).not.toHaveBeenCalled()
+
+    cleanup()
+  })
+
+  it('triggers onSwipeRight on rightward touch gesture', () => {
+    const el = document.createElement('div')
+    const onSwipeLeft = vi.fn()
+    const onSwipeRight = vi.fn()
     const onSwipeDown = vi.fn()
 
     const cleanup = setupSwipeListener(el, {
-      onSwipeUp,
+      onSwipeLeft,
+      onSwipeRight,
       onSwipeDown,
       threshold: 30,
     })
@@ -104,15 +138,43 @@ describe('touchSwipe utility', () => {
     })
     el.dispatchEvent(startEvent)
 
-    // DeltaX = 80px, DeltaY = -35px (mostly horizontal)
+    // Move right: clientX from 100 to 170 (deltaX = +70, deltaY = -5)
     const endEvent = new TouchEvent('touchend', {
-      changedTouches: [{ clientX: 180, clientY: 65 } as unknown as Touch],
+      changedTouches: [{ clientX: 170, clientY: 95 } as unknown as Touch],
     })
     el.dispatchEvent(endEvent)
 
-    expect(onSwipeUp).not.toHaveBeenCalled()
+    expect(onSwipeRight).toHaveBeenCalledTimes(1)
+    expect(onSwipeLeft).not.toHaveBeenCalled()
     expect(onSwipeDown).not.toHaveBeenCalled()
 
+    cleanup()
+  })
+
+  it('triggers onSwipeLeft on pointer event swipe left', () => {
+    const el = document.createElement('div')
+    const onSwipeLeft = vi.fn()
+
+    const cleanup = setupSwipeListener(el, {
+      onSwipeLeft,
+      threshold: 30,
+    })
+
+    const pDown = new PointerEvent('pointerdown', {
+      clientX: 200,
+      clientY: 100,
+      pointerType: 'touch',
+    })
+    el.dispatchEvent(pDown)
+
+    const pUp = new PointerEvent('pointerup', {
+      clientX: 120,
+      clientY: 100,
+      pointerType: 'touch',
+    })
+    el.dispatchEvent(pUp)
+
+    expect(onSwipeLeft).toHaveBeenCalledTimes(1)
     cleanup()
   })
 
@@ -146,5 +208,27 @@ describe('touchSwipe utility', () => {
     expect(onSwipeUp).toHaveBeenCalledTimes(1)
     cleanup()
   })
-})
 
+  it('useTouchSwipe attaches listener when elementRef changes from null to element', async () => {
+    const elRef = ref<HTMLElement | null>(null)
+    const onSwipeLeft = vi.fn()
+    useTouchSwipe(elRef, { onSwipeLeft, threshold: 30 })
+
+    const el = document.createElement('div')
+    elRef.value = el
+    await nextTick()
+
+    // Dispatch touch gesture on el
+    const startEvent = new TouchEvent('touchstart', {
+      touches: [{ clientX: 200, clientY: 100 } as unknown as Touch],
+    })
+    el.dispatchEvent(startEvent)
+
+    const endEvent = new TouchEvent('touchend', {
+      changedTouches: [{ clientX: 140, clientY: 105 } as unknown as Touch],
+    })
+    el.dispatchEvent(endEvent)
+
+    expect(onSwipeLeft).toHaveBeenCalledTimes(1)
+  })
+})

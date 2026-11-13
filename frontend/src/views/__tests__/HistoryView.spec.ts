@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import HistoryView from '../HistoryView.vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import { createPinia } from 'pinia'
+import { useDebateStore } from '../../stores/debate'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -102,6 +103,41 @@ describe('HistoryView.vue', () => {
     const pushSpy = vi.spyOn(router, 'push')
     await cardBtn.trigger('click')
     expect(pushSpy).toHaveBeenCalledWith('/')
+  })
+
+  it('restores debate from history with HITL closed even if debate has hitl_required event', async () => {
+    const pinia = createPinia()
+    const store = useDebateStore(pinia)
+    const mockDebates = [
+      {
+        id: 'hitl-session-1',
+        created_at: '2023-10-01T12:00:00Z',
+        events: [
+          {
+            type: 'hitl_required',
+            role: 'devops_secops',
+            content: 'Acción requerida',
+            metadata: { checkpoint: 'after_devops_secops' }
+          }
+        ]
+      }
+    ]
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockDebates)
+    })
+
+    const wrapper = mount(HistoryView, {
+      global: { plugins: [router, pinia] }
+    })
+    await flushPromises()
+
+    const cardBtn = wrapper.find('.session-card')
+    await cardBtn.trigger('click')
+
+    expect(store.currentSessionId).toBe('hitl-session-1')
+    expect(store.isHitlRequired).toBe(false)
+    expect(store.hitlCheckpoint).toBeNull()
   })
 
   it('navigates back to home on back button click', async () => {

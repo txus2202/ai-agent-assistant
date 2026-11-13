@@ -26,6 +26,12 @@
 @custom-variant dark (&:is(.dark *));
 
 @layer base {
+  html,
+  body {
+    height: 100%;
+    overscroll-behavior-y: none;
+  }
+
   body {
     background-color: var(--color-space-950, #060a11);
     color: #cbd5e1;

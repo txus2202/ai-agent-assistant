@@ -148,4 +148,43 @@ Este es el documento oficial sin bloques delimitados.`
     expect(blocks[1]!.title).toBe('Proyecto Agentes')
     expect(blocks[1]!.content).toBe('# Proyecto Agentes\n## 1. Resumen\nEste es el documento oficial sin bloques delimitados.')
   })
+
+  it('parses fenced presentation and slides blocks into presentation type', () => {
+    const text = `Aquí tienes la presentación solicitada:
+\`\`\`presentation
+# Propuesta de Arquitectura
+---
+## Slide 1: Resumen
+- Punto 1
+- Punto 2
+---
+## Slide 2: Stack
+- Vue
+- FastAPI
+\`\`\`
+¿Te parece adecuada?`
+
+    const blocks = parseMessageContent(text)
+    expect(blocks).toHaveLength(3)
+    expect(blocks[0]!.type).toBe('text')
+    expect(blocks[1]!.type).toBe('presentation')
+    expect(blocks[1]!.title).toBe('Propuesta de Arquitectura')
+    expect(blocks[1]!.slideCount).toBe(2)
+    expect(blocks[2]!.type).toBe('text')
+  })
+
+  it('identifies presentations with slides language tag or markdown containing multiple slide dividers', () => {
+    const text = `\`\`\`slides
+# Demo Slides
+---
+## Diapositiva 1
+- Contenido
+\`\`\``
+
+    const blocks = parseMessageContent(text)
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]!.type).toBe('presentation')
+    expect(blocks[0]!.title).toBe('Demo Slides')
+    expect(blocks[0]!.slideCount).toBe(1)
+  })
 })

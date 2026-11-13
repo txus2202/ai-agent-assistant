@@ -422,21 +422,21 @@ defineExpose({
       :class="collapsible ? 'absolute bottom-0 left-0 w-full flex flex-col items-center bg-[#080e1a]/95 backdrop-blur-md shadow-[0_-8px_24px_rgba(0,0,0,0.6)] border-t border-cyan-900/50 pointer-events-auto touch-none' : 'w-full flex flex-col items-center gap-1.5'"
     >
       <!-- Collapsible Handle Bar (Visible when props.collapsible is true) -->
-      <div
+      <button
         v-if="collapsible"
+        type="button"
         data-test="soundbar-collapse-handle"
-        role="button"
-        tabindex="0"
         @click="toggleCollapse"
-        @keydown.enter.space.prevent="toggleCollapse"
-        class="w-full relative flex items-center justify-between px-3 py-1 cursor-pointer select-none min-h-[34px] touch-none border-b transition-colors duration-200"
+        class="w-full relative flex items-center justify-between px-3 py-1 cursor-pointer select-none min-h-[34px] touch-none border-b transition-colors duration-200 bg-transparent text-inherit"
         :class="isCollapsed ? 'border-transparent hover:bg-space-850/60' : 'border-slate-800/40'"
-        title="Pulsa o desliza para alternar"
+        :title="isCollapsed ? 'Desplegar barra de sonido (o desliza hacia arriba)' : 'Colapsar barra de sonido (o desliza hacia abajo)'"
+        :aria-expanded="!isCollapsed"
+        aria-label="Alternar colapso de la barra de sonido"
       >
         <!-- Left: Mini status ONLY when collapsed (never rendered when deployed to avoid stray dot over mic) -->
-        <div
+        <span
           v-if="isCollapsed"
-          class="flex items-center gap-2 min-w-0 max-w-[38%] sm:max-w-[42%] z-0 transition-opacity duration-200"
+          class="flex items-center gap-2 min-w-0 max-w-[38%] sm:max-w-[42%] z-0 transition-opacity duration-200 text-left"
         >
           <span
             class="w-2 h-2 rounded-full transition-colors duration-300 shrink-0"
@@ -445,19 +445,14 @@ defineExpose({
           <span class="text-[10px] font-mono text-slate-300 truncate">
             {{ isRecording ? 'GRABANDO...' : voiceStateText }}
           </span>
-        </div>
-        <div v-else class="w-6"></div>
+        </span>
+        <span v-else class="w-6"></span>
 
         <!-- Center: Toggle arrow button - STRICTLY CENTERED AT 50% -->
-        <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center">
-          <button
-            type="button"
+        <span class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center">
+          <span
             data-test="soundbar-collapse-toggle"
-            @click.stop="toggleCollapse"
             class="min-w-[48px] min-h-[34px] px-4 py-1 rounded hover:bg-space-800 text-slate-400 hover:text-cyan-300 transition-colors flex items-center justify-center group"
-            :title="isCollapsed ? 'Desplegar barra de sonido (o desliza hacia arriba)' : 'Colapsar barra de sonido (o desliza hacia abajo)'"
-            :aria-expanded="!isCollapsed"
-            aria-label="Alternar colapso de la barra de sonido"
           >
             <ChevronDown
               class="w-4 h-4 transition-transform duration-300 ease-out"
@@ -466,18 +461,18 @@ defineExpose({
                 { 'text-red-400 animate-pulse': isRecording && isCollapsed }
               ]"
             />
-          </button>
-        </div>
+          </span>
+        </span>
 
         <!-- Right: Minimal indicator ONLY when collapsed -->
-        <div
+        <span
           v-if="isCollapsed"
           class="text-[10px] font-mono uppercase tracking-wider shrink-0 z-0 transition-opacity duration-200"
         >
           <span class="text-slate-300 font-bold">MIC</span>
-        </div>
-        <div v-else class="w-6"></div>
-      </div>
+        </span>
+        <span v-else class="w-6"></span>
+      </button>
 
       <!-- Main SoundBar Content: Collapsible Body with Smooth Expand/Collapse Animation -->
       <Transition

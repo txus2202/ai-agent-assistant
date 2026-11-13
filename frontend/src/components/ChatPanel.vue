@@ -21,13 +21,26 @@ import {
   Square,
   Sparkles,
   RotateCcw,
-  Info
+  Info,
+  Network,
+  MonitorPlay,
+  Globe,
+  FileCode,
+  ArrowDown,
+  ArrowUp
 } from '@lucide/vue'
 import { useDebateStore, type ChatMessage } from '../stores/debate'
 import DiagramModal from './tools/DiagramModal.vue'
 import CodeModal from './tools/CodeModal.vue'
 import ImageModal from './tools/ImageModal.vue'
 import DocumentModal from './tools/DocumentModal.vue'
+import PresentationModal from './tools/PresentationModal.vue'
+import {
+  downloadPresentationHtml,
+  downloadPresentationMarkdown,
+  exportPresentationPptx
+} from '../utils/presentationExporter'
+import { parsePresentation } from '../utils/slideParser'
 import { cleanTextForTts, splitTextIntoTtsChunks } from '../utils/ttsFilter'
 import { parseMessageContent, getLanguageExtension } from '../utils/messageParser'
 import { getMimeTypeForExtension } from '../utils/mimeHelper'
@@ -49,6 +62,45 @@ defineEmits<{
 
 const store = useDebateStore()
 const chatScroll = ref<HTMLElement | null>(null)
+const isChatScrollable = ref(false)
+const scrollDirection = ref<'up' | 'down'>('up')
+let scrollResizeObserver: ResizeObserver | null = null
+
+const updateChatScrollState = () => {
+  const el = chatScroll.value
+  if (!el) {
+    isChatScrollable.value = false
+    return
+  }
+  const maxScroll = el.scrollHeight - el.clientHeight
+  // Content is scrollable if overflow exceeds a small threshold
+  const canScroll = maxScroll > 15
+  isChatScrollable.value = canScroll
+
+  if (canScroll) {
+    // If in the upper half (< maxScroll / 2), the button points down to scroll to the bottom.
+    // If in the lower half (>= maxScroll / 2), the button points up to scroll to the top.
+    scrollDirection.value = el.scrollTop < maxScroll / 2 ? 'down' : 'up'
+  }
+}
+
+const handleScrollToggle = () => {
+  const el = chatScroll.value
+  if (!el) return
+  if (scrollDirection.value === 'down') {
+    if (typeof el.scrollTo === 'function') {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    } else {
+      el.scrollTop = el.scrollHeight
+    }
+  } else {
+    if (typeof el.scrollTo === 'function') {
+      el.scrollTo({ top: 0, behavior: 'smooth' })
+    } else {
+      el.scrollTop = 0
+    }
+  }
+}
 
 // Diagram Modal State
 const isDiagramModalOpen = ref(false)
@@ -75,6 +127,64 @@ const isDocumentModalOpen = ref(false)
 const activeDocContent = ref('')
 const activeDocTitle = ref('Documento Técnico')
 const copiedDocIndex = ref<number | null>(null)
+
+// Presentation Modal State (Calíope / presentation_viewer)
+const isPresentationModalOpen = ref(false)
+const activePresentationContent = ref('')
+const activePresentationTitle = ref('Presentación')
+const copiedPresentationIndex = ref<number | null>(null)
+const activePresentationDownloadMenu = ref<number | null>(null)
+
+const togglePresentationDownloadMenu = (index: number) => {
+  activePresentationDownloadMenu.value = activePresentationDownloadMenu.value === index ? null : index
+}
+
+const closePresentationDownloadMenu = () => {
+  activePresentationDownloadMenu.value = null
+}
+
+const openPresentationModal = (content: string, title?: string) => {
+  activePresentationContent.value = content
+  activePresentationTitle.value = title || 'Presentación'
+  isPresentationModalOpen.value = true
+}
+
+const closePresentationModal = () => {
+  isPresentationModalOpen.value = false
+  activePresentationContent.value = ''
+  activePresentationTitle.value = 'Presentación'
+}
+
+const copyPresentationContent = async (content: string, index: number) => {
+  try {
+    await navigator.clipboard.writeText(content)
+    copiedPresentationIndex.value = index
+    setTimeout(() => {
+      if (copiedPresentationIndex.value === index) {
+        copiedPresentationIndex.value = null
+      }
+    }, 2000)
+  } catch (err) {
+    console.error('Failed to copy presentation content:', err)
+  }
+}
+
+const downloadChatPresentation = (content: string, title?: string) => {
+  closePresentationDownloadMenu()
+  const parsed = parsePresentation(content)
+  downloadPresentationHtml(parsed, title || parsed.title)
+}
+
+const downloadChatPresentationPptx = async (content: string, title?: string) => {
+  closePresentationDownloadMenu()
+  const parsed = parsePresentation(content)
+  await exportPresentationPptx(parsed, title || parsed.title)
+}
+
+const downloadChatPresentationMarkdown = (content: string, title?: string) => {
+  closePresentationDownloadMenu()
+  downloadPresentationMarkdown(content, title)
+}
 
 const openDocumentModal = (content: string, title?: string) => {
   activeDocContent.value = content
@@ -341,6 +451,8 @@ const handleClickOutsideCancelInfo = (event: MouseEvent) => {
 onMounted(() => {
   document.addEventListener('click', handleClickOutsideAgent)
   document.addEventListener('click', handleClickOutsideCancelInfo)
+  document.addEventListener('click', closePresentationDownloadMenu)
+  window.addEventListener('resize', updateChatScrollState)
   if (typeof store.onTtsChunkReady === 'function') {
     store.onTtsChunkReady((chunk: string, role?: string) => {
       queueTtsSentence(chunk, role)
@@ -351,11 +463,26 @@ onMounted(() => {
       clearTtsQueues()
     })
   }
+  nextTick(() => {
+    updateChatScrollState()
+    if (typeof ResizeObserver !== 'undefined' && chatScroll.value) {
+      scrollResizeObserver = new ResizeObserver(() => {
+        updateChatScrollState()
+      })
+      scrollResizeObserver.observe(chatScroll.value)
+      if (chatScroll.value.firstElementChild) {
+        scrollResizeObserver.observe(chatScroll.value.firstElementChild)
+      }
+    }
+  })
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutsideAgent)
   document.removeEventListener('click', handleClickOutsideCancelInfo)
+  document.removeEventListener('click', closePresentationDownloadMenu)
+  window.removeEventListener('resize', updateChatScrollState)
+  scrollResizeObserver?.disconnect()
 })
 
 // TTS Queue logic for gapless sentence-by-sentence playback with per-agent role tracking
@@ -778,9 +905,10 @@ const handleLearnSession = async () => {
   }
 }
 
-// Auto-scroll to the start of the last message
+// Auto-scroll to the start of the last message and update scroll state
 watch(() => props.messages.length, async (newLen) => {
   await nextTick()
+  updateChatScrollState()
   if (chatScroll.value && newLen > 0) {
     // Find all message blocks
     const messageBlocks = chatScroll.value.querySelectorAll('.message-block')
@@ -791,6 +919,11 @@ watch(() => props.messages.length, async (newLen) => {
       lastMessageEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }
+})
+
+watch(() => props.isDebating, async () => {
+  await nextTick()
+  updateChatScrollState()
 })
 
 const setActiveTab = (_tab: 'chat' | 'observability') => {
@@ -896,7 +1029,11 @@ defineExpose({
     </div>
 
     <!-- Messages -->
-    <div ref="chatScroll" class="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-3.5 md:px-4 md:py-5 space-y-6 min-w-0 max-w-full">
+    <div 
+      ref="chatScroll" 
+      @scroll.passive="updateChatScrollState"
+      class="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-3.5 md:px-4 md:py-5 space-y-6 min-w-0 max-w-full"
+    >
       <div 
         v-for="(msg, i) in messages" 
         :key="i"
@@ -963,44 +1100,51 @@ defineExpose({
                   data-test="chat-diagram-card"
                   class="my-2 bg-[#050a14] border border-cyan-500/40 rounded-xl overflow-hidden shadow-[0_0_20px_rgba(0,229,255,0.1)]"
                 >
-                  <!-- Card Header with Actions -->
-                  <div class="flex items-center justify-end px-3.5 py-2 bg-[#081120] border-b border-cyan-500/30 gap-2">
-                    <!-- Copy Button -->
-                    <button
-                      type="button"
-                      @click="copyChatDiagramCode(block.content, i * 100 + blockIdx)"
-                      data-test="chat-diagram-copy-btn"
-                      class="relative group p-1.5 rounded-lg bg-[#030509] border border-cyan-500/40 hover:border-neon-cyan text-cyan-200 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
-                      :title="copiedDiagramIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar al portapapeles'"
-                      :aria-label="copiedDiagramIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar al portapapeles'"
-                    >
-                      <Check v-if="copiedDiagramIndex === (i * 100 + blockIdx)" class="w-3.5 h-3.5 text-emerald-400" />
-                      <Copy v-else class="w-3.5 h-3.5" />
-                      <!-- Hover Tooltip -->
-                      <span
-                        class="pointer-events-none absolute top-full mt-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono text-cyan-200 border border-cyan-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
-                      >
-                        {{ copiedDiagramIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar' }}
-                      </span>
-                    </button>
+                  <!-- Card Header with Actions (Icon - Diagrama - Botones) -->
+                  <div class="flex items-center justify-between px-3.5 py-2 bg-[#081120] border-b border-cyan-500/30">
+                    <div class="flex items-center gap-2">
+                      <Network class="w-3.5 h-3.5 text-neon-cyan" />
+                      <span class="text-xs font-mono font-bold text-neon-cyan uppercase tracking-wider select-none">Diagrama</span>
+                    </div>
 
-                    <!-- Open Modal Button -->
-                    <button
-                      type="button"
-                      @click="openDiagramModal(block.content, `Diagrama de ${msg.agentName || 'Arquitectura'}`)"
-                      data-test="chat-diagram-view-btn"
-                      class="relative group p-1.5 rounded-lg bg-neon-cyan/15 hover:bg-neon-cyan/25 border border-neon-cyan text-neon-cyan shadow-[0_0_10px_rgba(0,229,255,0.2)] transition-all cursor-pointer flex items-center justify-center"
-                      title="Ver diagrama"
-                      aria-label="Ver diagrama"
-                    >
-                      <Eye class="w-3.5 h-3.5" />
-                      <!-- Hover Tooltip -->
-                      <span
-                        class="pointer-events-none absolute top-full mt-1.5 right-0 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono font-bold text-neon-cyan border border-neon-cyan/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+                    <div class="flex items-center gap-2">
+                      <!-- Copy Button -->
+                      <button
+                        type="button"
+                        @click="copyChatDiagramCode(block.content, i * 100 + blockIdx)"
+                        data-test="chat-diagram-copy-btn"
+                        class="relative group p-1.5 rounded-lg bg-[#030509] border border-cyan-500/40 hover:border-neon-cyan text-cyan-200 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
+                        :title="copiedDiagramIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar al portapapeles'"
+                        :aria-label="copiedDiagramIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar al portapapeles'"
                       >
-                        Ver
-                      </span>
-                    </button>
+                        <Check v-if="copiedDiagramIndex === (i * 100 + blockIdx)" class="w-3.5 h-3.5 text-emerald-400" />
+                        <Copy v-else class="w-3.5 h-3.5" />
+                        <!-- Hover Tooltip -->
+                        <span
+                          class="pointer-events-none absolute top-full mt-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono text-cyan-200 border border-cyan-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+                        >
+                          {{ copiedDiagramIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar' }}
+                        </span>
+                      </button>
+
+                      <!-- Open Modal Button -->
+                      <button
+                        type="button"
+                        @click="openDiagramModal(block.content, `Diagrama de ${msg.agentName || 'Arquitectura'}`)"
+                        data-test="chat-diagram-view-btn"
+                        class="relative group p-1.5 rounded-lg bg-neon-cyan/15 hover:bg-neon-cyan/25 border border-neon-cyan text-neon-cyan shadow-[0_0_10px_rgba(0,229,255,0.2)] transition-all cursor-pointer flex items-center justify-center"
+                        title="Ver diagrama"
+                        aria-label="Ver diagrama"
+                      >
+                        <Eye class="w-3.5 h-3.5" />
+                        <!-- Hover Tooltip -->
+                        <span
+                          class="pointer-events-none absolute top-full mt-1.5 right-0 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono font-bold text-neon-cyan border border-neon-cyan/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+                        >
+                          Ver
+                        </span>
+                      </button>
+                    </div>
                   </div>
 
                   <!-- Code snippet preview -->
@@ -1013,16 +1157,11 @@ defineExpose({
                   data-test="chat-code-card"
                   class="my-2 bg-[#050a14] border border-cyan-500/30 rounded-xl overflow-hidden shadow-[0_0_20px_rgba(0,229,255,0.08)]"
                 >
-                  <!-- Card Header with Actions -->
+                  <!-- Card Header with Actions (Icon - Código - Botones) -->
                   <div class="flex items-center justify-between px-3.5 py-2 bg-[#081120] border-b border-cyan-500/30">
                     <div class="flex items-center gap-2">
                       <Code2 class="w-3.5 h-3.5 text-neon-cyan" />
-                      <span class="text-[10px] font-mono font-bold uppercase tracking-wider text-neon-cyan">
-                        {{ block.language || 'code' }}
-                      </span>
-                      <span class="text-[10px] font-mono text-slate-400">
-                        .{{ block.extension }}
-                      </span>
+                      <span class="text-xs font-mono font-bold text-neon-cyan uppercase tracking-wider select-none">Código</span>
                     </div>
 
                     <div class="flex items-center gap-2">
@@ -1093,13 +1232,11 @@ defineExpose({
                   data-test="chat-image-card"
                   class="my-2 bg-[#050a14] border border-pink-500/30 rounded-xl overflow-hidden shadow-[0_0_20px_rgba(236,72,153,0.1)]"
                 >
-                  <!-- Card Header with Actions -->
+                  <!-- Card Header with Actions (Icon - Imágenes - Botones) -->
                   <div class="flex items-center justify-between px-3.5 py-2 bg-[#120818] border-b border-pink-500/30">
                     <div class="flex items-center gap-2">
                       <ImageIcon class="w-3.5 h-3.5 text-pink-400" />
-                      <span class="text-[10px] font-mono font-bold uppercase tracking-wider text-pink-300">
-                        {{ block.alt || 'Recurso Visual' }}
-                      </span>
+                      <span class="text-xs font-mono font-bold text-pink-400 uppercase tracking-wider select-none">Imágenes</span>
                     </div>
 
                     <div class="flex items-center gap-2">
@@ -1165,16 +1302,11 @@ defineExpose({
                   data-test="chat-document-card"
                   class="my-2 bg-[#050a14] border border-pink-500/40 rounded-xl overflow-hidden shadow-[0_0_20px_rgba(236,72,153,0.12)]"
                 >
-                  <!-- Card Header with Actions -->
+                  <!-- Card Header with Actions (Icon - Documento - Botones) -->
                   <div class="flex items-center justify-between px-3.5 py-2 bg-[#0e0816] border-b border-pink-500/30">
                     <div class="flex items-center gap-2 min-w-0">
                       <FileText class="w-3.5 h-3.5 text-pink-400 shrink-0" />
-                      <span class="text-[10px] font-mono font-bold uppercase tracking-wider text-pink-300 truncate">
-                        {{ block.title || 'Documento Técnico' }}
-                      </span>
-                      <span class="text-[10px] font-mono text-pink-400/70 shrink-0">
-                        .md / .pdf
-                      </span>
+                      <span class="text-xs font-mono font-bold text-pink-400 uppercase tracking-wider select-none">Documento</span>
                     </div>
 
                     <div class="flex items-center gap-1.5 shrink-0">
@@ -1252,6 +1384,136 @@ defineExpose({
                   <!-- Document preview with internal scrollbar -->
                   <div class="p-4 bg-[#02050a] text-slate-200 text-xs leading-relaxed max-h-56 overflow-y-auto custom-scrollbar border-t border-space-900/50 selection:bg-pink-500/30">
                     <div class="doc-body font-sans max-w-none" v-html="renderMarkdownToHtml(block.content)"></div>
+                  </div>
+                </div>
+
+                <!-- Presentation Block Card (Calíope / Presentation Deck) -->
+                <div 
+                  v-else-if="block.type === 'presentation'"
+                  data-test="chat-presentation-card"
+                  class="my-2 bg-[#050a14] border border-cyan-500/40 rounded-xl overflow-hidden shadow-[0_0_20px_rgba(0,229,255,0.12)]"
+                >
+                  <!-- Card Header with Actions (Icon - Presentación - Botones) -->
+                  <div class="flex items-center justify-between px-3.5 py-2 bg-[#081120] border-b border-cyan-500/30">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <MonitorPlay class="w-3.5 h-3.5 text-neon-cyan shrink-0" />
+                      <span class="text-xs font-mono font-bold text-neon-cyan uppercase tracking-wider select-none">Presentación</span>
+                    </div>
+
+                    <div class="flex items-center gap-1.5 shrink-0">
+                      <!-- Copy Button -->
+                      <button
+                        type="button"
+                        @click="copyPresentationContent(block.content, i * 100 + blockIdx)"
+                        data-test="chat-presentation-copy-btn"
+                        class="relative group p-1.5 rounded-lg bg-[#030509] border border-cyan-500/40 hover:border-cyan-400 text-cyan-200 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
+                        :title="copiedPresentationIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar al portapapeles'"
+                        :aria-label="copiedPresentationIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar al portapapeles'"
+                      >
+                        <Check v-if="copiedPresentationIndex === (i * 100 + blockIdx)" class="w-3.5 h-3.5 text-emerald-400" />
+                        <Copy v-else class="w-3.5 h-3.5" />
+                        <span
+                          class="pointer-events-none absolute top-full mt-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono text-cyan-200 border border-cyan-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+                        >
+                          {{ copiedPresentationIndex === (i * 100 + blockIdx) ? 'Copiado' : 'Copiar' }}
+                        </span>
+                      </button>
+
+                      <!-- Single Download Button with Format Dropdown -->
+                      <div class="relative">
+                        <button
+                          type="button"
+                          @click.stop="togglePresentationDownloadMenu(i * 100 + blockIdx)"
+                          data-test="chat-presentation-download-btn"
+                          class="relative group p-1.5 rounded-lg bg-[#030509] border border-cyan-500/40 hover:border-cyan-400 text-cyan-200 hover:text-white transition-colors cursor-pointer flex items-center gap-1"
+                          title="Descargar presentación"
+                          aria-label="Descargar presentación"
+                          :aria-expanded="activePresentationDownloadMenu === (i * 100 + blockIdx)"
+                        >
+                          <Download class="w-3.5 h-3.5" />
+                          <ChevronDown class="w-2.5 h-2.5 opacity-70 transition-transform duration-150" :class="activePresentationDownloadMenu === (i * 100 + blockIdx) ? 'rotate-180' : ''" />
+                          <span
+                            v-if="activePresentationDownloadMenu !== (i * 100 + blockIdx)"
+                            class="pointer-events-none absolute top-full mt-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono font-bold text-cyan-200 border border-cyan-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+                          >
+                            Descargar
+                          </span>
+                        </button>
+
+                        <!-- Download Options Dropdown -->
+                        <div
+                          v-if="activePresentationDownloadMenu === (i * 100 + blockIdx)"
+                          data-test="chat-presentation-download-dropdown"
+                          class="absolute right-0 top-full mt-1.5 w-48 bg-[#050b18]/95 border border-cyan-500/40 rounded-xl p-1 shadow-[0_0_20px_rgba(0,229,255,0.25)] backdrop-blur-md z-50 flex flex-col gap-0.5 font-mono text-left animate-in fade-in duration-100"
+                        >
+                          <button
+                            type="button"
+                            @click="downloadChatPresentationPptx(block.content, block.title)"
+                            data-test="chat-presentation-download-pptx-btn"
+                            class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-200 hover:text-white hover:bg-cyan-950/60 transition-colors text-xs cursor-pointer text-left"
+                          >
+                            <MonitorPlay class="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                            <span>PowerPoint (.pptx)</span>
+                          </button>
+                          <button
+                            type="button"
+                            @click="downloadChatPresentation(block.content, block.title)"
+                            data-test="chat-presentation-download-html-btn"
+                            class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-200 hover:text-white hover:bg-cyan-950/60 transition-colors text-xs cursor-pointer text-left"
+                          >
+                            <Globe class="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                            <span>Web (.html)</span>
+                          </button>
+                          <button
+                            type="button"
+                            @click="downloadChatPresentationMarkdown(block.content, block.title)"
+                            data-test="chat-presentation-download-md-btn"
+                            class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-200 hover:text-white hover:bg-cyan-950/60 transition-colors text-xs cursor-pointer text-left"
+                          >
+                            <FileCode class="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                            <span>Markdown (.md)</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <!-- Open Modal Button -->
+                      <button
+                        type="button"
+                        @click="openPresentationModal(block.content, block.title || `Presentación de ${msg.agentName || 'Atenea'}`)"
+                        data-test="chat-presentation-view-btn"
+                        class="relative group p-1.5 rounded-lg bg-neon-cyan/15 hover:bg-neon-cyan/25 border border-neon-cyan text-neon-cyan shadow-[0_0_10px_rgba(0,229,255,0.2)] transition-all cursor-pointer flex items-center justify-center"
+                        title="Ver Presentación de Diapositivas"
+                        aria-label="Ver Presentación de Diapositivas"
+                      >
+                        <Eye class="w-3.5 h-3.5" />
+                        <span
+                          class="pointer-events-none absolute top-full mt-1.5 right-0 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono font-bold text-neon-cyan border border-neon-cyan/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+                        >
+                          Ver
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Presentation preview with slide count and cover title -->
+                  <div class="p-4 bg-[#02050a] flex items-center justify-between gap-4 border-t border-space-900/50">
+                    <div class="min-w-0">
+                      <div class="text-xs font-mono font-bold text-white uppercase truncate">
+                        {{ block.title || 'Presentación de Diapositivas' }}
+                      </div>
+                      <div class="text-[11px] font-mono text-cyan-400/80 mt-0.5">
+                        {{ block.slideCount ? `${block.slideCount} diapositivas listas para proyectar` : 'Diapositivas interactivas 16:9' }}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      @click="openPresentationModal(block.content, block.title)"
+                      data-test="chat-presentation-project-btn"
+                      class="px-3 py-1.5 rounded-lg bg-neon-cyan/10 hover:bg-neon-cyan/20 border border-neon-cyan/50 text-neon-cyan font-mono text-xs flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                    >
+                      <MonitorPlay class="w-3.5 h-3.5" />
+                      <span>Proyectar</span>
+                    </button>
                   </div>
                 </div>
               </template>
@@ -1450,82 +1712,105 @@ defineExpose({
       </div>
 
       <form @submit.prevent="onSubmit" class="flex flex-col gap-2.5 md:gap-3 relative">
-        <div class="flex items-center gap-2">
-          <!-- Custom Multi-Agent Dropdown Selector -->
-          <div class="relative" ref="agentDropdownRef">
-            <button 
-              type="button"
-              @click="toggleAgentDropdown"
-              :disabled="isDebating && !store.isHitlRequired"
-              data-test="agent-dropdown-btn"
-              class="flex items-center justify-between min-w-[140px] max-w-[210px] min-h-[36px] md:min-h-0 bg-[#030509] border border-cyan-900/50 hover:border-neon-cyan/80 rounded px-3 py-1.5 text-[11px] font-mono text-cyan-50 shadow-[0_0_10px_-2px_rgba(0,229,255,0.1)] transition-all disabled:opacity-50"
-            >
-              <span class="truncate">{{ selectedAgentLabel }}</span>
-              <ChevronDown class="w-3 h-3 text-neon-cyan ml-2 shrink-0 transition-transform" :class="{ 'rotate-180': isAgentDropdownOpen }" />
-            </button>
-            
-            <div 
-              v-if="isAgentDropdownOpen"
-              class="absolute bottom-full left-0 mb-2 w-56 bg-space-950 border border-neon-cyan/50 rounded shadow-[0_0_15px_rgba(0,229,255,0.15)] overflow-hidden z-50 font-mono text-xs"
-            >
-              <div class="px-3 py-1.5 bg-space-900 text-neon-cyan/70 text-[9px] uppercase tracking-wider border-b border-neon-cyan/30 flex items-center justify-between">
-                <span>Agentes ({{ selectedAgents.length }})</span>
-                <button
-                  type="button"
-                  @click.stop="selectAllAgents"
-                  class="text-[9px] text-neon-cyan hover:underline uppercase tracking-wider cursor-pointer"
-                >
-                  {{ selectedAgents.length === agentsList.length ? 'Solo Atenea' : 'Todos' }}
-                </button>
-              </div>
-              <div class="max-h-[220px] overflow-y-auto custom-scrollbar">
-                <button 
-                  v-for="agent in agentsList" 
-                  :key="agent.value"
-                  type="button"
-                  @click.stop="toggleAgent(agent.value)"
-                  data-test="agent-option"
-                  :data-selected="selectedAgents.includes(agent.value)"
-                  class="w-full text-left px-3 py-2 transition-colors flex items-center justify-between cursor-pointer"
-                  :class="selectedAgents.includes(agent.value) ? 'bg-neon-cyan/10 text-neon-cyan' : 'text-slate-300 hover:bg-space-800 hover:text-cyan-200'"
-                >
-                  <span class="flex items-center space-x-2 min-w-0">
-                    <span 
-                      class="w-3.5 h-3.5 rounded-sm border flex items-center justify-center shrink-0 transition-colors"
-                      :class="selectedAgents.includes(agent.value) ? 'border-neon-cyan bg-neon-cyan/20 text-neon-cyan' : 'border-slate-700 bg-space-900'"
-                    >
-                      <Check v-if="selectedAgents.includes(agent.value)" class="w-2.5 h-2.5 stroke-[3]" />
+        <div class="flex items-center justify-between gap-2">
+          <!-- Left side: Custom Multi-Agent Dropdown Selector & File Upload -->
+          <div class="flex items-center gap-2">
+            <!-- Custom Multi-Agent Dropdown Selector -->
+            <div class="relative" ref="agentDropdownRef">
+              <button 
+                type="button"
+                @click="toggleAgentDropdown"
+                :disabled="isDebating && !store.isHitlRequired"
+                data-test="agent-dropdown-btn"
+                class="flex items-center justify-between min-w-[140px] max-w-[210px] min-h-[36px] md:min-h-0 bg-[#030509] border border-cyan-900/50 hover:border-neon-cyan/80 rounded px-3 py-1.5 text-[11px] font-mono text-cyan-50 shadow-[0_0_10px_-2px_rgba(0,229,255,0.1)] transition-all disabled:opacity-50"
+              >
+                <span class="truncate">{{ selectedAgentLabel }}</span>
+                <ChevronDown class="w-3 h-3 text-neon-cyan ml-2 shrink-0 transition-transform" :class="{ 'rotate-180': isAgentDropdownOpen }" />
+              </button>
+              
+              <div 
+                v-if="isAgentDropdownOpen"
+                class="absolute bottom-full left-0 mb-2 w-56 bg-space-950 border border-neon-cyan/50 rounded shadow-[0_0_15px_rgba(0,229,255,0.15)] overflow-hidden z-50 font-mono text-xs"
+              >
+                <div class="px-3 py-1.5 bg-space-900 text-neon-cyan/70 text-[9px] uppercase tracking-wider border-b border-neon-cyan/30 flex items-center justify-between">
+                  <span>Agentes ({{ selectedAgents.length }})</span>
+                  <button
+                    type="button"
+                    @click.stop="selectAllAgents"
+                    class="text-[9px] text-neon-cyan hover:underline uppercase tracking-wider cursor-pointer"
+                  >
+                    {{ selectedAgents.length === agentsList.length ? 'Solo Atenea' : 'Todos' }}
+                  </button>
+                </div>
+                <div class="max-h-[220px] overflow-y-auto custom-scrollbar">
+                  <button 
+                    v-for="agent in agentsList" 
+                    :key="agent.value"
+                    type="button"
+                    @click.stop="toggleAgent(agent.value)"
+                    data-test="agent-option"
+                    :data-selected="selectedAgents.includes(agent.value)"
+                    class="w-full text-left px-3 py-2 transition-colors flex items-center justify-between cursor-pointer"
+                    :class="selectedAgents.includes(agent.value) ? 'bg-neon-cyan/10 text-neon-cyan' : 'text-slate-300 hover:bg-space-800 hover:text-cyan-200'"
+                  >
+                    <span class="flex items-center space-x-2 min-w-0">
+                      <span 
+                        class="w-3.5 h-3.5 rounded-sm border flex items-center justify-center shrink-0 transition-colors"
+                        :class="selectedAgents.includes(agent.value) ? 'border-neon-cyan bg-neon-cyan/20 text-neon-cyan' : 'border-slate-700 bg-space-900'"
+                      >
+                        <Check v-if="selectedAgents.includes(agent.value)" class="w-2.5 h-2.5 stroke-[3]" />
+                      </span>
+                      <span 
+                        class="w-1.5 h-1.5 rounded-full shrink-0" 
+                        :style="agent.colorHex ? { backgroundColor: agent.colorHex } : {}"
+                      ></span>
+                      <span class="font-bold text-[10px] md:text-[11px] truncate">{{ agent.label }}</span>
                     </span>
-                    <span 
-                      class="w-1.5 h-1.5 rounded-full shrink-0" 
-                      :style="agent.colorHex ? { backgroundColor: agent.colorHex } : {}"
-                    ></span>
-                    <span class="font-bold text-[10px] md:text-[11px] truncate">{{ agent.label }}</span>
-                  </span>
-                  <span v-if="selectedAgents.includes(agent.value)" class="w-1.5 h-1.5 rounded-full bg-neon-cyan glow-cyan shrink-0 ml-1"></span>
-                </button>
+                    <span v-if="selectedAgents.includes(agent.value)" class="w-1.5 h-1.5 rounded-full bg-neon-cyan glow-cyan shrink-0 ml-1"></span>
+                  </button>
+                </div>
               </div>
             </div>
+
+            <label 
+              v-if="selectedAgents.includes('learning')" 
+              for="chat-file-upload" 
+              class="cursor-pointer text-space-400 hover:text-neon-cyan transition-colors flex items-center justify-center px-3 py-1.5 min-h-[36px] md:min-h-0 border border-cyan-900/50 rounded bg-[#030509] hover:bg-space-800 shadow-[0_0_10px_-2px_rgba(0,229,255,0.05)] hover:border-neon-cyan/50" 
+              title="Adjuntar PDF, Markdown o Imagen para Metis"
+            >
+              <span class="sr-only">Adjuntar archivo</span>
+              <input 
+                id="chat-file-upload" 
+                type="file" 
+                multiple
+                accept=".pdf,.md,.markdown,.png,.jpg,.jpeg,.webp" 
+                @change="handleFileChange" 
+                class="hidden" 
+                data-test="file-input" 
+              />
+              <Paperclip class="w-4 h-4" />
+            </label>
           </div>
 
-          <label 
-            v-if="selectedAgents.includes('learning')" 
-            for="chat-file-upload" 
-            class="cursor-pointer text-space-400 hover:text-neon-cyan transition-colors flex items-center justify-center px-3 py-1.5 min-h-[36px] md:min-h-0 border border-cyan-900/50 rounded bg-[#030509] hover:bg-space-800 shadow-[0_0_10px_-2px_rgba(0,229,255,0.05)] hover:border-neon-cyan/50" 
-            title="Adjuntar PDF, Markdown o Imagen para Metis"
+          <!-- Right side: Scroll Top / Bottom Toggle Button -->
+          <button
+            v-if="isChatScrollable"
+            type="button"
+            @click="handleScrollToggle"
+            data-test="chat-scroll-toggle-btn"
+            class="relative group flex items-center justify-center min-h-[36px] min-w-[36px] md:min-h-0 md:h-[28px] md:w-[28px] bg-[#030509] border border-cyan-900/50 hover:border-neon-cyan/80 text-cyan-300 hover:text-white rounded shadow-[0_0_10px_-2px_rgba(0,229,255,0.1)] hover:shadow-[0_0_12px_rgba(0,229,255,0.3)] transition-all cursor-pointer shrink-0"
+            :title="scrollDirection === 'down' ? 'Bajar al final del chat' : 'Subir al inicio del chat'"
+            :aria-label="scrollDirection === 'down' ? 'Bajar al final del chat' : 'Subir al inicio del chat'"
           >
-            <span class="sr-only">Adjuntar archivo</span>
-            <input 
-              id="chat-file-upload" 
-              type="file" 
-              multiple
-              accept=".pdf,.md,.markdown,.png,.jpg,.jpeg,.webp" 
-              @change="handleFileChange" 
-              class="hidden" 
-              data-test="file-input" 
-            />
-            <Paperclip class="w-4 h-4" />
-          </label>
+            <ArrowDown v-if="scrollDirection === 'down'" class="w-3.5 h-3.5" />
+            <ArrowUp v-else class="w-3.5 h-3.5" />
+            <!-- Hover Tooltip -->
+            <span
+              class="pointer-events-none absolute bottom-full mb-1.5 right-0 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono text-cyan-200 border border-cyan-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+            >
+              {{ scrollDirection === 'down' ? 'Bajar al final' : 'Subir al inicio' }}
+            </span>
+          </button>
         </div>
         
         <div class="flex items-end gap-2 w-full">
@@ -1590,6 +1875,14 @@ defineExpose({
       :content="activeDocContent"
       :title="activeDocTitle"
       @close="closeDocumentModal"
+    />
+
+    <!-- Presentation Modal Visualizer (Calíope) -->
+    <PresentationModal
+      :is-open="isPresentationModalOpen"
+      :content="activePresentationContent"
+      :title="activePresentationTitle"
+      @close="closePresentationModal"
     />
   </div>
 </template>

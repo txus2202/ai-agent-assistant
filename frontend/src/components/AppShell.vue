@@ -189,7 +189,7 @@ const handleToggleMic = () => {
 </script>
 
 <template>
-  <div class="h-screen h-dvh w-full bg-space-950 flex flex-col overflow-hidden text-slate-900 dark:text-slate-300 font-sans">
+  <div class="h-screen h-[100svh] max-h-[100dvh] w-full bg-space-950 flex flex-col overflow-hidden text-slate-900 dark:text-slate-300 font-sans">
     
     <!-- Top Header -->
     <AppHeader />
@@ -284,7 +284,7 @@ const handleToggleMic = () => {
     <nav
       data-test="mobile-bottom-nav"
       aria-label="Navegación principal móvil"
-      class="md:hidden border-t border-cyan-900/40 bg-[#080e1a]/95 backdrop-blur-md px-2 py-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] flex items-center justify-around z-30 shrink-0"
+      class="md:hidden border-t border-cyan-900/40 bg-[#080e1a]/95 backdrop-blur-md px-2 py-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-center justify-around z-30 shrink-0"
     >
       <button
         type="button"

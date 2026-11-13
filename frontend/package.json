@@ -19,6 +19,7 @@
   "dependencies": {
     "mermaid": "^12.2.0",
     "pinia": "^4.0.3",
+    "pptxgenjs": "^4.0.1",
     "vue": "^3.5.42",
     "vue-router": "^5.3.1"
   },

@@ -1,12 +1,14 @@
 import { extractDocumentTitle } from './markdownRenderer'
+import { parsePresentation } from './slideParser'
 
 export interface MessageBlock {
-  type: 'text' | 'mermaid' | 'code' | 'image' | 'document'
+  type: 'text' | 'mermaid' | 'code' | 'image' | 'document' | 'presentation'
   content: string
   title?: string
   language?: string
   extension?: string
   alt?: string
+  slideCount?: number
 }
 
 const FENCED_CODE_REGEX = /```([a-zA-Z0-9_#+-]+)?(?:[ \t][^\n]*)?\n([\s\S]*?)```/g
@@ -106,7 +108,32 @@ function createFencedBlock(langRaw: string, codeContent: string): MessageBlock {
       content: codeContent
     }
   }
+  if (['presentation', 'slides', 'deck', 'slide', 'diapositiva'].includes(langRaw)) {
+    const parsed = parsePresentation(codeContent)
+    return {
+      type: 'presentation',
+      content: codeContent,
+      title: parsed.title,
+      slideCount: parsed.slides.length,
+      language: 'presentation',
+      extension: 'html'
+    }
+  }
   if (['markdown', 'md', 'doc', 'document'].includes(langRaw)) {
+    // If markdown has slide dividers `---` and slide headers, treat as presentation
+    if (codeContent.includes('---') && /(?:^|\n)##\s+(?:slide|diapositiva|\w+)/i.test(codeContent)) {
+      const parsed = parsePresentation(codeContent)
+      if (parsed.slides.length >= 2) {
+        return {
+          type: 'presentation',
+          content: codeContent,
+          title: parsed.title,
+          slideCount: parsed.slides.length,
+          language: 'presentation',
+          extension: 'html'
+        }
+      }
+    }
     return {
       type: 'document',
       content: codeContent,
@@ -138,6 +165,23 @@ function handleDocumentAgentFallback(rawContent: string): MessageBlock[] | null 
   if (preamble) {
     result.push(...parseTextAndImages(preamble))
   }
+
+  // Check if raw document contains slides
+  if (docContent.includes('---') && /(?:^|\n)##\s+(?:slide|diapositiva|\w+)/i.test(docContent)) {
+    const parsed = parsePresentation(docContent)
+    if (parsed.slides.length >= 2) {
+      result.push({
+        type: 'presentation',
+        content: docContent,
+        title: parsed.title,
+        slideCount: parsed.slides.length,
+        language: 'presentation',
+        extension: 'html'
+      })
+      return result
+    }
+  }
+
   result.push({
     type: 'document',
     content: docContent,

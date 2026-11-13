@@ -744,6 +744,59 @@ describe('ChatPanel.vue', () => {
     expect(wrapper.text()).toContain('Manual de Integración')
   })
 
+  it('renders presentation card for Caliope and opens PresentationModal when clicking Ver or Proyectar', async () => {
+    const messages = [
+      {
+        role: 'assistant' as const,
+        content: `Aquí tienes la presentación:
+\`\`\`presentation
+# Arquitectura Auth-Core
+---
+## Slide 1: Resumen Ejecutivo
+- Consistencia fuerte
+- Revocación inmediata
+---
+## Slide 2: Stack
+- PostgreSQL
+- Redis
+\`\`\``,
+        agentName: 'Calíope'
+      }
+    ]
+
+    const wrapper = mount(ChatPanel, {
+      props: { messages, isDebating: false }
+    })
+
+    const presCard = wrapper.find('[data-test="chat-presentation-card"]')
+    expect(presCard.exists()).toBe(true)
+    expect(presCard.text()).toContain('Presentación')
+    expect(presCard.text()).toContain('Arquitectura Auth-Core')
+    expect(presCard.text()).toContain('2 diapositivas listas para proyectar')
+
+    expect(wrapper.find('[data-test="chat-presentation-copy-btn"]').exists()).toBe(true)
+    const downloadMenuBtn = wrapper.find('[data-test="chat-presentation-download-btn"]')
+    expect(downloadMenuBtn.exists()).toBe(true)
+
+    // Click download button to open options dropdown
+    await downloadMenuBtn.trigger('click')
+    expect(wrapper.find('[data-test="chat-presentation-download-pptx-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="chat-presentation-download-html-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="chat-presentation-download-md-btn"]').exists()).toBe(true)
+
+    // Initially modal is closed
+    expect(wrapper.find('[data-test="presentation-modal-backdrop"]').exists()).toBe(false)
+
+    // Click view button
+    const viewBtn = wrapper.find('[data-test="chat-presentation-view-btn"]')
+    expect(viewBtn.exists()).toBe(true)
+    await viewBtn.trigger('click')
+
+    // Modal is now open
+    expect(wrapper.find('[data-test="presentation-modal-backdrop"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Resumen Ejecutivo')
+  })
+
   it('filters out mermaid diagram syntax from TTS audio synthesis', async () => {
     mockStore.isVoiceOutputEnabled = true
     mockStore.playTtsAudioChunk = vi.fn().mockResolvedValue(undefined)
@@ -909,6 +962,61 @@ describe('ChatPanel.vue', () => {
 
     expect(wrapper.find('[data-test="cancel-debate-btn"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="cancel-info-toggle-btn"]').exists()).toBe(false)
+  })
+
+  it('hides scroll toggle button when all chat text is visible (not scrollable)', async () => {
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: false }
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="chat-scroll-toggle-btn"]').exists()).toBe(false)
+  })
+
+  it('shows scroll toggle button pointing down in upper half and points up in lower half', async () => {
+    const wrapper = mount(ChatPanel, {
+      props: {
+        messages: [
+          { role: 'user', content: 'Pregunta 1' },
+          { role: 'assistant', content: 'Respuesta 1' }
+        ],
+        isDebating: false
+      }
+    })
+    await flushPromises()
+
+    const scrollEl = wrapper.find({ ref: 'chatScroll' }).element as HTMLElement
+    const scrollToMock = vi.fn()
+    scrollEl.scrollTo = scrollToMock
+
+    // Case 1: Scrollable container, user in upper half (scrollTop = 100, maxScroll = 600)
+    Object.defineProperty(scrollEl, 'scrollHeight', { value: 1000, configurable: true })
+    Object.defineProperty(scrollEl, 'clientHeight', { value: 400, configurable: true })
+    Object.defineProperty(scrollEl, 'scrollTop', { value: 100, configurable: true, writable: true })
+
+    await wrapper.find({ ref: 'chatScroll' }).trigger('scroll')
+    await flushPromises()
+
+    const btn = wrapper.find('[data-test="chat-scroll-toggle-btn"]')
+    expect(btn.exists()).toBe(true)
+    expect(btn.attributes('title')).toBe('Bajar al final del chat')
+    expect(btn.text()).toContain('Bajar al final')
+
+    // Clicking when in upper half scrolls to the bottom
+    await btn.trigger('click')
+    expect(scrollToMock).toHaveBeenCalledWith({ top: 1000, behavior: 'smooth' })
+
+    // Case 2: User in lower half (scrollTop = 450, halfway = 300)
+    scrollEl.scrollTop = 450
+    await wrapper.find({ ref: 'chatScroll' }).trigger('scroll')
+    await flushPromises()
+
+    expect(btn.attributes('title')).toBe('Subir al inicio del chat')
+    expect(btn.text()).toContain('Subir al inicio')
+
+    // Clicking when in lower half scrolls to the top
+    await btn.trigger('click')
+    expect(scrollToMock).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' })
   })
 })
 

@@ -95,7 +95,7 @@ onUnmounted(() => {
       v-if="isOpen"
       open
       data-test="image-modal-backdrop"
-      class="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-4 md:p-8 animate-fade-in border-0 m-0 w-full h-full max-w-none max-h-none text-inherit"
+      class="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-4 md:p-8 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] animate-fade-in border-0 m-0 w-full h-full max-w-none max-h-none text-inherit"
       @click.self="emit('close')"
       @cancel.prevent="emit('close')"
       @keydown="handleKeyDown"
@@ -104,47 +104,44 @@ onUnmounted(() => {
     >
       <!-- Modal Window -->
       <div
-        class="w-full max-w-5xl h-[88vh] bg-[#060a11] border border-cyan-500/40 rounded-2xl shadow-[0_0_50px_rgba(0,229,255,0.2)] flex flex-col overflow-hidden m-auto"
+        class="w-full max-w-5xl h-[94vh] sm:h-[88vh] max-h-[100dvh] bg-[#060a11] border border-pink-500/40 rounded-xl sm:rounded-2xl shadow-[0_0_50px_rgba(236,72,153,0.15)] flex flex-col overflow-hidden m-auto"
       >
         <!-- Modal Header -->
         <div
-          class="flex items-center justify-between px-6 py-4 border-b border-space-800 bg-[#080d1a]"
+          class="flex items-center justify-between px-3 sm:px-6 py-2.5 sm:py-4 border-b border-space-800 bg-[#080d1a] gap-2 min-w-0"
         >
-          <div class="flex items-center gap-3">
+          <!-- Left branding: Icon - Herramienta -->
+          <div class="flex items-center gap-2 sm:gap-2.5 shrink-0">
             <div
-              class="w-8 h-8 rounded-lg bg-pink-500/10 border border-pink-500/40 flex items-center justify-center text-pink-400 shadow-[0_0_10px_rgba(236,72,153,0.2)]"
+              class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-pink-500/10 border border-pink-500/40 flex items-center justify-center text-pink-400 shadow-[0_0_10px_rgba(236,72,153,0.2)] shrink-0"
             >
-              <ImageIcon class="w-4 h-4" />
+              <ImageIcon class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
-            <div>
-              <h3
-                id="image-modal-title"
-                class="text-sm font-mono font-bold text-white tracking-wider uppercase"
-              >
-                {{ title }}
-              </h3>
-              <span class="text-[10px] font-mono text-pink-400/80 tracking-widest uppercase">
-                Recurso Visual & Mockup UI
-              </span>
-            </div>
+            <h3
+              id="image-modal-title"
+              class="text-xs sm:text-sm font-mono font-bold text-pink-400 tracking-wider uppercase select-none"
+            >
+              Imágenes
+            </h3>
           </div>
 
           <!-- Controls Toolbar -->
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1 sm:gap-2 shrink-0">
             <!-- Zoom Controls -->
-            <div class="flex items-center bg-space-800 rounded-lg p-0.5 border border-space-700 mr-2">
+            <div class="flex items-center bg-[#030509] rounded-lg px-1 sm:px-2 py-0.5 sm:py-1 border border-space-700 font-mono text-xs text-slate-300">
               <button
                 type="button"
                 @click="zoomOut"
                 data-test="image-zoom-out-btn"
-                class="p-1.5 text-slate-400 hover:text-white rounded hover:bg-space-700 transition-colors cursor-pointer"
+                class="p-1 text-slate-400 hover:text-pink-300 transition-colors cursor-pointer"
                 title="Reducir zoom"
+                aria-label="Reducir zoom"
               >
                 <ZoomOut class="w-3.5 h-3.5" />
               </button>
               <span
                 data-test="image-zoom-level"
-                class="px-2 text-[11px] font-mono text-slate-300 min-w-11 text-center select-none"
+                class="text-[10px] sm:text-[11px] w-8 sm:w-11 text-center text-pink-300 font-bold select-none"
               >
                 {{ Math.round(zoomLevel * 100) }}%
               </span>
@@ -152,8 +149,9 @@ onUnmounted(() => {
                 type="button"
                 @click="zoomIn"
                 data-test="image-zoom-in-btn"
-                class="p-1.5 text-slate-400 hover:text-white rounded hover:bg-space-700 transition-colors cursor-pointer"
+                class="p-1 text-slate-400 hover:text-pink-300 transition-colors cursor-pointer"
                 title="Aumentar zoom"
+                aria-label="Aumentar zoom"
               >
                 <ZoomIn class="w-3.5 h-3.5" />
               </button>
@@ -161,8 +159,9 @@ onUnmounted(() => {
                 type="button"
                 @click="resetZoom"
                 data-test="image-zoom-reset-btn"
-                class="p-1.5 text-slate-400 hover:text-white rounded hover:bg-space-700 transition-colors cursor-pointer border-l border-space-700 ml-0.5"
+                class="p-1 text-slate-400 hover:text-pink-300 transition-colors cursor-pointer border-l border-space-700 ml-0.5"
                 title="Restablecer zoom"
+                aria-label="Restablecer zoom"
               >
                 <RotateCcw class="w-3 h-3" />
               </button>
@@ -173,12 +172,12 @@ onUnmounted(() => {
               type="button"
               @click="copyImageUrl"
               data-test="image-modal-copy-btn"
-              class="relative group p-2 rounded-lg bg-space-800 hover:bg-space-700 text-slate-300 hover:text-white border border-space-700 transition-colors cursor-pointer flex items-center justify-center"
+              class="relative group p-1.5 sm:p-2 rounded-lg bg-[#030509] hover:bg-space-700 text-slate-300 hover:text-white border border-space-700 transition-colors cursor-pointer flex items-center justify-center shrink-0"
               :title="isCopied ? 'Enlace copiado' : 'Copiar enlace de la imagen'"
               :aria-label="isCopied ? 'Enlace copiado' : 'Copiar enlace de la imagen'"
             >
-              <Check v-if="isCopied" class="w-4 h-4 text-emerald-400" />
-              <Copy v-else class="w-4 h-4" />
+              <Check v-if="isCopied" class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" />
+              <Copy v-else class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <!-- Hover Tooltip -->
               <span
                 class="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono text-pink-300 border border-pink-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
@@ -192,11 +191,11 @@ onUnmounted(() => {
               type="button"
               @click="downloadImage"
               data-test="image-modal-download-btn"
-              class="relative group p-2 rounded-lg bg-pink-500/15 hover:bg-pink-500/25 border border-pink-500 text-pink-300 transition-colors cursor-pointer flex items-center justify-center"
+              class="relative group p-1.5 sm:p-2 rounded-lg bg-pink-500/15 hover:bg-pink-500/25 border border-pink-500 text-pink-300 transition-colors cursor-pointer flex items-center justify-center shrink-0"
               title="Descargar imagen"
               aria-label="Descargar imagen"
             >
-              <Download class="w-4 h-4" />
+              <Download class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <!-- Hover Tooltip -->
               <span
                 class="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono font-bold text-pink-300 border border-pink-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
@@ -210,11 +209,11 @@ onUnmounted(() => {
               type="button"
               @click="emit('close')"
               data-test="image-modal-close-btn"
-              class="relative group p-2 rounded-lg bg-space-800 hover:bg-space-700 text-slate-400 hover:text-white flex items-center justify-center border border-space-700 transition-colors ml-2 cursor-pointer"
+              class="relative group p-1.5 sm:p-2 rounded-lg bg-[#030509] border border-space-700 hover:border-red-500/50 hover:bg-red-950/30 text-slate-400 hover:text-red-400 transition-colors ml-0.5 sm:ml-1 cursor-pointer flex items-center justify-center shrink-0"
               title="Cerrar (Esc)"
               aria-label="Cerrar"
             >
-              <X class="w-4 h-4" />
+              <X class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <!-- Hover Tooltip -->
               <span
                 class="pointer-events-none absolute top-full mt-2 right-0 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono text-slate-300 border border-space-700 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"

@@ -1,8 +1,10 @@
-import { onMounted, onUnmounted, type Ref } from 'vue'
+import { watch, onMounted, onUnmounted, getCurrentInstance, type Ref } from 'vue'
 
 export interface TouchSwipeOptions {
   onSwipeUp?: () => void
   onSwipeDown?: () => void
+  onSwipeLeft?: () => void
+  onSwipeRight?: () => void
   threshold?: number
 }
 
@@ -22,18 +24,32 @@ export function setupSwipeListener(
   let touchCurrentY = 0
   let touchCurrentX = 0
   let isTrackingTouch = false
+  let lastTouchEndTime = 0
 
   const triggerSwipeIfExceeded = (deltaY: number, deltaX: number) => {
-    if (Math.abs(deltaY) >= threshold && Math.abs(deltaY) > Math.abs(deltaX) * 1.1) {
+    const absY = Math.abs(deltaY)
+    const absX = Math.abs(deltaX)
+    if (absY >= threshold && absY > absX * 1.1) {
       if (deltaY < 0) {
         options.onSwipeUp?.()
       } else {
         options.onSwipeDown?.()
       }
+    } else if (absX >= threshold && absX > absY * 1.1) {
+      if (deltaX < 0) {
+        options.onSwipeLeft?.()
+      } else {
+        options.onSwipeRight?.()
+      }
     }
   }
 
+  const isInteractive = (target: EventTarget | null): boolean => {
+    return Boolean((target as HTMLElement)?.closest?.('button, a, input, textarea, select, [role="button"]'))
+  }
+
   const handleTouchStart = (e: TouchEvent) => {
+    if (isInteractive(e.target)) return
     const list = e.touches?.length ? e.touches : e.changedTouches
     if (list?.length !== 1) return
     const touch = list[0]
@@ -56,6 +72,7 @@ export function setupSwipeListener(
   const handleTouchEnd = (e: TouchEvent) => {
     if (!isTrackingTouch) return
     isTrackingTouch = false
+    lastTouchEndTime = Date.now()
     const touch = e.changedTouches[0] || e.touches[0]
     const endY = touch ? touch.clientY : touchCurrentY
     const endX = touch ? touch.clientX : touchCurrentX
@@ -67,6 +84,7 @@ export function setupSwipeListener(
   const handleTouchCancel = () => {
     if (!isTrackingTouch) return
     isTrackingTouch = false
+    lastTouchEndTime = Date.now()
     const deltaY = touchCurrentY - touchStartY
     const deltaX = touchCurrentX - touchStartX
     triggerSwipeIfExceeded(deltaY, deltaX)
@@ -79,6 +97,10 @@ export function setupSwipeListener(
   let isTrackingPointer = false
 
   const handlePointerDown = (e: PointerEvent) => {
+    if (isInteractive(e.target)) return
+    // If touch was recently active, ignore synthetic pointer events to avoid double-triggers
+    if (Date.now() - lastTouchEndTime < 500) return
+    if (isTrackingTouch) return
     if (e.pointerType === 'mouse' && e.button !== 0) return
     pointerStartY = e.clientY
     pointerStartX = e.clientX
@@ -132,7 +154,8 @@ export function setupSwipeListener(
 
 /**
  * Vue Composable for touch/pointer swipe gestures.
- * Zero external dependencies.
+ * Watches elementRef dynamically so elements mounted via v-if or teleport
+ * attach listeners reliably.
  */
 export function useTouchSwipe(
   elementRef: Ref<HTMLElement | null>,
@@ -140,17 +163,37 @@ export function useTouchSwipe(
 ) {
   let cleanup: (() => void) | null = null
 
-  onMounted(() => {
-    if (elementRef.value) {
-      cleanup = setupSwipeListener(elementRef.value, options)
-    }
-  })
-
-  onUnmounted(() => {
+  const attach = (el: HTMLElement | null) => {
     if (cleanup) {
       cleanup()
       cleanup = null
     }
-  })
+    if (el) {
+      cleanup = setupSwipeListener(el, options)
+    }
+  }
+
+  watch(
+    elementRef,
+    (newEl) => {
+      attach(newEl)
+    },
+    { immediate: true, flush: 'post' }
+  )
+
+  if (getCurrentInstance()) {
+    onMounted(() => {
+      if (elementRef.value && !cleanup) {
+        attach(elementRef.value)
+      }
+    })
+
+    onUnmounted(() => {
+      if (cleanup) {
+        cleanup()
+        cleanup = null
+      }
+    })
+  }
 }
 

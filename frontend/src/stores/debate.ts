@@ -175,6 +175,28 @@ export function findSentenceSplitIndex(buffer: string): number {
   return -1
 }
 
+export function resolveHitlUserMessage(
+  decision: HitlDecisionType,
+  feedback?: string,
+  effectiveTargets?: string[]
+): string | null {
+  if ((decision === 'refine' || decision === 'divert') && feedback?.trim()) {
+    return feedback.trim()
+  }
+  if (decision === 'consolidate') {
+    return 'Concluir debate y consolidar dictamen final con Atenea.'
+  }
+  if (decision === 'finish') {
+    return 'Finalizar debate inmediatamente sin consolidación.'
+  }
+  if (decision === 'retry') {
+    return effectiveTargets?.length
+      ? `Reintentar ejecución de fase para agentes: ${effectiveTargets.join(', ')}.`
+      : 'Reintentar ejecución de la fase.'
+  }
+  return null
+}
+
 export const useDebateStore = defineStore('debate', () => {
   const isConnected = ref(false)
   const isDebating = ref(false)
@@ -657,6 +679,20 @@ export const useDebateStore = defineStore('debate', () => {
     }
     
     isDebating.value = debate.status === 'running'
+
+    // Historical conversations loaded from history must always have HITL closed
+    completeCheckpointAgent(hitlCheckpoint.value)
+    isHitlRequired.value = false
+    hitlCheckpoint.value = null
+    hitlTargetAgents.value = []
+
+    if (!isDebating.value) {
+      agents.value.forEach(a => {
+        if (a.state === 'ACTIVE') {
+          a.state = 'COMPLETED'
+        }
+      })
+    }
   }
 
   function startDebate(userRequest: string, targetAgent: string | string[] = 'supervisor', attachmentUrl: string | string[] | null = null) {
@@ -1286,28 +1322,6 @@ export const useDebateStore = defineStore('debate', () => {
     if (ag?.state === 'ACTIVE' && ag?.role !== 'supervisor') {
       ag.state = 'COMPLETED'
     }
-  }
-
-  function resolveHitlUserMessage(
-    decision: HitlDecisionType,
-    feedback?: string,
-    effectiveTargets?: string[]
-  ): string | null {
-    if ((decision === 'refine' || decision === 'divert') && feedback?.trim()) {
-      return feedback.trim()
-    }
-    if (decision === 'consolidate') {
-      return 'Concluir debate y consolidar dictamen final con Atenea.'
-    }
-    if (decision === 'finish') {
-      return 'Finalizar debate inmediatamente sin consolidación.'
-    }
-    if (decision === 'retry') {
-      return effectiveTargets?.length
-        ? `Reintentar ejecución de fase para agentes: ${effectiveTargets.join(', ')}.`
-        : 'Reintentar ejecución de la fase.'
-    }
-    return null
   }
 
   function submitHitlDecision(

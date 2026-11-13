@@ -30,7 +30,7 @@ describe('ImageModal.vue', () => {
     })
 
     expect(wrapper.find('[data-test="image-modal-backdrop"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Mockup UI Fidias')
+    expect(wrapper.text()).toContain('Imágenes')
     const img = wrapper.find('[data-test="image-modal-img"]')
     expect(img.attributes('src')).toBe('https://example.com/mockup.png')
     expect(img.attributes('alt')).toBe('Mockup UI Fidias')

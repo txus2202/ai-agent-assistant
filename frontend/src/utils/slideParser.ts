@@ -21,7 +21,7 @@ export interface PresentationData {
 }
 
 const LAYOUT_REGEX = /<!--\s*layout:\s*(hero|cards|split|standard)\s*-->/i
-const NOTES_REGEX = /<!--\s*notes:\s*([\s\S]*?)\s*-->/i
+const NOTES_REGEX = /<!--\s*notes:\s*([\s\S]*?)-->/i
 
 function cleanSlideTitle(rawTitle: string): string {
   // Strip "Slide 1:", "Diapositiva 2 -", etc.
@@ -33,20 +33,26 @@ function parseCards(content: string): SlideCard[] {
   const cardChunks = content.split(/(?=^###\s+)/m)
 
   for (const chunk of cardChunks) {
-    const match = /^###\s+([^\n]+)\n?([\s\S]*)/.exec(chunk.trim())
-    if (match && match[1]) {
+    const trimmedChunk = chunk.trim()
+    const match = /^###\s+([^\n]+)(?:\n([\s\S]*))?$/.exec(trimmedChunk)
+    if (match?.[1]) {
       const headerRaw = match[1].trim()
       const body = match[2]?.trim() || ''
 
-      // Check if header contains a badge e.g. "PostgreSQL [SSOT]"
-      const badgeMatch = /\[([^\]]+)\]/.exec(headerRaw)
-      const badge = badgeMatch?.[1] ? badgeMatch[1] : undefined
-      const title = headerRaw.replace(/\[[^\]]+\]/, '').trim()
+      const openBracket = headerRaw.indexOf('[')
+      const closeBracket = headerRaw.indexOf(']', openBracket)
+      let badge: string | undefined
+      let title = headerRaw
+
+      if (openBracket !== -1 && closeBracket > openBracket) {
+        badge = headerRaw.slice(openBracket + 1, closeBracket).trim()
+        title = (headerRaw.slice(0, openBracket) + headerRaw.slice(closeBracket + 1)).trim()
+      }
 
       cards.push({
         title,
         content: body,
-        badge
+        badge: badge || undefined
       })
     }
   }
@@ -68,19 +74,55 @@ function parseBullets(content: string): string[] {
   return bullets
 }
 
+function extractSlideTitle(cleanChunk: string, slideIndex: number): { title: string; remainingBody: string } {
+  const titleMatch = /^##\s+([^\n]+)/m.exec(cleanChunk)
+  if (titleMatch?.[1]) {
+    return {
+      title: cleanSlideTitle(titleMatch[1]),
+      remainingBody: cleanChunk.replace(titleMatch[0], '').trim()
+    }
+  }
+
+  const firstLine = cleanChunk.split('\n')[0]?.trim() || ''
+  if (firstLine.startsWith('#')) {
+    return {
+      title: cleanSlideTitle(firstLine.replace(/^#+\s*/, '')),
+      remainingBody: cleanChunk.slice(firstLine.length).trim()
+    }
+  }
+
+  return {
+    title: `Diapositiva ${slideIndex}`,
+    remainingBody: cleanChunk
+  }
+}
+
+function resolveSlideLayout(
+  explicitLayout: 'hero' | 'cards' | 'split' | 'standard' | undefined,
+  slideIndex: number,
+  cardsCount: number,
+  hasSubtitle: boolean,
+  bulletsCount: number
+): 'hero' | 'cards' | 'split' | 'standard' {
+  if (explicitLayout) return explicitLayout
+  if (cardsCount > 0) return 'cards'
+  if (slideIndex === 1 && (hasSubtitle || bulletsCount <= 3)) return 'hero'
+  return 'standard'
+}
+
 function parseSingleSlide(rawChunk: string, slideIndex: number): Slide | null {
   const trimmed = rawChunk.trim()
   if (!trimmed) return null
 
   // Extract layout comment
   const layoutMatch = LAYOUT_REGEX.exec(trimmed)
-  let layout: 'hero' | 'cards' | 'split' | 'standard' | undefined = layoutMatch?.[1]
+  const explicitLayout = layoutMatch?.[1]
     ? (layoutMatch[1].toLowerCase() as 'hero' | 'cards' | 'split' | 'standard')
     : undefined
 
   // Extract presenter notes
   const notesMatch = NOTES_REGEX.exec(trimmed)
-  const notes = notesMatch?.[1] ? notesMatch[1].trim() : undefined
+  const notes = notesMatch?.[1]?.trim() || undefined
 
   // Clean raw chunk removing comments for body processing
   const cleanChunk = trimmed
@@ -89,21 +131,8 @@ function parseSingleSlide(rawChunk: string, slideIndex: number): Slide | null {
     .trim()
 
   // Extract Title (## or first line)
-  let title = `Diapositiva ${slideIndex}`
-  let remainingBody = cleanChunk
-
-  const titleMatch = /^##\s+([^\n]+)/m.exec(cleanChunk)
-  if (titleMatch?.[1]) {
-    title = cleanSlideTitle(titleMatch[1])
-    remainingBody = cleanChunk.replace(titleMatch[0], '').trim()
-  } else {
-    // If no ##, check first non-empty line
-    const firstLine = cleanChunk.split('\n')[0]?.trim() || ''
-    if (firstLine.startsWith('#')) {
-      title = cleanSlideTitle(firstLine.replace(/^#+\s*/, ''))
-      remainingBody = cleanChunk.slice(firstLine.length).trim()
-    }
-  }
+  const { title, remainingBody: afterTitleBody } = extractSlideTitle(cleanChunk, slideIndex)
+  let remainingBody = afterTitleBody
 
   // Extract Subtitle (> blockquote)
   let subtitle: string | undefined
@@ -127,15 +156,7 @@ function parseSingleSlide(rawChunk: string, slideIndex: number): Slide | null {
   const bullets = parseBullets(bodyForBullets)
 
   // Auto infer layout if not specified
-  if (!layout) {
-    if (cards.length > 0) {
-      layout = 'cards'
-    } else if (slideIndex === 1 && (subtitle || bullets.length <= 3)) {
-      layout = 'hero'
-    } else {
-      layout = 'standard'
-    }
-  }
+  const layout = resolveSlideLayout(explicitLayout, slideIndex, cards.length, Boolean(subtitle), bullets.length)
 
   return {
     index: slideIndex,
@@ -167,7 +188,7 @@ export function parsePresentation(rawContent: string): PresentationData {
   let contentWithoutMainTitle = trimmed
 
   const mainTitleMatch = /^#\s+([^\n]+)/m.exec(trimmed)
-  if (mainTitleMatch && mainTitleMatch[1]) {
+  if (mainTitleMatch?.[1]) {
     presentationTitle = mainTitleMatch[1].trim()
     contentWithoutMainTitle = trimmed.replace(mainTitleMatch[0], '').trim()
   }

@@ -3,11 +3,11 @@ import PptxGenJS from 'pptxgenjs'
 
 function escapeHtml(str: string): string {
   return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
 }
 
 function renderBulletsHtml(bullets: string[]): string {
@@ -23,12 +23,18 @@ function renderBulletsHtml(bullets: string[]): string {
   return `<ul class="list-none p-0 my-3">${items}</ul>`
 }
 
+function getGridColsClass(count: number): string {
+  if (count === 2) return 'grid-cols-1 md:grid-cols-2'
+  if (count >= 3) return 'grid-cols-1 md:grid-cols-3'
+  return 'grid-cols-1'
+}
+
 function renderCardsHtml(cards: Slide['cards']): string {
   if (!cards.length) return ''
   const items = cards.map(c => {
     const formattedContent = escapeHtml(c.content)
       .replace(/\*\*([^*]+)\*\*/g, '<strong class="text-cyan-300 font-bold">$1</strong>')
-      .replace(/\n- /g, '<br/>• ')
+      .replaceAll('\n- ', '<br/>• ')
       .replace(/^- /g, '• ')
 
     const badgeHtml = c.badge
@@ -46,7 +52,7 @@ function renderCardsHtml(cards: Slide['cards']): string {
     </div>`
   }).join('')
 
-  const gridCols = cards.length === 2 ? 'grid-cols-1 md:grid-cols-2' : cards.length >= 3 ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-1'
+  const gridCols = getGridColsClass(cards.length)
   return `<div class="grid ${gridCols} gap-4 my-4 w-full">${items}</div>`
 }
 
@@ -285,6 +291,176 @@ export function downloadPresentationMarkdown(rawContent: string, filename?: stri
   }
 }
 
+function renderPptxSubtitle(
+  pSlide: ReturnType<PptxGenJS['addSlide']>,
+  pres: PptxGenJS,
+  subtitle: string,
+  isHero: boolean,
+  currentY: number,
+  marginX: number,
+  contentWidth: number
+): number {
+  const subH = 0.6
+  pSlide.addShape(pres.ShapeType.rect, {
+    x: marginX,
+    y: currentY,
+    w: contentWidth,
+    h: subH,
+    fill: { color: '081C38' },
+    line: { color: '00E5FF', width: 1 }
+  })
+
+  pSlide.addText(subtitle, {
+    x: marginX + 0.2,
+    y: currentY,
+    w: contentWidth - 0.4,
+    h: subH,
+    fontSize: 11,
+    fontFace: 'Arial',
+    color: 'BAE6FD',
+    italic: true,
+    valign: 'middle',
+    align: isHero ? 'center' : 'left',
+    fit: 'shrink'
+  })
+
+  return currentY + subH + 0.25
+}
+
+function calculatePptxContentHeights(
+  hasCards: boolean,
+  hasBullets: boolean,
+  availableHeight: number,
+  currentY: number
+): { cardsHeight: number; bulletsHeight: number; bulletsY: number } {
+  if (hasCards && hasBullets) {
+    const cardsHeight = Math.min(2.8, (availableHeight - 0.2) * 0.52)
+    const bulletsHeight = availableHeight - cardsHeight - 0.2
+    return { cardsHeight, bulletsHeight, bulletsY: currentY + cardsHeight + 0.2 }
+  }
+  if (hasCards) {
+    return { cardsHeight: Math.min(availableHeight, 4.2), bulletsHeight: 0, bulletsY: currentY }
+  }
+  if (hasBullets) {
+    return { cardsHeight: 0, bulletsHeight: availableHeight, bulletsY: currentY }
+  }
+  return { cardsHeight: 0, bulletsHeight: 0, bulletsY: currentY }
+}
+
+function renderPptxCards(
+  pSlide: ReturnType<PptxGenJS['addSlide']>,
+  pres: PptxGenJS,
+  cards: Slide['cards'],
+  currentY: number,
+  cardsHeight: number,
+  marginX: number,
+  contentWidth: number
+): void {
+  const count = cards.length
+  if (count === 0) return
+
+  const gap = count === 2 ? 0.4 : 0.3
+  const cardWidth = (contentWidth - gap * (count - 1)) / count
+
+  cards.forEach((card, idx) => {
+    const cardX = marginX + idx * (cardWidth + gap)
+
+    pSlide.addShape(pres.ShapeType.rect, {
+      x: cardX,
+      y: currentY,
+      w: cardWidth,
+      h: cardsHeight,
+      fill: { color: '0A162B' },
+      line: { color: '1E3A5F', width: 1 }
+    })
+
+    const titleText = card.badge ? `${card.title.toUpperCase()}  [${card.badge}]` : card.title.toUpperCase()
+    pSlide.addText(titleText, {
+      x: cardX + 0.15,
+      y: currentY + 0.12,
+      w: cardWidth - 0.3,
+      h: 0.38,
+      fontSize: count >= 3 ? 11 : 12,
+      fontFace: 'Arial',
+      color: '00E5FF',
+      bold: true,
+      fit: 'shrink'
+    })
+
+    const cleanContent = card.content.replace(/\*\*([^*]+)\*\*/g, '$1')
+    pSlide.addText(cleanContent, {
+      x: cardX + 0.15,
+      y: currentY + 0.52,
+      w: cardWidth - 0.3,
+      h: Math.max(0.8, cardsHeight - 0.62),
+      fontSize: count >= 3 ? 9.5 : 10.5,
+      fontFace: 'Arial',
+      color: 'E2E8F0',
+      valign: 'top',
+      lineSpacing: 16,
+      fit: 'shrink'
+    })
+  })
+}
+
+function getBulletFontSize(isHero: boolean, bulletCount: number): number {
+  if (isHero) return 13
+  return bulletCount > 5 ? 11 : 12.5
+}
+
+function renderPptxBullets(
+  pSlide: ReturnType<PptxGenJS['addSlide']>,
+  bullets: string[],
+  isHero: boolean,
+  bulletsY: number,
+  bulletsHeight: number,
+  marginX: number,
+  contentWidth: number
+): void {
+  const bulletCount = bullets.length
+  if (bulletCount === 0) return
+
+  const fontSize = getBulletFontSize(isHero, bulletCount)
+  const bulletsText = bullets.map(b => ({
+    text: b.replace(/\*\*([^*]+)\*\*/g, '$1'),
+    options: {
+      bullet: true,
+      color: 'E2E8F0',
+      fontSize,
+      breakLine: true
+    }
+  }))
+
+  pSlide.addText(bulletsText, {
+    x: isHero ? marginX + 1.2 : marginX,
+    y: bulletsY,
+    w: isHero ? contentWidth - 2.4 : contentWidth,
+    h: bulletsHeight,
+    valign: 'top',
+    lineSpacing: bulletCount > 5 ? 18 : 22,
+    align: isHero ? 'center' : 'left',
+    fit: 'shrink'
+  })
+}
+
+function renderPptxNotes(
+  pSlide: ReturnType<PptxGenJS['addSlide']>,
+  notes: string,
+  marginX: number,
+  contentWidth: number
+): void {
+  pSlide.addText(`Nota: ${notes}`, {
+    x: marginX,
+    y: 6.95,
+    w: contentWidth,
+    h: 0.35,
+    fontSize: 9,
+    fontFace: 'Courier New',
+    color: '64748B',
+    fit: 'shrink'
+  })
+}
+
 /**
  * Exports presentation slides to Microsoft PowerPoint (.pptx) format.
  * Applies Atenea's cybernetic theme with high contrast, elegant cards, and clear typography.
@@ -316,9 +492,9 @@ export async function exportPresentationPptx(data: PresentationData, filename?: 
     })
 
     const isHero = slide.layout === 'hero'
+    const titleH = isHero ? 0.75 : 0.65
 
     // Slide Title
-    const titleH = isHero ? 0.75 : 0.65
     pSlide.addText(slide.title.toUpperCase(), {
       x: marginX,
       y: 0.75,
@@ -334,36 +510,10 @@ export async function exportPresentationPptx(data: PresentationData, filename?: 
 
     let currentY = 0.75 + titleH + 0.15
 
-    // Subtitle / Executive Summary Box
     if (slide.subtitle) {
-      const subH = 0.6
-      pSlide.addShape(pres.ShapeType.rect, {
-        x: marginX,
-        y: currentY,
-        w: contentWidth,
-        h: subH,
-        fill: { color: '081C38' },
-        line: { color: '00E5FF', width: 1 }
-      })
-
-      pSlide.addText(slide.subtitle, {
-        x: marginX + 0.2,
-        y: currentY,
-        w: contentWidth - 0.4,
-        h: subH,
-        fontSize: 11,
-        fontFace: 'Arial',
-        color: 'BAE6FD',
-        italic: true,
-        valign: 'middle',
-        align: isHero ? 'center' : 'left',
-        fit: 'shrink'
-      })
-
-      currentY += subH + 0.25
+      currentY = renderPptxSubtitle(pSlide, pres, slide.subtitle, isHero, currentY, marginX, contentWidth)
     }
 
-    // Determine bottom boundary and available height for content
     const hasNotes = Boolean(slide.notes)
     const maxBottom = hasNotes ? 6.75 : 7.05
     const availableHeight = Math.max(1.8, maxBottom - currentY)
@@ -371,111 +521,23 @@ export async function exportPresentationPptx(data: PresentationData, filename?: 
     const hasCards = Boolean(slide.cards && slide.cards.length > 0)
     const hasBullets = Boolean(slide.bullets && slide.bullets.length > 0)
 
-    // Calculate vertical allocation
-    let cardsHeight = 0
-    let bulletsHeight = 0
-    let bulletsY = currentY
+    const { cardsHeight, bulletsHeight, bulletsY } = calculatePptxContentHeights(
+      hasCards,
+      hasBullets,
+      availableHeight,
+      currentY
+    )
 
-    if (hasCards && hasBullets) {
-      cardsHeight = Math.min(2.8, (availableHeight - 0.2) * 0.52)
-      bulletsHeight = availableHeight - cardsHeight - 0.2
-      bulletsY = currentY + cardsHeight + 0.2
-    } else if (hasCards) {
-      cardsHeight = Math.min(availableHeight, 4.2)
-    } else if (hasBullets) {
-      bulletsHeight = availableHeight
-      bulletsY = currentY
-    }
-
-    // Render Cards Layout
     if (hasCards && slide.cards && slide.cards.length > 0) {
-      const count = slide.cards.length
-      const gap = count === 2 ? 0.4 : 0.3
-      const cardWidth = (contentWidth - gap * (count - 1)) / count
-
-      slide.cards.forEach((card, idx) => {
-        const cardX = marginX + idx * (cardWidth + gap)
-
-        // Card Container Shape
-        pSlide.addShape(pres.ShapeType.rect, {
-          x: cardX,
-          y: currentY,
-          w: cardWidth,
-          h: cardsHeight,
-          fill: { color: '0A162B' },
-          line: { color: '1E3A5F', width: 1 }
-        })
-
-        // Card Title & Badge
-        const titleText = card.badge ? `${card.title.toUpperCase()}  [${card.badge}]` : card.title.toUpperCase()
-        pSlide.addText(titleText, {
-          x: cardX + 0.15,
-          y: currentY + 0.12,
-          w: cardWidth - 0.3,
-          h: 0.38,
-          fontSize: count >= 3 ? 11 : 12,
-          fontFace: 'Arial',
-          color: '00E5FF',
-          bold: true,
-          fit: 'shrink'
-        })
-
-        // Card Content
-        const cleanContent = card.content.replace(/\*\*([^*]+)\*\*/g, '$1')
-        pSlide.addText(cleanContent, {
-          x: cardX + 0.15,
-          y: currentY + 0.52,
-          w: cardWidth - 0.3,
-          h: Math.max(0.8, cardsHeight - 0.62),
-          fontSize: count >= 3 ? 9.5 : 10.5,
-          fontFace: 'Arial',
-          color: 'E2E8F0',
-          valign: 'top',
-          lineSpacing: 16,
-          fit: 'shrink'
-        })
-      })
-
-      currentY += cardsHeight + 0.2
+      renderPptxCards(pSlide, pres, slide.cards, currentY, cardsHeight, marginX, contentWidth)
     }
 
-    // Render Bullets Layout
     if (hasBullets && slide.bullets && slide.bullets.length > 0) {
-      const bulletCount = slide.bullets.length
-      const bulletsText = slide.bullets.map(b => ({
-        text: b.replace(/\*\*([^*]+)\*\*/g, '$1'),
-        options: {
-          bullet: true,
-          color: 'E2E8F0',
-          fontSize: isHero ? 13 : (bulletCount > 5 ? 11 : 12.5),
-          breakLine: true
-        }
-      }))
-
-      pSlide.addText(bulletsText, {
-        x: isHero ? marginX + 1.2 : marginX,
-        y: bulletsY,
-        w: isHero ? contentWidth - 2.4 : contentWidth,
-        h: bulletsHeight,
-        valign: 'top',
-        lineSpacing: bulletCount > 5 ? 18 : 22,
-        align: isHero ? 'center' : 'left',
-        fit: 'shrink'
-      })
+      renderPptxBullets(pSlide, slide.bullets, isHero, bulletsY, bulletsHeight, marginX, contentWidth)
     }
 
-    // Footer Notes
     if (slide.notes) {
-      pSlide.addText(`Nota: ${slide.notes}`, {
-        x: marginX,
-        y: 6.95,
-        w: contentWidth,
-        h: 0.35,
-        fontSize: 9,
-        fontFace: 'Courier New',
-        color: '64748B',
-        fit: 'shrink'
-      })
+      renderPptxNotes(pSlide, slide.notes, marginX, contentWidth)
     }
   })
 

@@ -4,11 +4,13 @@ export interface SlideCard {
   badge?: string
 }
 
+export type SlideLayout = 'hero' | 'cards' | 'split' | 'standard'
+
 export interface Slide {
   index: number
   title: string
   subtitle?: string
-  layout: 'hero' | 'cards' | 'split' | 'standard'
+  layout: SlideLayout
   bullets: string[]
   cards: SlideCard[]
   notes?: string
@@ -21,7 +23,25 @@ export interface PresentationData {
 }
 
 const LAYOUT_REGEX = /<!--\s*layout:\s*(hero|cards|split|standard)\s*-->/i
-const NOTES_REGEX = /<!--\s*notes:\s*([\s\S]*?)-->/i
+
+function extractNotes(content: string): { notes?: string; cleaned: string } {
+  const startComment = content.search(/<!--\s*notes:/i)
+  if (startComment === -1) {
+    return { cleaned: content }
+  }
+  const prefixMatch = content.slice(startComment).match(/^<!--\s*notes:\s*/i)
+  if (!prefixMatch) {
+    return { cleaned: content }
+  }
+  const contentStart = startComment + prefixMatch[0].length
+  const endComment = content.indexOf('-->', contentStart)
+  if (endComment === -1) {
+    return { cleaned: content }
+  }
+  const notes = content.slice(contentStart, endComment).trim()
+  const cleaned = (content.slice(0, startComment) + content.slice(endComment + 3)).trim()
+  return { notes: notes || undefined, cleaned }
+}
 
 function cleanSlideTitle(rawTitle: string): string {
   // Strip "Slide 1:", "Diapositiva 2 -", etc.
@@ -34,27 +54,30 @@ function parseCards(content: string): SlideCard[] {
 
   for (const chunk of cardChunks) {
     const trimmedChunk = chunk.trim()
-    const match = /^###\s+([^\n]+)(?:\n([\s\S]*))?$/.exec(trimmedChunk)
-    if (match?.[1]) {
-      const headerRaw = match[1].trim()
-      const body = match[2]?.trim() || ''
+    if (!trimmedChunk.startsWith('###')) continue
 
-      const openBracket = headerRaw.indexOf('[')
-      const closeBracket = headerRaw.indexOf(']', openBracket)
-      let badge: string | undefined
-      let title = headerRaw
+    const firstNewline = trimmedChunk.indexOf('\n')
+    const firstLine = firstNewline === -1 ? trimmedChunk : trimmedChunk.slice(0, firstNewline)
+    const headerRaw = firstLine.replace(/^###\s+/, '').trim()
+    if (!headerRaw) continue
 
-      if (openBracket !== -1 && closeBracket > openBracket) {
-        badge = headerRaw.slice(openBracket + 1, closeBracket).trim()
-        title = (headerRaw.slice(0, openBracket) + headerRaw.slice(closeBracket + 1)).trim()
-      }
+    const body = firstNewline === -1 ? '' : trimmedChunk.slice(firstNewline + 1).trim()
 
-      cards.push({
-        title,
-        content: body,
-        badge: badge || undefined
-      })
+    const openBracket = headerRaw.indexOf('[')
+    const closeBracket = headerRaw.indexOf(']', openBracket)
+    let badge: string | undefined
+    let title = headerRaw
+
+    if (openBracket !== -1 && closeBracket > openBracket) {
+      badge = headerRaw.slice(openBracket + 1, closeBracket).trim()
+      title = (headerRaw.slice(0, openBracket) + headerRaw.slice(closeBracket + 1)).trim()
     }
+
+    cards.push({
+      title,
+      content: body,
+      badge: badge || undefined,
+    })
   }
 
   return cards
@@ -98,12 +121,12 @@ function extractSlideTitle(cleanChunk: string, slideIndex: number): { title: str
 }
 
 function resolveSlideLayout(
-  explicitLayout: 'hero' | 'cards' | 'split' | 'standard' | undefined,
+  explicitLayout: SlideLayout | undefined,
   slideIndex: number,
   cardsCount: number,
   hasSubtitle: boolean,
   bulletsCount: number
-): 'hero' | 'cards' | 'split' | 'standard' {
+): SlideLayout {
   if (explicitLayout) return explicitLayout
   if (cardsCount > 0) return 'cards'
   if (slideIndex === 1 && (hasSubtitle || bulletsCount <= 3)) return 'hero'
@@ -117,17 +140,15 @@ function parseSingleSlide(rawChunk: string, slideIndex: number): Slide | null {
   // Extract layout comment
   const layoutMatch = LAYOUT_REGEX.exec(trimmed)
   const explicitLayout = layoutMatch?.[1]
-    ? (layoutMatch[1].toLowerCase() as 'hero' | 'cards' | 'split' | 'standard')
+    ? (layoutMatch[1].toLowerCase() as SlideLayout)
     : undefined
 
-  // Extract presenter notes
-  const notesMatch = NOTES_REGEX.exec(trimmed)
-  const notes = notesMatch?.[1]?.trim() || undefined
+  // Extract presenter notes without backtracking regex
+  const { notes, cleaned: withoutNotes } = extractNotes(trimmed)
 
   // Clean raw chunk removing comments for body processing
-  const cleanChunk = trimmed
+  const cleanChunk = withoutNotes
     .replace(LAYOUT_REGEX, '')
-    .replace(NOTES_REGEX, '')
     .trim()
 
   // Extract Title (## or first line)

@@ -23,23 +23,20 @@ export interface PresentationData {
 }
 
 const LAYOUT_REGEX = /<!--\s*layout:\s*(hero|cards|split|standard)\s*-->/i
+const NOTES_COMMENT_START_REGEX = /<!--\s*notes:\s*/i
 
 function extractNotes(content: string): { notes?: string; cleaned: string } {
-  const startComment = content.search(/<!--\s*notes:/i)
-  if (startComment === -1) {
+  const match = NOTES_COMMENT_START_REGEX.exec(content)
+  if (!match) {
     return { cleaned: content }
   }
-  const prefixMatch = content.slice(startComment).match(/^<!--\s*notes:\s*/i)
-  if (!prefixMatch) {
-    return { cleaned: content }
-  }
-  const contentStart = startComment + prefixMatch[0].length
+  const contentStart = match.index + match[0].length
   const endComment = content.indexOf('-->', contentStart)
   if (endComment === -1) {
     return { cleaned: content }
   }
   const notes = content.slice(contentStart, endComment).trim()
-  const cleaned = (content.slice(0, startComment) + content.slice(endComment + 3)).trim()
+  const cleaned = (content.slice(0, match.index) + content.slice(endComment + 3)).trim()
   return { notes: notes || undefined, cleaned }
 }
 

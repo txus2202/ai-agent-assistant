@@ -5,7 +5,7 @@ type: spec
 phase: 1
 layer: domain
 status: implemented
-tags: [entity, task, domain]
+tags: [entity, task, domain, ai-agent-assistant]
 ---
 
 # Feature: Core Entity - Task

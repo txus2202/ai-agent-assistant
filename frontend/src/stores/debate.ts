@@ -695,7 +695,12 @@ export const useDebateStore = defineStore('debate', () => {
     }
   }
 
-  function startDebate(userRequest: string, targetAgent: string | string[] = 'supervisor', attachmentUrl: string | string[] | null = null) {
+  function startDebate(
+    userRequest: string,
+    targetAgent: string | string[] = 'supervisor',
+    attachmentUrl: string | string[] | null = null,
+    targetDomain?: string | null
+  ) {
     stopTts() // Interrupt any ongoing TTS
 
     if (!isConnected.value || !ws) {
@@ -733,7 +738,12 @@ export const useDebateStore = defineStore('debate', () => {
 
     // Register Atenea triage tokens immediately as they are consumed for intent classification
     const sup = findAgent('supervisor')
-    if (sup && (targetAgentsList.includes('supervisor') || targetAgentsList.includes('Atenea') || targetAgentsList.length === 0)) {
+    const isSupervisorTargeted = targetAgentsList.some(role => {
+      const n = normalizeAgentRole(role)
+      return n === 'supervisor' || n === 'atenea'
+    })
+
+    if (sup && (isSupervisorTargeted || targetAgentsList.length === 0)) {
       const words = userRequest.trim().split(/\s+/).filter(Boolean).length
       const triagePromptTokens = Math.max(30, Math.round(words * 1.35) + 140)
       const triageCompletionTokens = 25
@@ -742,7 +752,13 @@ export const useDebateStore = defineStore('debate', () => {
       sup.tokens = (sup.tokens || 0) + triagePromptTokens + triageCompletionTokens
       sessionTotalTokens.value += triagePromptTokens + triageCompletionTokens
     }
-    executionTrail.value = ['Atenea']
+    
+    if (isSupervisorTargeted || targetAgentsList.length === 0) {
+      executionTrail.value = ['Atenea']
+    } else {
+      const firstTargetName = findAgent(primaryTarget)?.name || primaryTarget
+      executionTrail.value = [firstTargetName]
+    }
     
     // Capture session chat history before adding the new user message
     const history = messages.value.slice(-10).map(m => ({
@@ -773,6 +789,9 @@ export const useDebateStore = defineStore('debate', () => {
       target_agent: primaryTarget,
       attachments,
       history
+    }
+    if (targetDomain) {
+      payload.target_domain = targetDomain
     }
     if (Array.isArray(targetAgent)) {
       payload.target_agents = targetAgentsList
@@ -1159,26 +1178,27 @@ export const useDebateStore = defineStore('debate', () => {
       }
     })
 
-    // Update Atenea (supervisor) observability metrics from the DONE consolidation event
-    const sup = findAgent(event.role) || (normalizeAgentRole(event.role) === 'supervisor' ? findAgent('supervisor') : undefined) || findAgent('supervisor')
-    if (sup) {
+    // Update target agent observability metrics from the DONE event
+    const doneRole = event.role || 'supervisor'
+    const targetAgent = findAgent(doneRole) || (normalizeAgentRole(doneRole) === 'supervisor' ? findAgent('supervisor') : undefined)
+    if (targetAgent) {
       if (event.metadata) {
-        updateAgentLatency(sup, event)
-        const estTokens = updateAgentTokens(sup, event)
+        updateAgentLatency(targetAgent, event)
+        const estTokens = updateAgentTokens(targetAgent, event)
         updateCachedTokens(event, estTokens)
         sessionTotalTokens.value += estTokens
       } else if (event.content) {
         const words = event.content.trim().split(/\s+/).filter(Boolean).length
         const outTokens = Math.max(12, Math.round(words * 1.35))
         const inTokens = Math.max(25, Math.round(outTokens * 1.4))
-        sup.tokens = (sup.tokens || 0) + outTokens + inTokens
-        sup.promptTokens = (sup.promptTokens || 0) + inTokens
-        sup.completionTokens = (sup.completionTokens || 0) + outTokens
+        targetAgent.tokens = (targetAgent.tokens || 0) + outTokens + inTokens
+        targetAgent.promptTokens = (targetAgent.promptTokens || 0) + inTokens
+        targetAgent.completionTokens = (targetAgent.completionTokens || 0) + outTokens
         sessionTotalTokens.value += outTokens + inTokens
       }
-      sup.turns = Math.max(1, (sup.turns || 0) + 1)
-      if (!isAgentReading(sup.role)) {
-        sup.state = 'COMPLETED'
+      targetAgent.turns = Math.max(1, (targetAgent.turns || 0) + 1)
+      if (!isAgentReading(targetAgent.role)) {
+        targetAgent.state = 'COMPLETED'
       }
     }
     
@@ -1195,7 +1215,12 @@ export const useDebateStore = defineStore('debate', () => {
     } else if (event.content?.trim()) {
       pushAgentMessage(event.content, event.role)
     }
-    recordExecutionTrail('Atenea')
+    const finalRoleNorm = normalizeAgentRole(doneRole)
+    if (finalRoleNorm === 'supervisor' || finalRoleNorm === 'atenea') {
+      recordExecutionTrail('Atenea')
+    } else {
+      recordExecutionTrail(targetAgent?.name || doneRole)
+    }
   }
 
   function handleNonFatalAgentError(event: SupervisorEvent): boolean {

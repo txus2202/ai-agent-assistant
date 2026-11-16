@@ -64,3 +64,43 @@ def test_post_learn_session_error(client, monkeypatch):
     response = client.post("/learning/session", json=payload)
     assert response.status_code == 400
     assert "Historial vacío" in response.json()["detail"]
+
+
+def test_get_domains(client, tmp_path, monkeypatch):
+    mock_vault = tmp_path / "obsidian_vault"
+    mock_vault.mkdir()
+    (mock_vault / "01_enterprise_architecture").mkdir()
+    (mock_vault / "01_enterprise_architecture" / "MOC_Enterprise_Architecture.md").write_text("# MOC")
+
+    from src.presentation.api.config import get_settings
+    settings = get_settings()
+    monkeypatch.setattr(settings, "vault_root", mock_vault)
+
+    response = client.get("/learning/domains")
+    assert response.status_code == 200
+    domains = response.json()
+    assert isinstance(domains, list)
+    assert any(d["id"] == "01_enterprise_architecture" for d in domains)
+
+
+def test_create_domain(client, tmp_path, monkeypatch):
+    mock_vault = tmp_path / "obsidian_vault"
+    mock_vault.mkdir()
+    (mock_vault / "HOME.md").write_text("# HOME\n")
+
+    from src.presentation.api.config import get_settings
+    settings = get_settings()
+    monkeypatch.setattr(settings, "vault_root", mock_vault)
+
+    payload = {
+        "id": "04_finops",
+        "name": "Cloud FinOps",
+        "description": "Políticas de costes e infraestructura eficiente"
+    }
+    response = client.post("/learning/domains", json=payload)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["id"] == "04_finops"
+    assert data["name"] == "Cloud FinOps"
+    assert (mock_vault / "04_finops").is_dir()
+

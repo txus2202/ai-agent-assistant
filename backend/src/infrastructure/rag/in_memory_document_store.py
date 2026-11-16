@@ -98,12 +98,26 @@ class InMemoryDocumentStore(IDocumentStore):
         filter: SearchFilter,
     ) -> list[DocumentChunk]:
         result = chunks
+
+        def _match_val(chunk_val: str | None, target: Any) -> bool:
+            if target is None:
+                return True
+            if chunk_val is None:
+                return False
+            if isinstance(target, (list, tuple)):
+                return chunk_val in [str(x) for x in target]
+            return chunk_val == str(target)
+
         if filter.type is not None:
-            result = [c for c in result if c.metadata.get("type") == filter.type]
+            result = [c for c in result if _match_val(c.metadata.get("type"), filter.type)]
         if filter.layer is not None:
-            result = [c for c in result if c.metadata.get("layer") == filter.layer]
+            result = [c for c in result if _match_val(c.metadata.get("layer"), filter.layer)]
         if filter.status is not None:
-            result = [c for c in result if c.metadata.get("status") == filter.status]
+            result = [c for c in result if _match_val(c.metadata.get("status"), filter.status)]
         if filter.phase is not None:
-            result = [c for c in result if c.metadata.get("phase") == str(filter.phase)]
+            result = [c for c in result if _match_val(c.metadata.get("phase"), filter.phase)]
+        if getattr(filter, "category", None) is not None:
+            result = [c for c in result if _match_val(c.metadata.get("category"), filter.category)]
+        if getattr(filter, "domain", None) is not None:
+            result = [c for c in result if _match_val(c.metadata.get("domain"), filter.domain)]
         return result

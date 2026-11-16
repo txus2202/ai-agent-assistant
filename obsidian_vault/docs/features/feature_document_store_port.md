@@ -5,7 +5,7 @@ type: spec
 phase: 2
 layer: domain
 status: implemented
-tags: [port, rag, document-store, domain, interface, vector-search]
+tags: [port, rag, document-store, domain, interface, vector-search, ai-agent-assistant]
 ---
 
 # Feature: Domain Port — IDocumentStore + DocumentChunk

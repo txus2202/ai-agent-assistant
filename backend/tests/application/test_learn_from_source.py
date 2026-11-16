@@ -431,6 +431,36 @@ class TestLearnFromSource:
         assert "```mermaid" in content
         assert "A[Frontend] --> B[Backend]" in content
 
+    def test_learn_from_source_with_custom_target_domain(self, tmp_path: Path):
+        from src.application.services.learn_from_source import LearnFromSource, SourceType
+
+        class MockLLM(ILLMProvider):
+            def list_models(self) -> list[dict[str, str]]:
+                return [{"id": "test", "name": "Test"}]
+
+            def complete(self, prompt: str, model_name: str) -> str:
+                return (
+                    "---\ntype: standard\ntags: [api, standard]\n---\n\n"
+                    "# Guia de APIs de la Empresa\n\n## Seccion\nContenido"
+                )
+
+        result = LearnFromSource.run(
+            source="Texto de directrices de APIs.",
+            source_type=SourceType.TEXT,
+            llm_provider=MockLLM(),
+            document_store=InMemoryDocumentStore(),
+            vault_root=tmp_path,
+            target_domain="01_enterprise_architecture/guidelines",
+        )
+
+        assert result.errors == []
+        assert result.generated_file is not None
+        assert "01_enterprise_architecture/guidelines" in str(result.generated_file)
+        assert result.generated_file.exists()
+        content = result.generated_file.read_text(encoding="utf-8")
+        assert "domain: 01_enterprise_architecture/guidelines" in content
+
+
 
 
 

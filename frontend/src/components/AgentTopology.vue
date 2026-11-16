@@ -41,6 +41,21 @@ const displayedAgents = computed(() => {
 const isSupervisorActive = (normAgent: string) => {
   const isSupervisor = normAgent === 'supervisor' || normAgent === 'atenea'
   if (!isSupervisor) return false
+
+  // If subagent(s) are directly targeted and supervisor is not included,
+  // supervisor should not be marked active during debate
+  const selected = store.selectedAgents && store.selectedAgents.length > 0 
+    ? store.selectedAgents 
+    : [store.selectedAgent || 'supervisor']
+  const isSupervisorTargeted = selected.some(role => {
+    const n = (store.normalizeAgentRole ? store.normalizeAgentRole(role) : role).toLowerCase()
+    return n === 'supervisor' || n === 'atenea'
+  })
+
+  if (!isSupervisorTargeted) {
+    return Boolean(isRoleSpeakingTts(normAgent) || (store.readingAgentRoles && store.readingAgentRoles.includes(normAgent)))
+  }
+
   return Boolean(store.isDebating || store.isTtsPlaying || store.readingAgentRoles?.length)
 }
 

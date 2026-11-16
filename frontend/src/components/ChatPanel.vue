@@ -363,6 +363,37 @@ watch(() => store.selectedAgents, (newAgents) => {
   }
 }, { deep: true })
 
+interface VaultDomainItem {
+  id: string
+  name: string
+  description?: string
+  path?: string
+}
+
+const defaultDomains: VaultDomainItem[] = [
+  { id: '01_enterprise_architecture', name: 'Arquitectura Empresarial' },
+  { id: 'learned', name: 'Investigación Externa' },
+  { id: '00_meta_project', name: 'Plataforma & TFM' },
+  { id: 'deliberations', name: 'Deliberaciones & Actas' },
+]
+
+const availableDomains = ref<VaultDomainItem[]>([...defaultDomains])
+const selectedDomain = ref<string>('')
+
+const loadDomains = async () => {
+  try {
+    const res = await fetch('/api/learning/domains')
+    if (res.ok) {
+      const data = await res.json()
+      if (Array.isArray(data) && data.length > 0) {
+        availableDomains.value = data
+      }
+    }
+  } catch (err) {
+    // Keep fallback defaults
+  }
+}
+
 const selectedFiles = ref<File[]>([])
 const isAgentDropdownOpen = ref(false)
 const agentDropdownRef = ref<HTMLElement | null>(null)
@@ -447,6 +478,7 @@ const handleClickOutsideCancelInfo = (event: MouseEvent) => {
 }
 
 onMounted(() => {
+  loadDomains()
   document.addEventListener('click', handleClickOutsideAgent)
   document.addEventListener('click', handleClickOutsideCancelInfo)
   document.addEventListener('click', closePresentationDownloadMenu)
@@ -879,7 +911,11 @@ const onSubmit = async () => {
   const targetForDebate = selectedAgents.value.length > 1 
     ? selectedAgents.value 
     : (selectedAgents.value[0] || 'supervisor')
-  store.startDebate(store.draftMessage, targetForDebate, attachmentParam)
+  if (selectedDomain.value) {
+    store.startDebate(store.draftMessage, targetForDebate, attachmentParam, selectedDomain.value)
+  } else {
+    store.startDebate(store.draftMessage, targetForDebate, attachmentParam)
+  }
   
   store.draftMessage = ''
   selectedFiles.value = []
@@ -1710,8 +1746,64 @@ defineExpose({
       </div>
 
       <form @submit.prevent="onSubmit" class="flex flex-col gap-2.5 md:gap-3 relative">
+        <!-- Metis Learning Mode Context Bar -->
+        <div
+          v-if="selectedAgents.includes('learning')"
+          data-test="metis-context-banner"
+          class="bg-[#041220]/95 border border-neon-cyan/40 rounded-lg px-3 py-2 flex flex-wrap items-center justify-between gap-2.5 shadow-[0_0_15px_-3px_rgba(0,229,255,0.12)] animate-fade-in"
+        >
+          <!-- Left side: Domain Dropdown -->
+          <div class="flex items-center gap-2 flex-1 min-w-[200px]">
+            <Brain class="w-3.5 h-3.5 text-neon-cyan animate-pulse shrink-0" title="Metis" />
+            
+            <div class="relative flex-1 max-w-full sm:max-w-xs">
+              <select
+                id="vault-domain-selector"
+                v-model="selectedDomain"
+                data-test="vault-domain-selector"
+                aria-label="Seleccionar dominio del Vault"
+                class="w-full bg-[#030914] text-[11px] font-mono text-cyan-200 border border-cyan-800/80 hover:border-neon-cyan rounded pl-2.5 pr-7 py-1 min-h-[30px] focus:outline-none focus:border-neon-cyan cursor-pointer transition-colors appearance-none truncate shadow-inner"
+                title="Dominio del Vault donde se catalogará este conocimiento"
+              >
+                <option value="">🎯 Automático (según contenido)</option>
+                <option 
+                  v-for="domain in availableDomains" 
+                  :key="domain.id" 
+                  :value="domain.id"
+                >
+                  📁 {{ domain.name }}
+                </option>
+              </select>
+              <ChevronDown class="w-3 h-3 text-cyan-400 pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+            </div>
+          </div>
+
+          <!-- Right side: Attach file button -->
+          <div class="flex items-center shrink-0">
+            <label 
+              for="chat-file-upload" 
+              class="cursor-pointer text-cyan-300 hover:text-white transition-colors flex items-center gap-1.5 px-2.5 py-1 min-h-[30px] border border-cyan-800/80 rounded bg-[#030914] hover:bg-cyan-950/80 hover:border-neon-cyan text-[11px] font-mono shadow-sm"
+              title="Adjuntar PDF, Markdown o Imagen para Metis"
+            >
+              <Paperclip class="w-3.5 h-3.5 text-neon-cyan shrink-0" />
+              <span class="text-[10px] md:text-[11px]">
+                {{ selectedFiles.length > 0 ? `${selectedFiles.length} archivo(s)` : 'Adjuntar' }}
+              </span>
+              <input 
+                id="chat-file-upload" 
+                type="file" 
+                multiple
+                accept=".pdf,.md,.markdown,.png,.jpg,.jpeg,.webp" 
+                @change="handleFileChange" 
+                class="hidden" 
+                data-test="file-input" 
+              />
+            </label>
+          </div>
+        </div>
+
         <div class="flex items-center justify-between gap-2">
-          <!-- Left side: Custom Multi-Agent Dropdown Selector & File Upload -->
+          <!-- Left side: Custom Multi-Agent Dropdown Selector -->
           <div class="flex items-center gap-2">
             <!-- Custom Multi-Agent Dropdown Selector -->
             <div class="relative" ref="agentDropdownRef">
@@ -1769,25 +1861,6 @@ defineExpose({
                 </div>
               </div>
             </div>
-
-            <label 
-              v-if="selectedAgents.includes('learning')" 
-              for="chat-file-upload" 
-              class="cursor-pointer text-space-400 hover:text-neon-cyan transition-colors flex items-center justify-center px-3 py-1.5 min-h-[36px] md:min-h-0 border border-cyan-900/50 rounded bg-[#030509] hover:bg-space-800 shadow-[0_0_10px_-2px_rgba(0,229,255,0.05)] hover:border-neon-cyan/50" 
-              title="Adjuntar PDF, Markdown o Imagen para Metis"
-            >
-              <span class="sr-only">Adjuntar archivo</span>
-              <input 
-                id="chat-file-upload" 
-                type="file" 
-                multiple
-                accept=".pdf,.md,.markdown,.png,.jpg,.jpeg,.webp" 
-                @change="handleFileChange" 
-                class="hidden" 
-                data-test="file-input" 
-              />
-              <Paperclip class="w-4 h-4" />
-            </label>
           </div>
 
           <!-- Right side: Scroll Top / Bottom Toggle Button -->

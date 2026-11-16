@@ -5,7 +5,7 @@ type: spec
 phase: 3
 layer: application
 status: implemented
-tags: [supervisor, hitl, orchestration, multi-agent, events, application]
+tags: [supervisor, hitl, orchestration, multi-agent, events, application, atenea]
 ---
 
 # Feature: Supervisor Agent & Human-In-The-Loop

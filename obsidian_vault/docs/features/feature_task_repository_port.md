@@ -5,7 +5,7 @@ type: spec
 phase: 2
 layer: domain
 status: implemented
-tags: [port, repository, task, domain, interface]
+tags: [port, repository, task, domain, interface, ai-agent-assistant]
 ---
 
 # Feature: Domain Port — ITaskRepository

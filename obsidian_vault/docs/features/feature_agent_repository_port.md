@@ -5,7 +5,7 @@ type: spec
 phase: 1
 layer: domain
 status: implemented
-tags: [port, repository, agent, domain, interface]
+tags: [port, repository, agent, domain, interface, ai-agent-assistant]
 ---
 
 # Feature: Domain Port - IAgentRepository

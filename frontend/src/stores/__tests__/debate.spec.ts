@@ -1179,6 +1179,37 @@ describe('useDebateStore', () => {
     expect(store.executionTrail).toEqual([])
   })
 
+  it('does not attribute execution trail or triage tokens to Atenea when subagent is directly targeted', () => {
+    const store = useDebateStore()
+    store.connect()
+    store.isConnected = true
+    store.agents = [
+      { role: 'supervisor', name: 'Atenea', state: 'STANDBY', turns: 0, promptTokens: 0, completionTokens: 0, tokens: 0 },
+      { role: 'senior_architect', name: 'Ícaro', state: 'STANDBY', turns: 0, promptTokens: 0, completionTokens: 0, tokens: 0 }
+    ]
+
+    store.startDebate('Pregunta técnica directa', 'senior_architect')
+
+    const sup = store.findAgent('supervisor')
+    const icaro = store.findAgent('senior_architect')
+
+    expect(sup?.state).toBe('STANDBY')
+    expect(sup?.turns).toBe(0)
+    expect(sup?.tokens).toBe(0)
+    expect(icaro?.state).toBe('ACTIVE')
+    expect(store.executionTrail).toEqual(['Ícaro'])
+
+    store.handleSupervisorEvent({
+      type: 'done',
+      role: 'senior_architect',
+      content: 'Solución directa'
+    })
+
+    expect(store.executionTrail).toEqual(['Ícaro'])
+    expect(sup?.state).toBe('STANDBY')
+    expect(icaro?.state).toBe('COMPLETED')
+  })
+
   it('fetches topology from backend endpoint /api/config/topology', async () => {
     const store = useDebateStore()
     const mockTopology = {

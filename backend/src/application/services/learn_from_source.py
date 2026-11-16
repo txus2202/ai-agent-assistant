@@ -113,6 +113,7 @@ class LearnFromSource:
         vault_root: Path,
         model_name: str = "gemini-3.6-flash",
         tags: list[str] | None = None,
+        target_domain: str = "learned",
     ) -> LearnResult:
         """
         Learn from an external source and update the knowledge vault.
@@ -125,6 +126,7 @@ class LearnFromSource:
             vault_root:     Root of the Obsidian vault.
             model_name:     Model to use for generation.
             tags:           Optional list of explicit tags requested by the user.
+            target_domain:  Target domain or directory within the vault (default: 'learned').
 
         Returns:
             LearnResult with path to generated file, ingest summary, and errors.
@@ -165,10 +167,15 @@ class LearnFromSource:
         slug = _derive_slug(md_content, source)
         filename = f"{date_str}_{slug}.md"
 
-        # ── 4. Save to vault_root/learned/ ───────────────────────────────
-        learned_dir = vault_root / "learned"
-        learned_dir.mkdir(parents=True, exist_ok=True)
-        file_path = learned_dir / filename
+        # ── 4. Save to vault_root / target_domain ─────────────────────────
+        clean_domain = target_domain.strip().strip("/") if target_domain else "learned"
+        if ".." in clean_domain:
+            clean_domain = "learned"
+        dest_dir = vault_root / clean_domain
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        file_path = dest_dir / filename
+
+        md_content = _inject_domain_metadata(md_content, clean_domain)
         file_path.write_text(md_content, encoding="utf-8")
 
         # ── 5. Re-ingest vault (idempotent via upsert) ────────────────────
@@ -302,6 +309,16 @@ def _inject_source_tags(md_content: str, tags_to_add: list[str]) -> str:
     if multilined is not None:
         return multilined
 
+    return md_content
+
+
+def _inject_domain_metadata(md_content: str, domain: str) -> str:
+    """Ensures domain is present in the YAML frontmatter."""
+    if not domain or "domain:" in md_content:
+        return md_content
+    fm_match = re.search(r"^---\s*\n", md_content)
+    if fm_match:
+        return f"{md_content[:fm_match.end()]}domain: {domain}\n{md_content[fm_match.end():]}"
     return md_content
 
 

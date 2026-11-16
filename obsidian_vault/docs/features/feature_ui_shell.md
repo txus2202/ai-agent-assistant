@@ -5,7 +5,7 @@ type: spec
 phase: 4
 layer: presentation
 status: implemented
-tags: [ui, layout, vue, dashboard, sci-fi, design-system]
+tags: [ui, layout, vue, dashboard, sci-fi, design-system, atenea]
 ---
 
 # Feature: UI Shell & Design System

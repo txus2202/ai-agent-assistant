@@ -5,7 +5,7 @@ type: spec
 phase: 4
 layer: presentation
 status: draft
-tags: [learning, pdf, url, upload, frontend, vue]
+tags: [learning, pdf, url, upload, frontend, vue, atenea]
 ---
 
 # Feature: Learning Agent UI

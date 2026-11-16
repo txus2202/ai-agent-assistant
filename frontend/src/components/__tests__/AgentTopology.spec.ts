@@ -150,6 +150,29 @@ describe('AgentTopology.vue', () => {
     expect(cards[1]?.props('state')).toBe('ACTIVE')
   })
 
+  it('does NOT activate supervisor card when a subagent is directly selected', async () => {
+    const { useDebateStore } = await import('../../stores/debate')
+    const store = useDebateStore()
+    store.isDebating = true
+    store.selectedAgent = 'nl_interpreter'
+    store.selectedAgents = ['nl_interpreter']
+    store.activeTtsRole = null
+
+    const wrapper = mount(AgentTopology, {
+      props: {
+        agents: [
+          { role: 'supervisor', name: 'Atenea', state: 'STANDBY', color_hex: '#f59e0b' },
+          { role: 'nl_interpreter', name: 'Hermes', state: 'ACTIVE', color_hex: '#00e5ff' }
+        ]
+      }
+    })
+
+    const cards = wrapper.findAllComponents({ name: 'AgentCard' })
+    expect(cards).toHaveLength(2)
+    expect(cards[0]?.props('state')).toBe('STANDBY')
+    expect(cards[1]?.props('state')).toBe('ACTIVE')
+  })
+
   it('deactivates supervisor card when debate has ended or errored and TTS reading is finished', async () => {
     const { useDebateStore } = await import('../../stores/debate')
     const store = useDebateStore()

@@ -5,7 +5,7 @@ type: spec
 phase: 4
 layer: presentation
 status: draft
-tags: [settings, api-keys, configuration, models, env]
+tags: [settings, api-keys, configuration, models, env, ai-agent-assistant]
 ---
 
 # Feature: Settings — API Keys & Model Configuration

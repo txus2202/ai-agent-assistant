@@ -16,14 +16,23 @@ class SearchFilter:
     Optional filter to narrow vector-store retrieval by metadata fields.
 
     All fields are optional; only non-None fields are applied as constraints.
-    ``phase`` is compared against the string representation stored in metadata
-    (ChromaDB requires all metadata values to be strings).
+    Supports scalar strings/integers or sequences (tuples/lists) for multi-value
+    matching (e.g. category $in in vector store).
+    Lists are normalized to tuples in __post_init__ to guarantee immutability and hashability.
     """
 
-    type: str | None = None      # e.g. "spec", "adr", "note"
-    phase: int | None = None     # e.g. 2 → compared as "2" in metadata
-    layer: str | None = None     # e.g. "domain", "infrastructure"
-    status: str | None = None    # e.g. "implemented", "draft"
+    type: str | tuple[str, ...] | list[str] | None = None      # e.g. "spec", "adr", or ("adr", "standard")
+    phase: int | tuple[int, ...] | list[int] | None = None     # e.g. 2 → compared as "2" in metadata
+    layer: str | tuple[str, ...] | list[str] | None = None     # e.g. "domain", "infrastructure"
+    status: str | tuple[str, ...] | list[str] | None = None    # e.g. "implemented", "draft"
+    category: str | tuple[str, ...] | list[str] | None = None  # e.g. "enterprise", ("enterprise", "external-learning")
+    domain: str | tuple[str, ...] | list[str] | None = None    # e.g. "01_enterprise_architecture"
+
+    def __post_init__(self) -> None:
+        for f_name in ("type", "phase", "layer", "status", "category", "domain"):
+            val = getattr(self, f_name)
+            if isinstance(val, list):
+                object.__setattr__(self, f_name, tuple(val))
 
 
 @dataclass(frozen=True)

@@ -5,7 +5,7 @@ type: spec
 phase: 3
 layer: infrastructure
 status: implemented
-tags: [llm, adapters, gemini, openai, anthropic, provider, registry, infrastructure]
+tags: [llm, adapters, gemini, openai, anthropic, provider, registry, infrastructure, ai-agent-assistant]
 ---
 
 # Feature: LLM Provider Adapters & Registry

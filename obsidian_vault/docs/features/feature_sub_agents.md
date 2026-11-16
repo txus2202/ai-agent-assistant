@@ -5,7 +5,7 @@ type: spec
 phase: 3
 layer: domain
 status: implemented
-tags: [agents, roles, sub-agents, system-prompt, rag, domain]
+tags: [agents, roles, sub-agents, system-prompt, rag, domain, atenea]
 ---
 
 # Feature: Sub-Agent Definitions & Runner

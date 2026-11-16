@@ -5,7 +5,7 @@ type: spec
 phase: 2
 layer: infrastructure
 status: implemented
-tags: [chromadb, rag, ingestion, cli, infrastructure, vector-store]
+tags: [chromadb, rag, ingestion, cli, infrastructure, vector-store, ai-agent-assistant]
 ---
 
 # Feature: ChromaDBDocumentStore + IngestVault CLI
@@ -112,6 +112,15 @@ Then  files inside .obsidian/ are not ingested
 Given a vault with 1 file and 2 sections
 When  IngestVault.run() is called twice
 Then  document_store.count() == 2 (not 4)
+```
+
+#### Scenario 9: Multi-value and Multi-Category RAG Filtering
+
+```
+Given chunks indexed across multiple categories ('enterprise', 'external-learning', 'meta-project')
+When  search() is called with SearchFilter(category=['enterprise', 'external-learning'])
+Then  ChromaDB builds where clause with {"category": {"$in": ["enterprise", "external-learning"]}}
+And   only chunks matching either of the requested categories are returned
 ```
 
 ## CLI Script

@@ -720,6 +720,42 @@ def test_cancel_message_aborts_and_acknowledges(ws_client):
         assert "cancelado" in resp["content"].lower()
 
 
+def test_debate_learning_explicit_target_domain_skips_prompting(ws_client, monkeypatch):
+    """When target_domain is passed in the start message, Metis ingests immediately without interactive tag/domain question."""
+    from src.application.services.learn_from_source import LearnResult
+    from src.presentation.api.ws import debate
+    from pathlib import Path
+
+    captured_kwargs = {}
+
+    def fake_learn_run(**kwargs):
+        captured_kwargs.update(kwargs)
+        return LearnResult(
+            source=kwargs.get("source", "text"),
+            generated_file=Path("/vault/01_enterprise_architecture/note.md"),
+            errors=[],
+        )
+
+    monkeypatch.setattr(debate.LearnFromSource, "run", fake_learn_run)
+
+    with ws_client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({
+            "type": "start",
+            "session_id": str(uuid.uuid4()),
+            "target_agents": ["learning"],
+            "user_request": "/learn Directiva de observabilidad corporativa",
+            "target_domain": "01_enterprise_architecture",
+        })
+
+        ev1 = websocket.receive_json()
+        assert ev1["type"] == EventType.AGENT_STARTED.value
+
+        ev2 = websocket.receive_json()
+        assert ev2["type"] == EventType.AGENT_COMPLETED.value
+        assert captured_kwargs.get("target_domain") == "01_enterprise_architecture"
+
+
+
 
 
 

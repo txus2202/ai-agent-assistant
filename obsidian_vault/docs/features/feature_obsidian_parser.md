@@ -5,7 +5,7 @@ type: spec
 phase: 2
 layer: infrastructure
 status: implemented
-tags: [parser, obsidian, markdown, chunking, frontmatter, infrastructure]
+tags: [parser, obsidian, markdown, chunking, frontmatter, infrastructure, ai-agent-assistant]
 ---
 
 # Feature: ObsidianParser — Markdown to DocumentChunks

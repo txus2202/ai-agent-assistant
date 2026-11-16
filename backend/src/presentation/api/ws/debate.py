@@ -35,7 +35,7 @@ router = APIRouter(tags=["debate"])
 logger = logging.getLogger(__name__)
 
 LEARN_DIRECTIVE_REGEX = re.compile(
-    r"^(?:aprende\s+esto|aprende|memoriza|guarda\s+este\s+conocimiento)[:\s]+(.+)",
+    r"^(?:/learn|aprende\s+esto|aprende|memoriza|guarda\s+este\s+conocimiento)[:\s]+(.+)",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -94,6 +94,19 @@ def _extract_tags(text: str) -> list[str]:
     _append_unique_tags(tags, _extract_nl_tags(text))
     _append_unique_tags(tags, _extract_hashtags(text))
     return tags
+
+
+def _extract_domain(text: str) -> str | None:
+    low = text.lower()
+    if any(k in low for k in ("enterprise", "empresa", "corporativ", "estándar", "estandar", "01_enterprise")):
+        return "01_enterprise_architecture"
+    if any(k in low for k in ("tfm", "plataforma", "meta_project", "00_meta")):
+        return "00_meta_project"
+    if any(k in low for k in ("deliberation", "deliberación", "acta", "sesion", "sesión")):
+        return "deliberations/sessions"
+    if any(k in low for k in ("investigacion", "investigación", "learned", "externo", "whitepaper")):
+        return "learned"
+    return None
 
 
 def _is_skip_tags_response(text: str) -> bool:
@@ -338,6 +351,7 @@ class DebateWebSocketHandler:
         tag_suffix: str,
         llm_prov: Any,
         mod_name: str,
+        target_domain: str = "learned",
     ) -> str:
         stype = _detect_source_type(attachment_path)
         res = await asyncio.to_thread(
@@ -349,11 +363,13 @@ class DebateWebSocketHandler:
             vault_root=self.settings.vault_root,
             model_name=mod_name,
             tags=tags,
+            target_domain=target_domain,
         )
         if res.errors:
             return f"❌ Error al procesar {attachment_path}: {res.errors}"
         file_name = res.generated_file.name if res.generated_file else "nota"
-        return f"✅ Conocimiento asimilado desde {attachment_path}. Generada nota: {file_name}{tag_suffix}"
+        dom_msg = f" en [{target_domain}]" if target_domain != "learned" else ""
+        return f"✅ Conocimiento asimilado{dom_msg} desde {attachment_path}. Generada nota: {file_name}{tag_suffix}"
 
     async def _learn_single_text(
         self,
@@ -362,6 +378,7 @@ class DebateWebSocketHandler:
         tag_suffix: str,
         llm_prov: Any,
         mod_name: str,
+        target_domain: str = "learned",
     ) -> str:
         res = await asyncio.to_thread(
             LearnFromSource.run,
@@ -372,11 +389,13 @@ class DebateWebSocketHandler:
             vault_root=self.settings.vault_root,
             model_name=mod_name,
             tags=tags,
+            target_domain=target_domain,
         )
         if res.errors:
             return f"❌ Error al aprender el texto: {res.errors}"
         file_name = res.generated_file.name if res.generated_file else "nota"
-        return f"✅ He asimilado y guardado este conocimiento en mi memoria persistente y en el Vault ({file_name}){tag_suffix}."
+        dom_msg = f" en [{target_domain}]" if target_domain != "learned" else ""
+        return f"✅ He asimilado y guardado este conocimiento{dom_msg} en mi memoria persistente y en el Vault ({file_name}){tag_suffix}."
 
     async def _execute_learning_ingest(
         self,
@@ -385,15 +404,16 @@ class DebateWebSocketHandler:
         tags: list[str],
         llm_prov: Any,
         mod_name: str,
+        target_domain: str = "learned",
     ) -> list[str]:
         tag_suffix = f" [tags: {', '.join(tags)}]" if tags else ""
         if attachments:
             return [
-                await self._learn_single_attachment(path, tags, tag_suffix, llm_prov, mod_name)
+                await self._learn_single_attachment(path, tags, tag_suffix, llm_prov, mod_name, target_domain=target_domain)
                 for path in attachments
             ]
         if text_to_learn:
-            return [await self._learn_single_text(text_to_learn, tags, tag_suffix, llm_prov, mod_name)]
+            return [await self._learn_single_text(text_to_learn, tags, tag_suffix, llm_prov, mod_name, target_domain=target_domain)]
         return []
 
     async def _handle_learning(
@@ -402,6 +422,7 @@ class DebateWebSocketHandler:
         user_request: str,
         attachments: list[str],
         directive_match: re.Match[str] | None = None,
+        target_domain: str | None = None,
     ) -> None:
         learn_role = learn_profile.display_name
         yield_event = SupervisorEvent(type=EventType.AGENT_STARTED, role=learn_role, content="")
@@ -415,20 +436,26 @@ class DebateWebSocketHandler:
         llm_prov = get_llm_provider(prov_name)
         
         extracted_tags = _extract_tags(user_request)
-        text_to_learn = directive_match.group(1).strip() if directive_match else ""
+        resolved_domain = target_domain or _extract_domain(user_request)
+        text_to_learn = directive_match.group(1).strip() if directive_match else user_request.strip()
 
-        # If user did NOT specify tags via hashtags or syntax, prompt them first
-        if not extracted_tags:
+        # If user did NOT specify tags or domain, prompt them first
+        if not extracted_tags and not resolved_domain:
             ask_content = (
                 "He recibido este conocimiento para asimilarlo. "
                 "Antes de sellarlo e integrarlo en el Vault, ¿deseas catalogarlo con algún tag o etiqueta específico "
-                "(por ejemplo: `#atenea`, `#arquitectura`, `#seguridad`), o prefieres que lo asimile directamente según su contenido?"
+                "(por ejemplo: `#seguridad`, `#pubsub`), o en qué dominio deseas catalogarlo?\n\n"
+                "- 🏢 **Arquitectura Empresarial** (`01_enterprise_architecture`): Estándares corporativos y directrices oficiales.\n"
+                "- 🔬 **Investigación Externa** (`learned`): Artículos, tutoriales o whitepapers externos.\n"
+                "- 🛠️ **Plataforma & TFM** (`00_meta_project`): Documentación interna y especificaciones del sistema.\n\n"
+                "También puedes solicitar crear un nuevo dominio si este contenido pertenece a una nueva área."
             )
             learn_meta = {
                 "model": mod_name,
                 "pending_learning": json.dumps({
                     "text": text_to_learn,
                     "attachments": attachments,
+                    "target_domain": target_domain,
                 }),
             }
             await self.send_event(SupervisorEvent(
@@ -439,12 +466,14 @@ class DebateWebSocketHandler:
             ))
             return
 
+        domain_to_use = resolved_domain or "learned"
         results = await self._execute_learning_ingest(
             text_to_learn=text_to_learn,
             attachments=attachments,
             tags=extracted_tags,
             llm_prov=llm_prov,
             mod_name=mod_name,
+            target_domain=domain_to_use,
         )
         content = "\n".join(results) or "No se proporcionó contenido para el aprendizaje."
         learn_meta = {"model": mod_name}
@@ -472,10 +501,15 @@ class DebateWebSocketHandler:
         mod_name = config.model_name if config else self.settings.default_model
         llm_prov = get_llm_provider(prov_name)
         
+        target_domain = (
+            _extract_domain(user_request)
+            or pending_learning.get("target_domain")
+            or "learned"
+        )
         tags: list[str] = []
         if not _is_skip_tags_response(user_request):
             tags = _extract_tags(user_request)
-            if not tags:
+            if not tags and not _extract_domain(user_request):
                 tags = [
                     t.strip().lstrip("#")
                     for t in re.split(r"[,;]", user_request)
@@ -491,6 +525,7 @@ class DebateWebSocketHandler:
             tags=tags,
             llm_prov=llm_prov,
             mod_name=mod_name,
+            target_domain=target_domain,
         )
         content = "\n".join(results) or "No se proporcionó contenido para el aprendizaje."
         learn_meta = {"model": mod_name}
@@ -678,17 +713,25 @@ class DebateWebSocketHandler:
         user_request: str,
         chat_history: list,
         attachments: list,
+        target_domain: str | None = None,
     ) -> None:
         directive_match = LEARN_DIRECTIVE_REGEX.match(user_request.strip()) if user_request else None
         pending_learning = self._get_pending_learning() if not directive_match else None
         if pending_learning:
             await self._handle_pending_learning(target_profile, user_request, pending_learning)
-        elif attachments or directive_match:
-            await self._handle_learning(target_profile, user_request, attachments, directive_match)
+        elif attachments or directive_match or target_domain:
+            await self._handle_learning(target_profile, user_request, attachments, directive_match, target_domain=target_domain)
         else:
             await self._handle_sub_agent(target_agent, user_request, chat_history=chat_history)
 
-    async def _dispatch_target(self, target_agent: str, user_request: str, chat_history: list, attachments: list) -> bool:
+    async def _dispatch_target(
+        self,
+        target_agent: str,
+        user_request: str,
+        chat_history: list,
+        attachments: list,
+        target_domain: str | None = None,
+    ) -> bool:
         try:
             target_profile = get_profile(target_agent)
         except KeyError:
@@ -701,7 +744,9 @@ class DebateWebSocketHandler:
         if target_profile.is_supervisor:
             await self._handle_supervisor(user_request, chat_history=chat_history)
         elif target_profile.can_ingest_documents:
-            await self._dispatch_ingestion_target(target_profile, target_agent, user_request, chat_history, attachments)
+            await self._dispatch_ingestion_target(
+                target_profile, target_agent, user_request, chat_history, attachments, target_domain=target_domain
+            )
         else:
             await self._handle_sub_agent(target_agent, user_request, chat_history=chat_history)
         return True
@@ -771,6 +816,7 @@ class DebateWebSocketHandler:
         attachments = raw_start.get("attachments", [])
         chat_history = raw_start.get("history", [])
         user_id = self.authenticated_user.id if self.authenticated_user else raw_start.get("user_id")
+        target_domain = raw_start.get("target_domain")
 
         self._init_session_and_trace(
             raw_start.get("session_id"),
@@ -783,7 +829,13 @@ class DebateWebSocketHandler:
         if len(target_agents) > 1:
             await self._dispatch_multi_agent(target_agents, user_request, chat_history)
         else:
-            await self._dispatch_target(primary_target, user_request, chat_history, attachments)
+            await self._dispatch_target(
+                primary_target,
+                user_request,
+                chat_history,
+                attachments,
+                target_domain=target_domain,
+            )
 
     async def process_messages(self) -> None:
         from src.presentation.api.dependencies.auth import authenticate_websocket

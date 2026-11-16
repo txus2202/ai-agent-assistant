@@ -5,7 +5,7 @@ type: spec
 phase: 3
 layer: application
 status: implemented
-tags: [learning, apprentice, pdf, url, markdown, ingestion, application]
+tags: [learning, apprentice, pdf, url, markdown, ingestion, application, atenea]
 ---
 
 # Feature: Learning Agent (Apprentice)

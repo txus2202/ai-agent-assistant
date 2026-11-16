@@ -1,0 +1,80 @@
+PROPRIETARY AND CONFIDENTIAL LICENSE (ACADEMIC EVALUATION ONLY)
+================================================================
+
+Copyright (c) 2026 Jesús Jiménez Vaquero. All Rights Reserved.
+
+---
+
+[ENGLISH]
+
+1. OWNERSHIP AND PROPRIETARY NOTICE
+This software, source code, documentation, architectures, and associated assets 
+(hereinafter referred to as the "Software") are the sole and exclusive intellectual 
+property of Jesús Jiménez Vaquero (the "Author"). All rights, title, and interest 
+in and to the Software are reserved by the Author.
+
+2. LIMITED ACADEMIC EVALUATION LICENSE
+The Software is hosted in a public repository solely for the purpose of evaluation, 
+review, and grading by the academic committee and professors of the Master's Degree 
+program (Trabajo Fin de Máster - TFM).
+Permission is hereby granted solely to authorized members of the academic evaluation 
+board to:
+- Download, inspect, and run the Software locally for the sole purpose of evaluating 
+  the Author's Master's Thesis.
+
+3. RESTRICTIONS
+Except as expressly authorized under Section 2 above, NO LICENSE OR RIGHT IS GRANTED. 
+Strictly prohibited acts include, without limitation:
+- Copying, cloning, distributing, publishing, or sublicensing the Software or any 
+  portion thereof.
+- Creating public forks, derivative works, or reverse-engineering the system for any 
+  purpose outside the designated academic evaluation.
+- Any commercial exploitation, monetization, integration into proprietary or open-source 
+  products, or offering this Software as a service (SaaS).
+- Using the Software, its architecture, or prompt configurations to train or fine-tune 
+  machine learning models without prior written consent from the Author.
+
+4. COMMERCIAL RIGHTS RESERVED
+The Author expressly reserves all rights to commercially exploit, license, patent, 
+or re-license this Software in the future.
+
+5. DISCLAIMER OF WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR 
+PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, 
+DAMAGES, OR OTHER LIABILITY ARISING FROM OR IN CONNECTION WITH THE SOFTWARE.
+
+---
+
+[ESPAÑOL]
+
+1. TITULARIDAD Y DERECHOS DE AUTOR
+El presente software, código fuente, documentación, arquitectura y recursos asociados 
+(en adelante, el "Software") son propiedad intelectual exclusiva de Jesús Jiménez Vaquero 
+(el "Autor"). Todos los derechos quedan expresamente reservados al amparo de la legislación 
+vigente de propiedad intelectual.
+
+2. LICENCIA LIMITADA DE EVALUACIÓN ACADÉMICA
+Este repositorio se pone a disposición exclusivamente para la revisión, evaluación y 
+calificación del Trabajo Fin de Máster (TFM) por parte del tribunal y profesorado 
+competente.
+Se concede autorización única y exclusiva a los evaluadores académicos para:
+- Descargar, inspeccionar y ejecutar localmente el Software con el único propósito de 
+  evaluar académicamente el Trabajo Fin de Máster.
+
+3. PROHIBICIONES Y RESTRICCIONES
+Queda expresamente prohibido a cualquier tercero y para cualquier fin no contemplado 
+en la cláusula anterior:
+- La reproducción, copia, distribución, comunicación pública, modificación o venta 
+  total o parcial de este código.
+- La creación de bifurcaciones (forks) públicas o privadas con fines distintos a la 
+  evaluación académica.
+- El uso o explotación comercial total o parcial de este Software o de cualquiera de 
+  sus componentes o arquitecturas.
+- El uso del código o de su contenido para el entrenamiento o ajuste fino (fine-tuning) 
+  de modelos de Inteligencia Artificial sin consentimiento expreso y por escrito del Autor.
+
+4. RESERVA DE EXPLOTACIÓN COMERCIAL FUTURA
+El Autor se reserva el derecho exclusivo de comercializar, licenciar o distribuir este 
+Software en el mercado en el futuro.
+

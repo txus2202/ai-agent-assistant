@@ -201,6 +201,35 @@ describe('ChatPanel.vue', () => {
     expect(wrapper.find('[data-test="file-attachments-container"]').exists()).toBe(false)
   })
 
+  it('renders vault domain selector for Metis and forwards selected domain on submit', async () => {
+    const wrapper = mount(ChatPanel, {
+      props: { messages: [], isDebating: false }
+    })
+
+    // Select Metis
+    await wrapper.find('[data-test="agent-dropdown-btn"]').trigger('click')
+    const learningOption = wrapper.findAll('[data-test="agent-option"]').find(btn => btn.text().includes('Learning Agent'))
+    await learningOption!.trigger('click')
+
+    // Check domain selector exists next to file upload
+    const domainSelect = wrapper.find('[data-test="vault-domain-selector"]')
+    expect(domainSelect.exists()).toBe(true)
+
+    // Select enterprise architecture domain
+    await domainSelect.setValue('01_enterprise_architecture')
+
+    // Submit form
+    await wrapper.find('textarea').setValue('Asimila este estándar de observabilidad')
+    await wrapper.find('form').trigger('submit.prevent')
+
+    expect(mockStartDebate).toHaveBeenCalledWith(
+      'Asimila este estándar de observabilidad',
+      'learning',
+      null,
+      '01_enterprise_architecture'
+    )
+  })
+
 
   it('renders user and assistant messages properly', () => {
     const messages = [

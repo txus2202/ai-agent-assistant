@@ -1008,7 +1008,7 @@ async def _run_review_rounds(
                 f"{req}\n\n"
                 f"## Tu propuesta previa\n{current_proposal}\n\n"
                 f"## Crítica y objeciones técnicas de {reviewer_role}\n{reviewer_critique}\n\n"
-                f"Refina y robustece tus propuestas, solventando las observaciones y riesgos identificados por {reviewer_role} y asegurando su viabilidad futura y solidez operativa."
+                f"Refina y robustece tus propuestas, respondiendo y solventando las observaciones y riesgos identificados por {reviewer_role} (mediante mitigaciones técnicas, aislamiento de fallos o justificación de trade-offs), manteniendo firme tu identidad y enfoque de diseño diferencial sin claudicar en tu visión innovadora o pragmática antes del arbitraje humano."
             )
 
         results_refine = await asyncio.gather(

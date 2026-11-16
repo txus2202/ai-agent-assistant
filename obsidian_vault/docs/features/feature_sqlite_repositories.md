@@ -5,7 +5,7 @@ type: spec
 phase: 2
 layer: infrastructure
 status: implemented
-tags: [sqlite, repository, agent, task, infrastructure, persistence]
+tags: [sqlite, repository, agent, task, infrastructure, persistence, ai-agent-assistant]
 ---
 
 # Feature: SQLite Repositories — SQLiteAgentRepository & SQLiteTaskRepository

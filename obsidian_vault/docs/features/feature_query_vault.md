@@ -5,7 +5,7 @@ type: spec
 phase: 3
 layer: application
 status: implemented
-tags: [rag, query, use-case, application, context, chunks]
+tags: [rag, query, use-case, application, context, chunks, ai-agent-assistant]
 ---
 
 # Feature: QueryVault Use Case

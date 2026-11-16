@@ -164,14 +164,24 @@ class ChromaDBDocumentStore(IDocumentStore):
     def _build_where(filter: SearchFilter) -> dict:
         """Translate ``SearchFilter`` into a ChromaDB ``where`` clause."""
         conditions: list[dict] = []
-        if filter.type is not None:
-            conditions.append({"type": {"$eq": filter.type}})
-        if filter.layer is not None:
-            conditions.append({"layer": {"$eq": filter.layer}})
-        if filter.status is not None:
-            conditions.append({"status": {"$eq": filter.status}})
-        if filter.phase is not None:
-            conditions.append({"phase": {"$eq": str(filter.phase)}})
+
+        def _add_condition(key: str, val: Any) -> None:
+            if val is None:
+                return
+            if isinstance(val, (list, tuple)):
+                if len(val) == 1:
+                    conditions.append({key: {"$eq": str(val[0])}})
+                elif len(val) > 1:
+                    conditions.append({key: {"$in": [str(x) for x in val]}})
+            else:
+                conditions.append({key: {"$eq": str(val)}})
+
+        _add_condition("type", filter.type)
+        _add_condition("layer", filter.layer)
+        _add_condition("status", filter.status)
+        _add_condition("phase", filter.phase)
+        _add_condition("category", filter.category)
+        _add_condition("domain", filter.domain)
 
         if not conditions:
             return {}

@@ -5,7 +5,7 @@ type: spec
 phase: 1
 layer: application
 status: implemented
-tags: [use-case, agent, task, application]
+tags: [use-case, agent, task, application, ai-agent-assistant]
 ---
 
 # Feature: Use Case - RunAgentTask

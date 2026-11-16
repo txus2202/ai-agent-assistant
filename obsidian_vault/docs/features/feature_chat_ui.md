@@ -5,7 +5,7 @@ type: spec
 phase: 4
 layer: presentation
 status: draft
-tags: [chat, observability, agent-cards, hitl, vue, left-panel, right-panel]
+tags: [chat, observability, agent-cards, hitl, vue, left-panel, right-panel, atenea]
 ---
 
 # Feature: Chat UI, Agent Topology & HITL Panel

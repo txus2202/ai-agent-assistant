@@ -69,7 +69,7 @@ class SubAgentProfile:
 # ---------------------------------------------------------------------------
 
 _REQUIRED_FIELDS = ("id", "display_name", "description", "color_hex", "system_prompt")
-_RAG_FILTER_FIELDS = ("type", "phase", "layer", "status")
+_RAG_FILTER_FIELDS = ("type", "phase", "layer", "status", "category", "domain")
 
 
 def project_root() -> Path:

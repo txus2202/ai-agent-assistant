@@ -5,7 +5,7 @@ type: spec
 phase: 4
 layer: infrastructure
 status: draft
-tags: [history, sqlite, debates, persistence, cleanup]
+tags: [history, sqlite, debates, persistence, cleanup, ai-agent-assistant]
 ---
 
 # Feature: Debate History Persistence

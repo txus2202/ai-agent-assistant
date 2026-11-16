@@ -60,6 +60,7 @@ class LearnFromSession:
         vault_root: Path,
         model_name: str,
         solution_content: str | None = None,
+        target_domain: str = "deliberations/sessions",
     ) -> LearnResult:
         if not chat_history and not solution_content:
             return LearnResult(
@@ -96,9 +97,12 @@ class LearnFromSession:
         slug = _derive_slug(md_content, fallback=f"sesion-{session_id[:8]}")
         filename = f"{date_str}_solucion_{slug}.md"
 
-        learned_dir = vault_root / "learned"
-        learned_dir.mkdir(parents=True, exist_ok=True)
-        file_path = learned_dir / filename
+        clean_domain = target_domain.strip().strip("/") if target_domain else "deliberations/sessions"
+        if ".." in clean_domain:
+            clean_domain = "deliberations/sessions"
+        dest_dir = vault_root / clean_domain
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        file_path = dest_dir / filename
         file_path.write_text(md_content, encoding="utf-8")
 
         ingest_result = IngestVault.run(

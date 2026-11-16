@@ -341,6 +341,39 @@ class TestShippedCatalogIsConsistentWithShippedTopology:
             else:
                 assert f"- **{p.display_name}**:" not in roster
 
+    def test_parse_rag_filter_with_category_and_lists(self, tmp_path: Path):
+        from src.domain.agents.sub_agent_profiles import load_profiles_from_file
+        catalog = """\
+version: 1
+agents:
+  - id: sup
+    display_name: Supervisor
+    description: Sup
+    color_hex: "#000000"
+    system_prompt: Sup prompt
+    is_supervisor: true
+  - id: icaro
+    display_name: Icaro
+    description: Innovator
+    color_hex: "#111111"
+    system_prompt: Icaro prompt
+    uses_rag: true
+    rag_filter:
+      category:
+        - enterprise
+        - external-learning
+      type:
+        - spec
+        - note
+"""
+        f = tmp_path / "agents.yaml"
+        f.write_text(catalog, encoding="utf-8")
+        profiles = load_profiles_from_file(f)
+        icaro = next(p for p in profiles if p.id == "icaro")
+        assert icaro.rag_filter is not None
+        assert icaro.rag_filter.category == ("enterprise", "external-learning")
+        assert icaro.rag_filter.type == ("spec", "note")
+
 
 class TestSupervisorEventsAndHitl:
     def test_hitl_response_supports_target_agents(self):

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from src.application.services.learn_from_session import LearnFromSession
+from src.application.services.vault_domain_service import VaultDomainService
 from src.domain.entities.user import User
 from src.domain.ports.agent_config_repository import IAgentConfigRepository
 from src.domain.ports.debate_repository import IDebateRepository
@@ -22,6 +23,13 @@ router = APIRouter(prefix="/learning", tags=["learning"])
 class LearnSessionRequest(BaseModel):
     session_id: str
     content: str | None = None
+    target_domain: str | None = None
+
+
+class CreateDomainRequest(BaseModel):
+    id: str
+    name: str
+    description: str = ""
 
 
 def get_debate_repo(settings: Settings = Depends(get_settings)) -> IDebateRepository:
@@ -94,6 +102,7 @@ async def learn_session(
         vault_root=vault_root,
         solution_content=payload.content,
         model_name=mod_name,
+        target_domain=payload.target_domain or "deliberations/sessions",
     )
 
     if result.errors:
@@ -104,3 +113,52 @@ async def learn_session(
         "file": str(result.generated_file.name) if result.generated_file else "",
         "chunks_ingested": result.ingest_result.chunks_upserted,
     }
+
+
+@router.get("/domains", response_model=list[dict[str, Any]])
+async def list_domains(
+    settings: Settings = Depends(get_settings),
+    current_user: User = Depends(get_current_user),
+) -> list[dict[str, Any]]:
+    vault_root = Path(settings.vault_root)
+    domains = VaultDomainService.list_domains(vault_root)
+    return [
+        {
+            "id": d.id,
+            "name": d.name,
+            "description": d.description,
+            "path": d.path,
+            "moc_file": d.moc_file,
+            "document_count": d.document_count,
+            "is_system": d.is_system,
+        }
+        for d in domains
+    ]
+
+
+@router.post("/domains", status_code=201, response_model=dict[str, Any])
+async def create_domain(
+    payload: CreateDomainRequest,
+    settings: Settings = Depends(get_settings),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    vault_root = Path(settings.vault_root)
+    try:
+        domain = VaultDomainService.create_domain(
+            vault_root=vault_root,
+            domain_id=payload.id,
+            name=payload.name,
+            description=payload.description,
+        )
+        return {
+            "id": domain.id,
+            "name": domain.name,
+            "description": domain.description,
+            "path": domain.path,
+            "moc_file": domain.moc_file,
+            "document_count": domain.document_count,
+            "is_system": domain.is_system,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+

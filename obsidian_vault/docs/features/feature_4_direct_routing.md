@@ -2,7 +2,7 @@
 type: feature_spec
 status: implemented
 created: 2026-09-19
-tags: [backend, upload, routing, phase4]
+tags: [backend, upload, routing, phase4, atenea]
 ---
 
 # Feature: Direct Agent Invocation & File Upload

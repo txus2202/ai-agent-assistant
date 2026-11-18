@@ -6,6 +6,7 @@ Encapsulates MOC (Map of Content) management and directory hygiene.
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -125,21 +126,28 @@ class VaultDomainService:
         Create a new domain directory, initialize its MOC file,
         and update HOME.md with the new wikilink.
         """
-        clean_id = domain_id.strip()
-        if not clean_id or not _SAFE_ID_RE.match(clean_id):
+        clean_id = os.path.basename(domain_id.strip())
+        if not clean_id or clean_id != domain_id.strip() or not _SAFE_ID_RE.match(clean_id):
             raise ValueError(f"Invalid domain ID '{domain_id}'. Must contain only alphanumeric, '_' or '-'.")
 
         resolved_vault = vault_root.resolve()
         domain_dir = (resolved_vault / clean_id).resolve()
-        if not domain_dir.is_relative_to(resolved_vault) or domain_dir == resolved_vault:
+        try:
+            domain_dir.relative_to(resolved_vault)
+        except ValueError:
+            raise ValueError(f"Invalid domain ID '{domain_id}': path traversal detected.")
+        if domain_dir == resolved_vault:
             raise ValueError(f"Invalid domain ID '{domain_id}': path traversal detected.")
 
         domain_dir.mkdir(parents=True, exist_ok=True)
 
         clean_slug = clean_id.replace("-", "_")
-        moc_filename = f"MOC_{clean_slug}.md"
+        moc_filename = os.path.basename(f"MOC_{clean_slug}.md")
         moc_path = (domain_dir / moc_filename).resolve()
-        if not moc_path.is_relative_to(domain_dir):
+        try:
+            moc_path.relative_to(resolved_vault)
+            moc_path.relative_to(domain_dir)
+        except ValueError:
             raise ValueError(f"Invalid MOC filename '{moc_filename}'.")
 
         moc_rel = moc_path.relative_to(resolved_vault).as_posix()
@@ -163,7 +171,12 @@ class VaultDomainService:
 
         # Update HOME.md if present
         home_path = (resolved_vault / "HOME.md").resolve()
-        if home_path.is_relative_to(resolved_vault) and home_path.exists():
+        try:
+            home_path.relative_to(resolved_vault)
+        except ValueError:
+            raise ValueError("Invalid home path.")
+
+        if home_path.exists():
             home_text = home_path.read_text(encoding="utf-8")
             link_entry = f"\n* [[{clean_id}/{moc_path.stem}|📁 {clean_id} — {name}]]: {description or name}"
             if f"[[{clean_id}/" not in home_text:

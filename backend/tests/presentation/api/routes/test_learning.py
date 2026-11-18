@@ -104,3 +104,22 @@ def test_create_domain(client, tmp_path, monkeypatch):
     assert data["name"] == "Cloud FinOps"
     assert (mock_vault / "04_finops").is_dir()
 
+
+def test_create_domain_path_traversal_rejected(client, tmp_path, monkeypatch):
+    mock_vault = tmp_path / "obsidian_vault"
+    mock_vault.mkdir()
+    (mock_vault / "HOME.md").write_text("# HOME\n")
+
+    from src.presentation.api.config import get_settings
+    settings = get_settings()
+    monkeypatch.setattr(settings, "vault_root", mock_vault)
+
+    payload = {
+        "id": "../malicious_dir",
+        "name": "Malicious Domain",
+        "description": "Should be rejected",
+    }
+    response = client.post("/learning/domains", json=payload)
+    assert response.status_code == 400
+    assert "Invalid domain ID" in response.json()["detail"]
+

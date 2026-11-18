@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException
@@ -148,11 +149,15 @@ async def create_domain(
     settings: Settings = Depends(get_settings),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
+    clean_domain_id = os.path.basename(payload.id.strip())
+    if not clean_domain_id or clean_domain_id != payload.id.strip():
+        raise HTTPException(status_code=400, detail="Invalid domain ID: path traversal detected.")
+
     vault_root = Path(settings.vault_root)
     try:
         domain = VaultDomainService.create_domain(
             vault_root=vault_root,
-            domain_id=payload.id,
+            domain_id=clean_domain_id,
             name=payload.name,
             description=payload.description,
         )

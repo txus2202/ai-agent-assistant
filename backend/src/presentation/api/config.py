@@ -15,6 +15,9 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+DEFAULT_LANGFUSE_HOST: str = "http://localhost:3000"
+
+
 class Settings(BaseSettings):
     # LLM provider keys
     gemini_api_key: str = ""
@@ -77,7 +80,7 @@ class Settings(BaseSettings):
     langfuse_metrics_enabled: bool = False
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
-    langfuse_host: str = "http://localhost:3000"
+    langfuse_host: str = DEFAULT_LANGFUSE_HOST
     langfuse_base_url: str = ""
     langfuse_dashboard_url: str = ""
     langfuse_default_user_id: str = "local_user"
@@ -99,11 +102,11 @@ class Settings(BaseSettings):
 
     @property
     def effective_langfuse_host(self) -> str:
-        return self.langfuse_base_url or self.langfuse_host or "http://localhost:3000"
+        return self.langfuse_base_url or self.langfuse_host or DEFAULT_LANGFUSE_HOST
 
     @property
     def effective_langfuse_dashboard_url(self) -> str:
-        return self.langfuse_dashboard_url or self.langfuse_base_url or self.langfuse_host or "http://localhost:3000"
+        return self.langfuse_dashboard_url or self.langfuse_base_url or self.langfuse_host or DEFAULT_LANGFUSE_HOST
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),

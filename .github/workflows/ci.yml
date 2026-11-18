@@ -10,56 +10,145 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
-  test-and-sonar:
-    name: Build, Test and Analyze
+  backend-qa:
+    name: Backend QA (Python 3.12, Ruff, Mypy, Pytest)
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up uv and Python 3.12
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Install backend dependencies from lockfile
+        working-directory: ./backend
+        run: uv sync --frozen --extra dev --no-install-project
+
+      - name: Lint backend with Ruff
+        working-directory: ./backend
+        run: uv run --no-sync ruff check src
+
+      - name: Type-check backend with Mypy
+        working-directory: ./backend
+        run: uv run --no-sync mypy src
+
+      - name: Run backend tests with coverage
+        working-directory: ./backend
+        run: uv run --no-sync pytest --cov=src --cov-report=xml
+
+      - name: Upload backend coverage artifact
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4
         with:
-          python-version: "3.14"
+          name: backend-coverage
+          path: backend/coverage.xml
+          retention-days: 1
 
-      - name: Install dependencies
-        working-directory: ./backend
-        run: |
-          pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-          pip install --no-cache-dir -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
-          pip install --no-cache-dir -e ".[dev]" --extra-index-url https://download.pytorch.org/whl/cpu
-          pip uninstall -y torchaudio || true
+  frontend-qa:
+    name: Frontend QA (Type-check, Lint, Vitest, Build)
+    runs-on: ubuntu-latest
 
-      - name: Run tests with coverage
-        working-directory: ./backend
-        run: |
-          pytest --cov=src --cov-report=xml
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
         with:
-          node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: './frontend/package-lock.json'
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: "./frontend/package-lock.json"
 
       - name: Install frontend dependencies
         working-directory: ./frontend
         run: npm ci --ignore-scripts
 
-      - name: Type check frontend
+      - name: Type-check frontend
         working-directory: ./frontend
         run: npm run type-check
 
-      - name: Lint frontend
+      - name: Lint frontend (non-mutating)
         working-directory: ./frontend
         run: npm run lint
 
-      - name: Run frontend tests with coverage
+      - name: Run frontend unit tests with coverage
         working-directory: ./frontend
         run: npm run test:coverage
+
+      - name: Build production frontend bundle
+        working-directory: ./frontend
+        run: npm run build
+
+      - name: Upload frontend coverage artifact
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/lcov.info
+          retention-days: 1
+
+  e2e-playwright:
+    name: Frontend E2E Tests (Playwright)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: "./frontend/package-lock.json"
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci --ignore-scripts
+
+      - name: Install Playwright Chromium
+        working-directory: ./frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E tests
+        working-directory: ./frontend
+        run: npm run test:e2e
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 7
+
+  sonar:
+    name: SonarCloud Quality & Coverage Scan
+    needs: [backend-qa, frontend-qa]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
+
+      - name: Download backend coverage
+        uses: actions/download-artifact@fa0a91b85d4f404e4b4e03edaccd7ee6f0cd395b # v4
+        with:
+          name: backend-coverage
+          path: backend/
+
+      - name: Download frontend coverage
+        uses: actions/download-artifact@fa0a91b85d4f404e4b4e03edaccd7ee6f0cd395b # v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v8
@@ -79,31 +168,3 @@ jobs:
             -Dsonar.issue.ignore.multicriteria=e1
             -Dsonar.issue.ignore.multicriteria.e1.ruleKey=css:S4667
             -Dsonar.issue.ignore.multicriteria.e1.resourceKey=**/*.css
-
-  e2e-playwright:
-    name: Frontend E2E Tests (Playwright)
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out the repository
-        uses: actions/checkout@v5
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: './frontend/package-lock.json'
-
-      - name: Install frontend dependencies
-        working-directory: ./frontend
-        run: npm ci
-
-      - name: Install Playwright Chromium
-        working-directory: ./frontend
-        run: npx playwright install --with-deps chromium
-
-      - name: Run Playwright E2E tests
-        working-directory: ./frontend
-        run: npm run test:e2e
-

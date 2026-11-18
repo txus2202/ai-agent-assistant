@@ -77,7 +77,7 @@ def _validate_url_target(url: str) -> None:
         raise ExtractionError(f"DNS resolution returned no addresses for '{hostname}'")
 
     for _, _, _, _, sockaddr in addr_infos:
-        resolved_ip = sockaddr[0]
+        resolved_ip = str(sockaddr[0])
         if _is_forbidden_ip(resolved_ip):
             raise ExtractionError(
                 f"Blocked SSRF target IP address '{resolved_ip}' for host '{hostname}'"

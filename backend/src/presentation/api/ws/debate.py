@@ -16,11 +16,12 @@ from typing import Any, Iterable
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from src.application.agents.sub_agent_runner import SubAgentRunner
+from src.application.agents.sub_agent_runner import SubAgentResponse, SubAgentRunner
 from src.application.agents.supervisor_agent import SupervisorAgent
 from src.application.services.learn_from_source import LearnFromSource, SourceType
-from src.domain.agents.sub_agent_profiles import get_profile
+from src.domain.agents.sub_agent_profiles import SubAgentProfile, get_profile
 from src.domain.agents.supervisor_events import HITLResponse, SupervisorEvent, EventType, HITLDecision
+from src.domain.ports.llm_provider import ILLMProvider
 from src.domain.ports.observability_port import TraceContext, SpanContext
 from src.domain.value_objects.debate_record import DebateRecord
 from src.infrastructure.llm.registry import get_llm_provider

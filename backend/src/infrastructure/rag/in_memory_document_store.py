@@ -10,6 +10,7 @@ No embeddings — purely lexical. Use ChromaDBDocumentStore for semantic search.
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from src.domain.ports.document_store import IDocumentStore
 from src.domain.value_objects.document_chunk import DocumentChunk, SearchFilter

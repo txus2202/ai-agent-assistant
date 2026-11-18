@@ -19,29 +19,50 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import asyncio
-import atexit
-import os
-import sys
+import logging
+from typing import Any
 
-from src.presentation.api.config import get_settings
+from src.presentation.api.config import Settings, get_settings
 from src.infrastructure.persistence.sqlite_agent_config_repository import SqliteAgentConfigRepository
 from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
-from src.infrastructure.observability.docker_manager import DockerObservabilityManager
+
+logger = logging.getLogger(__name__)
 
 
-def _cleanup_docker_on_exit() -> None:
-    """Safety fallback to ensure Docker stack stops when the Python process exits."""
-    if "pytest" in sys.modules or os.environ.get("ENV") == "test":
-        return
+async def _init_postgres_pool(
+    app: FastAPI,
+    db_url: str,
+    max_attempts: int = 5,
+    retry_delay: float = 1.5,
+) -> None:
+    """Initialize asyncpg pool with bounded retries for `--profile scale` startup ordering."""
     try:
-        settings = get_settings()
-        if settings.langfuse_metrics_enabled:
-            DockerObservabilityManager().stop_stack()
-    except Exception:
-        pass
+        import asyncpg
+    except ImportError:
+        raise RuntimeError(
+            f"DATABASE_URL is set to '{db_url}', but asyncpg is not installed. "
+            "Install it with `pip install asyncpg` or unset DATABASE_URL to use SQLite."
+        )
 
+    from src.infrastructure.persistence.postgres_user_repository import PostgreSQLUserRepository
 
-atexit.register(_cleanup_docker_on_exit)
+    for attempt in range(1, max_attempts + 1):
+        try:
+            app.state.db_pool = await asyncpg.create_pool(dsn=db_url)
+            pg_repo = PostgreSQLUserRepository(pool=app.state.db_pool)
+            await pg_repo.init_schema()
+            return
+        except OSError as exc:
+            if attempt >= max_attempts:
+                raise
+            logger.warning(
+                "PostgreSQL not ready on attempt %d/%d (%s); retrying in %.1fs...",
+                attempt,
+                max_attempts,
+                exc,
+                retry_delay,
+            )
+            await asyncio.sleep(retry_delay)
 
 
 @asynccontextmanager
@@ -65,21 +86,7 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
     # Initialize PostgreSQL pool if configured
     db_url = getattr(settings, "database_url", "")
     if db_url and db_url.startswith(("postgres://", "postgresql://")):
-        try:
-            import asyncpg
-            app.state.db_pool = await asyncpg.create_pool(dsn=db_url)
-            from src.infrastructure.persistence.postgres_user_repository import PostgreSQLUserRepository
-            pg_repo = PostgreSQLUserRepository(pool=app.state.db_pool)
-            await pg_repo.init_schema()
-        except ImportError:
-            raise RuntimeError(
-                f"DATABASE_URL is set to '{db_url}', but asyncpg is not installed. "
-                "Install it with `pip install asyncpg` or unset DATABASE_URL to use SQLite."
-            )
-    
-    # Ensure Langfuse Docker stack matches LANGFUSE_METRICS_ENABLED
-    docker_manager = DockerObservabilityManager()
-    await asyncio.to_thread(docker_manager.ensure_stack_state, settings.langfuse_metrics_enabled)
+        await _init_postgres_pool(app, db_url)
     
     # Future: ChromaDB, LLMProviderRegistry init
     try:
@@ -88,8 +95,6 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
         # ── Shutdown ─────────────────────────────────────────────────────────
         if hasattr(app.state, "db_pool") and app.state.db_pool:
             await app.state.db_pool.close()
-        if settings.langfuse_metrics_enabled:
-            await asyncio.to_thread(docker_manager.stop_stack)
 
 
 

@@ -1,8 +1,7 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException
 from src.domain.entities.user import User
 from src.domain.ports.debate_repository import IDebateRepository
-from src.domain.value_objects.debate_record import DebateRecord
 from src.presentation.api.config import get_settings, Settings
 from src.presentation.api.dependencies.auth import get_current_user, get_debate_repository
 

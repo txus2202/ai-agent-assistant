@@ -57,7 +57,7 @@ from src.domain.ports.llm_provider import ILLMProvider
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 _SECTION_SEPARATOR = "\n\n---\n\n"
 _ERROR_MARKER = "[Error"

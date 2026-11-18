@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.application.services.ingest_vault import IngestResult, IngestVault
+from src.application.services.ingest_vault import IngestVault
 from src.application.services.learn_from_source import LearnResult
 from src.domain.exceptions import LLMProviderError
 from src.domain.ports.document_store import IDocumentStore

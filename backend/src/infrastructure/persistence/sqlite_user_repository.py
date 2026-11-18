@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 import sqlite3
 from typing import Optional
 from src.domain.entities.user import User

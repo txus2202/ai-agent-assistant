@@ -5,6 +5,7 @@ from src.application.services.auth_service import AuthService
 from src.domain.entities.user import User
 from src.domain.ports.agent_config_repository import IAgentConfigRepository
 from src.domain.ports.debate_repository import IDebateRepository
+from src.domain.ports.user_repository_port import IUserRepository
 from src.infrastructure.persistence.sqlite_agent_config_repository import SqliteAgentConfigRepository
 from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
 from src.infrastructure.persistence.sqlite_user_repository import SQLiteUserRepository
@@ -40,6 +41,7 @@ def get_auth_service(connection: HTTPConnection) -> AuthService:
     if _auth_service_instance is None:
         settings = get_settings()
         db_url = getattr(settings, "database_url", "")
+        user_repo: IUserRepository
         if db_url and db_url.startswith(("postgres://", "postgresql://")):
             # PostgreSQL pool injected from lifespan
             pg_pool = getattr(app_state, "db_pool", None)

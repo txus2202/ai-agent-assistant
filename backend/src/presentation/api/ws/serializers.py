@@ -7,7 +7,6 @@ and raw dict → HITLResponse (from client JSON).
 from __future__ import annotations
 
 from src.domain.agents.supervisor_events import (
-    EventType,
     HITLDecision,
     HITLResponse,
     SupervisorEvent,
@@ -16,10 +15,10 @@ from src.domain.agents.supervisor_events import (
 
 def event_to_dict(event: SupervisorEvent) -> dict:
     """Serialize a SupervisorEvent to a JSON-safe dict for WebSocket transmission."""
-    if hasattr(event.role, "value"):
-        role_val = event.role.value
-    else:
+    if event.role is None or isinstance(event.role, str):
         role_val = event.role
+    else:
+        role_val = event.role.value
     return {
         "type": event.type.value,
         "role": role_val,

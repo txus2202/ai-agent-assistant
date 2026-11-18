@@ -15,7 +15,6 @@ from src.domain.exceptions import (
     LastAdminError,
     SelfModificationError,
     WeakPasswordError,
-    UnauthorizedError,
 )
 from src.presentation.api.config import get_settings
 from src.presentation.api.dependencies.auth import (

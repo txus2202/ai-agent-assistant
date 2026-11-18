@@ -33,6 +33,7 @@ services:
       - ./topology.yaml:/app/topology.yaml:ro
       - ./backend/voices:/app/voices
       - ./backend/src/infrastructure/models/vosk:/app/models:ro
+      - atenea_ml_cache:/home/atenea/.cache
     environment:
       - PYTHONUNBUFFERED=1
       - MALLOC_ARENA_MAX=2
@@ -118,7 +119,7 @@ services:
   # Scaled Infrastructure (Activated via --profile scale or --profile full)
   # ---------------------------------------------------------------------------
   chroma-server:
-    image: chromadb/chroma:latest
+    image: chromadb/chroma:1.5.9@sha256:1e0b73a187a28757c572acba508c46f48c9e8b0acaf5c20e6d95cdedce1acdf6
     container_name: atenea-chroma-server
     profiles:
       - scale
@@ -191,8 +192,6 @@ services:
       - no-new-privileges:true
     networks:
       - data-net
-    volumes:
-      - atenea_redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -207,7 +206,7 @@ services:
   # Langfuse Observability Stack (Phase 6 / ADR 020)
   # ---------------------------------------------------------------------------
   langfuse-web:
-    image: docker.langfuse.com/langfuse/langfuse:3
+    image: docker.langfuse.com/langfuse/langfuse:3@sha256:314f4d79d6761299e4299dc646943f01bfabbc1daff286ab818245549aa5e9d6
     container_name: atenea-langfuse-web
     profiles:
       - observability
@@ -228,7 +227,6 @@ services:
       - no-new-privileges:true
     networks:
       - npm-network
-      - app-net
       - data-net
     environment:
       HOSTNAME: "0.0.0.0"
@@ -267,7 +265,7 @@ services:
       start_period: 30s
 
   langfuse-worker:
-    image: docker.langfuse.com/langfuse/langfuse-worker:3
+    image: docker.langfuse.com/langfuse/langfuse-worker:3@sha256:02c87eda9a9c6be5b3bf9a78041db86f06bad568d9dd434be3b3c1159f8d0579
     container_name: atenea-langfuse-worker
     profiles:
       - observability
@@ -348,7 +346,7 @@ services:
           memory: 1024M
 
   minio:
-    image: cgr.dev/chainguard/minio:latest
+    image: cgr.dev/chainguard/minio@sha256:7618b82bba99aadd77fcf59eb6cfd89b4b8b8e01ac796c474d57a1c1abf17e79
     container_name: atenea-langfuse-minio
     profiles:
       - observability
@@ -380,10 +378,10 @@ services:
 
 volumes:
   atenea_data:
+  atenea_ml_cache:
   atenea_chroma_data:
   atenea_postgres_data:
   atenea_clickhouse_data:
-  atenea_redis_data:
   atenea_minio_data:
 
 networks:

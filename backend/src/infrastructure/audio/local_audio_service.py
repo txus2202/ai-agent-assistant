@@ -1,7 +1,6 @@
 import asyncio
 import io
 import os
-import wave
 from pathlib import Path
 from typing import BinaryIO
 
@@ -10,6 +9,8 @@ import soundfile as sf
 import numpy as np
 import av
 from kokoro_onnx import Kokoro
+from src.domain.ports.audio_service import IAudioService
+from src.infrastructure.audio.phonetic_normalizer import SpanishTechPhoneticNormalizer
 
 # Patch PyAV open to ignore 'metadata_errors' which was removed in newer versions
 # but is still passed by faster-whisper <= 1.2.x, causing a TypeError.
@@ -18,9 +19,6 @@ def patched_av_open(*args, **kwargs):
     kwargs.pop("metadata_errors", None)
     return original_av_open(*args, **kwargs)
 av.open = patched_av_open
-
-from src.domain.ports.audio_service import IAudioService
-from src.infrastructure.audio.phonetic_normalizer import SpanishTechPhoneticNormalizer
 
 
 class LocalAudioService(IAudioService):

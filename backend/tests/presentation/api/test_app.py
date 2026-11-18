@@ -170,3 +170,48 @@ class TestSettingsEnvAlignment:
         cfg = Settings(_env_file=None)
         assert cfg.default_model == "gemini-3.6-flash"
         assert cfg.database_url == "postgresql://user:pass@postgres:5432/atenea"
+
+
+class TestLifespanDecoupling:
+    def test_app_module_does_not_manage_docker_lifecycle(self):
+        import inspect
+        from src.presentation.api import app as app_mod
+
+        source = inspect.getsource(app_mod)
+        assert "DockerObservabilityManager" not in source
+        assert "atexit" not in source
+
+    @pytest.mark.anyio
+    async def test_init_postgres_pool_retries_transient_os_error(self, monkeypatch):
+        import sys
+        import types
+        from unittest.mock import AsyncMock, MagicMock
+        from fastapi import FastAPI
+        from src.presentation.api.app import _init_postgres_pool
+
+        attempts = 0
+        mock_pool = MagicMock()
+
+        async def _flaky_create_pool(dsn: str):
+            nonlocal attempts
+            attempts += 1
+            if attempts < 2:
+                raise OSError("postgres starting")
+            return mock_pool
+
+        fake_asyncpg = types.ModuleType("asyncpg")
+        fake_asyncpg.create_pool = _flaky_create_pool  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, "asyncpg", fake_asyncpg)
+
+        mock_pg_repo = MagicMock()
+        mock_pg_repo.init_schema = AsyncMock()
+        monkeypatch.setattr(
+            "src.infrastructure.persistence.postgres_user_repository.PostgreSQLUserRepository",
+            lambda pool: mock_pg_repo,
+        )
+
+        test_app = FastAPI()
+        await _init_postgres_pool(test_app, "postgresql://user:pass@postgres:5432/atenea", max_attempts=3, retry_delay=0.0)
+        assert attempts == 2
+        assert test_app.state.db_pool is mock_pool
+        mock_pg_repo.init_schema.assert_awaited_once()

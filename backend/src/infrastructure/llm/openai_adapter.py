@@ -113,16 +113,18 @@ class OpenAIAdapter(ILLMProvider):
     def _probe_model(self, name_id: str) -> bool:
         """1-token minimal probe: validates chat endpoint is accessible."""
         try:
-            kwargs = (
-                {"max_completion_tokens": 1}
-                if name_id.startswith(("o1", "o3"))
-                else {"max_tokens": 1}
-            )
-            self._client.chat.completions.create(
-                model=name_id,
-                messages=[{"role": "user", "content": "ping"}],
-                **kwargs,
-            )
+            if name_id.startswith(("o1", "o3")):
+                self._client.chat.completions.create(
+                    model=name_id,
+                    messages=[{"role": "user", "content": "ping"}],
+                    max_completion_tokens=1,
+                )
+            else:
+                self._client.chat.completions.create(
+                    model=name_id,
+                    messages=[{"role": "user", "content": "ping"}],
+                    max_tokens=1,
+                )
             return True
         except Exception:
             return False

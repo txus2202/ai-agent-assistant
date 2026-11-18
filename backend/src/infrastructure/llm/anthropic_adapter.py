@@ -55,7 +55,11 @@ class AnthropicAdapter(ILLMProvider):
                 }
             else:
                 self._last_usage = {}
-            return message.content[0].text
+            for block in message.content:
+                text = getattr(block, "text", None)
+                if isinstance(text, str):
+                    return text
+            return ""
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
 

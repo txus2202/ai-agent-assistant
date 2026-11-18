@@ -25,7 +25,7 @@ import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Generator
 
 from src.domain.entities.task import Task, TaskStatus

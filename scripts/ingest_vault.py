@@ -15,24 +15,30 @@ Options
     --vault-root  PATH   Root directory of the Obsidian vault.
                          Defaults to ./obsidian_vault relative to this script.
     --chroma-path PATH   ChromaDB persist directory.
-                         Defaults to CHROMA_PATH env var or
-                         ~/.ai-agent-assistant/chroma.
+                         Defaults to CHROMA_PERSIST_DIR (or legacy CHROMA_PATH)
+                         env var or ~/.ai-agent-assistant/chroma.
+    --chroma-host HOST   ChromaDB HTTP server host (overrides local persistence).
+                         Defaults to CHROMA_HOST env var.
+    --chroma-port PORT   ChromaDB HTTP server port (default: CHROMA_PORT or 8000).
     --dry-run            Parse and count chunks without writing to ChromaDB.
     --verbose, -v        Print every processed file.
     --help               Show this message and exit.
 
 Environment variables
 ---------------------
-    CHROMA_PATH    Override the ChromaDB storage directory.
-    RAG_TOP_K      (Used at query time, not here — documented for reference.)
+    CHROMA_PERSIST_DIR  Override local ChromaDB storage directory.
+    CHROMA_PATH         Legacy alias for CHROMA_PERSIST_DIR.
+    CHROMA_HOST         Remote ChromaDB server hostname (e.g. chroma-server).
+    CHROMA_PORT         Remote ChromaDB server port (default: 8000).
+    RAG_TOP_K           (Used at query time, not here — documented for reference.)
 
 Examples
 --------
-    # Ingest from project root
+    # Ingest locally
     python scripts/ingest_vault.py
 
-    # Specify paths explicitly
-    python scripts/ingest_vault.py --vault-root obsidian_vault/ --chroma-path ~/.ai-agent-assistant/chroma
+    # Ingest into external ChromaDB server (--profile scale)
+    python scripts/ingest_vault.py --chroma-host 127.0.0.1 --chroma-port 8001
 
     # Dry-run: see what would be ingested without writing
     python scripts/ingest_vault.py --dry-run --verbose
@@ -80,10 +86,10 @@ def _bold(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Argument parsing
+# Argument parsing & store resolution
 # ---------------------------------------------------------------------------
 
-def _parse_args() -> argparse.Namespace:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="ingest_vault",
         description="Ingest the ATENEA Obsidian vault into ChromaDB.",
@@ -101,7 +107,24 @@ def _parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         metavar="PATH",
-        help="ChromaDB persist directory (default: CHROMA_PATH env var or ~/.ai-agent-assistant/chroma).",
+        help=(
+            "ChromaDB persist directory "
+            "(default: CHROMA_PERSIST_DIR or CHROMA_PATH env var, or ~/.ai-agent-assistant/chroma)."
+        ),
+    )
+    parser.add_argument(
+        "--chroma-host",
+        type=str,
+        default=None,
+        metavar="HOST",
+        help="Remote ChromaDB HTTP server hostname (default: CHROMA_HOST env var).",
+    )
+    parser.add_argument(
+        "--chroma-port",
+        type=int,
+        default=None,
+        metavar="PORT",
+        help="Remote ChromaDB HTTP server port (default: CHROMA_PORT env var or 8000).",
     )
     parser.add_argument(
         "--dry-run",
@@ -113,18 +136,43 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print every processed file.",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
+
+
+def _resolve_document_store(
+    *,
+    dry_run: bool,
+    chroma_path: str | None,
+    chroma_host: str | None,
+    chroma_port: int | None,
+) -> tuple[IDocumentStore, str]:
+    if dry_run:
+        return InMemoryDocumentStore(), "dry-run (InMemory — nothing written to disk)"
+
+    resolved_host = chroma_host or os.getenv("CHROMA_HOST") or None
+    if resolved_host:
+        resolved_port = chroma_port if chroma_port is not None else int(os.getenv("CHROMA_PORT", "8000"))
+        store = ChromaDBDocumentStore(host=resolved_host, port=resolved_port)
+        return store, f"vault_docs  (http: {resolved_host}:{resolved_port})"
+
+    resolved_chroma = (
+        chroma_path
+        or os.getenv("CHROMA_PERSIST_DIR")
+        or os.getenv("CHROMA_PATH")
+        or os.path.expanduser("~/.ai-agent-assistant/chroma")
+    )
+    store = ChromaDBDocumentStore(persist_directory=resolved_chroma)
+    return store, f"vault_docs  (persist: {resolved_chroma})"
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
-def main() -> int:
-    args = _parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
 
     vault_root: Path = args.vault_root.resolve()
-    chroma_path: str | None = args.chroma_path or os.getenv("CHROMA_PATH")
     dry_run: bool = args.dry_run
     verbose: bool = args.verbose
 
@@ -134,14 +182,12 @@ def main() -> int:
         return 1
 
     # ── Choose document store ─────────────────────────────────────────────
-    store: IDocumentStore
-    if dry_run:
-        store = InMemoryDocumentStore()
-        store_label = "dry-run (InMemory — nothing written to disk)"
-    else:
-        resolved_chroma = chroma_path or os.path.expanduser("~/.ai-agent-assistant/chroma")
-        store = ChromaDBDocumentStore(persist_directory=resolved_chroma)
-        store_label = f"vault_docs  (persist: {resolved_chroma})"
+    store, store_label = _resolve_document_store(
+        dry_run=dry_run,
+        chroma_path=args.chroma_path,
+        chroma_host=args.chroma_host,
+        chroma_port=args.chroma_port,
+    )
 
     # ── Verbose callback ──────────────────────────────────────────────────
     def _on_file(file_path: Path, n_chunks: int) -> None:

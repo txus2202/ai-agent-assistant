@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 from src.domain.exceptions import LLMProviderError
 from src.domain.ports.llm_provider import ILLMProvider

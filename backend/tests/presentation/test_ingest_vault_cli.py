@@ -138,3 +138,43 @@ def test_verbose_output_matches_file_count(tmp_path: Path) -> None:
     # Each file name must appear in stdout
     for i in range(3):
         assert f"file_{i}.md" in result.stdout
+
+
+def test_help_shows_chroma_host_and_port_flags() -> None:
+    result = _run("--help")
+
+    assert result.returncode == 0
+    assert "--chroma-host" in result.stdout
+    assert "--chroma-port" in result.stdout
+    assert "CHROMA_PERSIST_DIR" in result.stdout
+
+
+def test_resolve_document_store_supports_http_server_and_chroma_persist_dir(monkeypatch, tmp_path: Path) -> None:
+    import importlib.util
+    from unittest.mock import MagicMock
+
+    spec = importlib.util.spec_from_file_location("ingest_vault_cli", _CLI)
+    assert spec is not None and spec.loader is not None
+    cli_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli_mod)
+
+    mock_store_cls = MagicMock()
+    monkeypatch.setattr(cli_mod, "ChromaDBDocumentStore", mock_store_cls)
+
+    monkeypatch.setenv("CHROMA_HOST", "chroma-server")
+    monkeypatch.setenv("CHROMA_PORT", "8001")
+    _, label_http = cli_mod._resolve_document_store(
+        dry_run=False, chroma_path=None, chroma_host=None, chroma_port=None
+    )
+    mock_store_cls.assert_called_once_with(host="chroma-server", port=8001)
+    assert "http: chroma-server:8001" in label_http
+
+    mock_store_cls.reset_mock()
+    monkeypatch.delenv("CHROMA_HOST", raising=False)
+    monkeypatch.setenv("CHROMA_PERSIST_DIR", str(tmp_path / "canonical_chroma"))
+    monkeypatch.setenv("CHROMA_PATH", str(tmp_path / "legacy_chroma"))
+    _, label_persist = cli_mod._resolve_document_store(
+        dry_run=False, chroma_path=None, chroma_host=None, chroma_port=None
+    )
+    mock_store_cls.assert_called_once_with(persist_directory=str(tmp_path / "canonical_chroma"))
+    assert "canonical_chroma" in label_persist

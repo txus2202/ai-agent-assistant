@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.application.services.query_vault import QueryVault
-from src.domain.agents.sub_agent_profiles import format_team_roster, get_profile
+from src.domain.agents.sub_agent_profiles import SubAgentProfile, format_team_roster, get_profile
 from src.domain.ports.document_store import IDocumentStore
 from src.domain.ports.llm_provider import ILLMProvider
 from src.domain.value_objects.document_chunk import DocumentChunk

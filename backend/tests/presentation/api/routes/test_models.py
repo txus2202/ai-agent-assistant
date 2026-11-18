@@ -33,6 +33,11 @@ def client(test_user, shared_cache_repo):
     return TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def mock_gemini_configured(monkeypatch):
+    monkeypatch.setattr(models_module, "is_provider_configured", lambda name: name == "gemini")
+
+
 def test_cold_start_swr_returns_preliminary_and_executes_probe(client, shared_cache_repo, monkeypatch):
     calls = []
 

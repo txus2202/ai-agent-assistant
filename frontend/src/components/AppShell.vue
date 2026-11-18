@@ -225,6 +225,7 @@ const handleToggleMic = () => {
           :active-agent-color="activeAgentColor"
           :active-agents="activeAgentsList"
           :is-debating="isOrbDebating"
+          :is-visible="!isMobileViewport || mobileTab === 'voice'"
           @submit-draft="chatPanelRef?.onSubmit()"
           class="flex-1 w-full h-full"
         />
@@ -241,6 +242,7 @@ const handleToggleMic = () => {
           class="flex-1" 
           :agents="store.agents"
           :initial-tab="mobileTab === 'telemetry' ? 'observability' : 'agents'"
+          :is-visible="!isMobileViewport || mobileTab === 'agents' || mobileTab === 'telemetry'"
         >
           <template #orchestration>
             <div class="flex flex-col justify-center space-y-2 h-full">
@@ -263,8 +265,9 @@ const handleToggleMic = () => {
 
     </div>
 
-    <!-- Mobile SoundBar Dock (Over the bottom screens navigation menu on ALL mobile tabs) -->
+    <!-- Mobile SoundBar Dock (Conditionally mounted only on mobile viewports so SoundBar is never duplicated) -->
     <div
+      v-if="isMobileViewport"
       data-test="mobile-sound-bar"
       class="md:hidden w-full relative z-20 shrink-0 h-[34px]"
     >

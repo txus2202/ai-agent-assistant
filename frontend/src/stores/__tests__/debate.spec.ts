@@ -1322,7 +1322,7 @@ describe('useDebateStore', () => {
     }
   })
 
-  it('immediately increments Atenea triage tokens and turns at debate start and preserves them on cancellation', () => {
+  it('increments Atenea turns at debate start without fabricating triage tokens and preserves backend telemetry on cancellation', () => {
     const store = useDebateStore()
     store.connect()
     store.isConnected = true
@@ -1335,9 +1335,9 @@ describe('useDebateStore', () => {
 
     const atenea = store.agents.find(a => a.role === 'supervisor')!
     expect(atenea.turns).toBe(1)
-    expect(atenea.promptTokens).toBeGreaterThan(100)
-    expect(atenea.completionTokens).toBe(25)
-    expect(atenea.tokens).toBeGreaterThan(125)
+    expect(atenea.promptTokens).toBe(0)
+    expect(atenea.completionTokens).toBe(0)
+    expect(atenea.tokens).toBe(0)
     expect(atenea.state).toBe('ACTIVE')
 
     // Delegated agent starts (Hermes starts Phase 1)
@@ -1349,15 +1349,65 @@ describe('useDebateStore', () => {
     expect(atenea.state).toBe('STANDBY')
     expect(atenea.latency).toBeDefined()
 
+    // Backend reports actual Atenea telemetry on completion
+    store.handleSupervisorEvent({
+      type: 'agent_completed',
+      role: 'supervisor',
+      content: 'Síntesis parcial',
+      metadata: { prompt_tokens: '110', completion_tokens: '25', total_tokens: '135', tokens: '135', latency_seconds: '0.4' }
+    })
+
     // User cancels the debate early
     store.cancelDebate()
 
-    // Atenea metrics must remain intact and reflected even though debate ended prematurely
+    // Atenea backend-reported metrics must remain intact even though debate ended prematurely
     expect(atenea.turns).toBe(1)
-    expect(atenea.promptTokens).toBeGreaterThan(100)
+    expect(atenea.promptTokens).toBe(110)
     expect(atenea.completionTokens).toBe(25)
-    expect(atenea.tokens).toBeGreaterThan(125)
-    expect(atenea.latency).toBeDefined()
+    expect(atenea.tokens).toBe(135)
+    expect(atenea.latency).toBe(0.4)
+  })
+
+  it('does not fabricate synthetic triage or cache tokens without backend telemetry', () => {
+    const store = useDebateStore()
+    store.connect()
+    store.isConnected = true
+    store.agents = [
+      { role: 'supervisor', name: 'Atenea', state: 'STANDBY', tokens: 0, promptTokens: 0, completionTokens: 0, turns: 0 },
+      { role: 'nl_interpreter', name: 'Hermes', state: 'STANDBY', tokens: 0, promptTokens: 0, completionTokens: 0, turns: 0 },
+      { role: 'senior_architect', name: 'Hestia', state: 'STANDBY', tokens: 0, promptTokens: 0, completionTokens: 0, turns: 0 }
+    ]
+
+    store.startDebate('Diseña una arquitectura distribuida escalable', 'supervisor')
+    const atenea = store.agents.find(a => a.role === 'supervisor')!
+    expect(atenea.tokens).toBe(0)
+    expect(store.sessionTotalTokens).toBe(0)
+
+    store.handleSupervisorEvent({
+      type: 'agent_completed',
+      role: 'nl_interpreter',
+      content: 'Requisitos',
+      metadata: { total_tokens: '80', prompt_tokens: '50', completion_tokens: '30' }
+    })
+    store.handleSupervisorEvent({
+      type: 'agent_completed',
+      role: 'senior_architect',
+      content: 'Propuesta',
+      metadata: { total_tokens: '120', prompt_tokens: '70', completion_tokens: '50' }
+    })
+
+    // Without cached_tokens reported by backend, sessionCachedTokens remains 0
+    expect(store.sessionCachedTokens).toBe(0)
+    expect(store.sessionTotalTokens).toBe(200)
+
+    // When backend reports cached_tokens explicitly, it is accumulated accurately
+    store.handleSupervisorEvent({
+      type: 'agent_completed',
+      role: 'supervisor',
+      content: 'Consolidación',
+      metadata: { total_tokens: '90', prompt_tokens: '60', completion_tokens: '30', cached_tokens: '40' }
+    })
+    expect(store.sessionCachedTokens).toBe(40)
   })
 
   it('progressively increments completion tokens in real-time as stream chunks arrive for an agent', () => {

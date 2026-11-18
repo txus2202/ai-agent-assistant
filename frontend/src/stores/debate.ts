@@ -1,5 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import {
+  stripAgentHeaderPrefixes,
+  getToolSpokenFallback,
+  findSentenceSplitIndex
+} from '../utils/ttsFilter'
 
 export type AgentState = 'STANDBY' | 'ACTIVE' | 'COMPLETED' | 'ERROR'
 export type HitlDecisionType = 'approve' | 'refine' | 'divert' | 'finish' | 'consolidate' | 'retry' | 'reject'
@@ -35,6 +40,7 @@ export interface ChatMessage {
 }
 
 export interface SupervisorEvent {
+  id?: string
   type: string
   timestamp?: string
   role?: string | null
@@ -131,52 +137,17 @@ export function normalizeAgentRole(r?: string | null): string {
 
 /**
  * Strips initial agent/role prefixes like "[nl_interpreter] ", "[the_judge] ",
- * and markdown headers like "## Interpretation\n", "## Ícaro\n", "## Sphinx\n".
+ * and markdown headers like "## Interpretation\n".
+ * Consolidated with utils/ttsFilter.ts.
  */
-export function cleanAgentMessageContent(rawContent: string): string {
-  if (!rawContent) return ''
-  let clean = rawContent.trim()
-  const bracketPrefix = /^\[[\w\s.-]+\]\s*/i
-  const headerPrefix = /^##\s+(?:Interpretation|Ícaro|Icaro|Hermes|Hestia|Sphinx|the_judge|nl_interpreter|innovator_architect|senior_architect|atenea|supervisor)\s*\n+/i
-
-  let changed = true
-  while (changed) {
-    changed = false
-    if (bracketPrefix.test(clean)) {
-      clean = clean.replace(bracketPrefix, '').trim()
-      changed = true
-    }
-    if (headerPrefix.test(clean)) {
-      clean = clean.replace(headerPrefix, '').trim()
-      changed = true
-    }
-  }
-  return clean
+export function cleanAgentMessageContent(
+  rawContent: string,
+  knownAgentNames?: Iterable<string>
+): string {
+  return stripAgentHeaderPrefixes(rawContent, knownAgentNames)
 }
 
-export function getToolSpokenFallback(fenceType: string): string {
-  if (/mermaid|diagram/.test(fenceType)) {
-    return 'He generado el diagrama arquitectónico en pantalla.'
-  }
-  if (/markdown|md|doc/.test(fenceType)) {
-    return 'He generado el documento técnico en pantalla.'
-  }
-  return 'He generado el código en pantalla.'
-}
-
-export function findSentenceSplitIndex(buffer: string): number {
-  const terminalMatch = /[.!?\n]/.exec(buffer)
-  if (terminalMatch) {
-    return terminalMatch.index
-  }
-  if (buffer.length >= 20) {
-    const clauseMatch = /[,:;]/.exec(buffer.slice(20))
-    if (clauseMatch) {
-      return 20 + clauseMatch.index
-    }
-  }
-  return -1
-}
+export { getToolSpokenFallback, findSentenceSplitIndex }
 
 export function resolveHitlUserMessage(
   decision: HitlDecisionType,
@@ -201,6 +172,25 @@ export function resolveHitlUserMessage(
 }
 
 export const useDebateStore = defineStore('debate', () => {
+  let idFallbackSeq = 0
+  function nextStableId(prefix: string): string {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return `${prefix}_${crypto.randomUUID()}`
+    }
+    idFallbackSeq += 1
+    return `${prefix}_${Date.now()}_${idFallbackSeq}`
+  }
+
+  function pushRawEvent(event: SupervisorEvent) {
+    if (event.id) {
+      rawEvents.value.push(event)
+      return
+    }
+    rawEvents.value.push({
+      ...event,
+      id: nextStableId('evt')
+    })
+  }
   const isConnected = ref(false)
   const isDebating = ref(false)
   const isHitlRequired = ref(false)
@@ -514,6 +504,7 @@ export const useDebateStore = defineStore('debate', () => {
         supports_hitl?: boolean
         can_ingest_documents?: boolean
         topology_roles?: string[]
+        tools?: string[]
       }> = await response.json()
       agents.value = data.map(agent => ({
         role: agent.id,
@@ -524,6 +515,7 @@ export const useDebateStore = defineStore('debate', () => {
         supports_hitl: agent.supports_hitl,
         can_ingest_documents: agent.can_ingest_documents,
         topology_roles: agent.topology_roles,
+        tools: agent.tools,
         turns: 0,
         tokens: 0,
         promptTokens: 0,
@@ -607,7 +599,7 @@ export const useDebateStore = defineStore('debate', () => {
         if (!data.timestamp) {
           data.timestamp = new Date().toISOString()
         }
-        rawEvents.value.push(data)
+        rawEvents.value.push(data.id ? data : { ...data, id: nextStableId('evt') })
         handleSupervisorEvent(data)
       } catch {
         console.error('[WS] Failed to parse message', event.data)
@@ -761,7 +753,7 @@ export const useDebateStore = defineStore('debate', () => {
     
     if (debate.events && Array.isArray(debate.events)) {
       debate.events.forEach((event: SupervisorEvent) => {
-        rawEvents.value.push(event)
+        pushRawEvent(event)
         handleSupervisorEvent(event)
       })
     }
@@ -792,7 +784,11 @@ export const useDebateStore = defineStore('debate', () => {
     stopTts() // Interrupt any ongoing TTS
 
     if (!isConnected.value || !ws) {
-      messages.value.push({ role: 'assistant', content: 'Error: Cannot start debate, disconnected from server. Trying to reconnect...' })
+      messages.value.push({
+        id: nextStableId('msg'),
+        role: 'assistant',
+        content: 'Error: Cannot start debate, disconnected from server. Trying to reconnect...'
+      })
       connect()
       return
     }
@@ -824,23 +820,11 @@ export const useDebateStore = defineStore('debate', () => {
       }
     })
 
-    // Register Atenea triage tokens immediately as they are consumed for intent classification
-    const sup = findAgent('supervisor')
     const isSupervisorTargeted = targetAgentsList.some(role => {
       const n = normalizeAgentRole(role)
       return n === 'supervisor' || n === 'atenea'
     })
 
-    if (sup && (isSupervisorTargeted || targetAgentsList.length === 0)) {
-      const words = userRequest.trim().split(/\s+/).filter(Boolean).length
-      const triagePromptTokens = Math.max(30, Math.round(words * 1.35) + 140)
-      const triageCompletionTokens = 25
-      sup.promptTokens = (sup.promptTokens || 0) + triagePromptTokens
-      sup.completionTokens = (sup.completionTokens || 0) + triageCompletionTokens
-      sup.tokens = (sup.tokens || 0) + triagePromptTokens + triageCompletionTokens
-      sessionTotalTokens.value += triagePromptTokens + triageCompletionTokens
-    }
-    
     if (isSupervisorTargeted || targetAgentsList.length === 0) {
       executionTrail.value = ['Atenea']
     } else {
@@ -959,9 +943,18 @@ export const useDebateStore = defineStore('debate', () => {
     return { agentRole, agentName, colorHex }
   }
 
+  function getKnownAgentNames(): string[] {
+    const names: string[] = []
+    for (const a of agents.value) {
+      if (a.role) names.push(a.role)
+      if (a.name) names.push(a.name)
+    }
+    return names
+  }
+
   function pushAgentMessage(content: string, role?: string | null) {
     const { agentRole, agentName, colorHex } = resolveAgentDisplay(role)
-    const cleanContent = cleanAgentMessageContent(content)
+    const cleanContent = cleanAgentMessageContent(content, getKnownAgentNames())
     if (!cleanContent) return
 
     const lastMsg = messages.value.at(-1)
@@ -977,6 +970,7 @@ export const useDebateStore = defineStore('debate', () => {
     }
 
     messages.value.push({
+      id: nextStableId('msg'),
       role: 'assistant',
       content: cleanContent,
       agentRole,
@@ -1088,15 +1082,11 @@ export const useDebateStore = defineStore('debate', () => {
     return 0
   }
 
-  function updateCachedTokens(event: SupervisorEvent, estTokens: number) {
-    if (event.metadata?.cached_tokens) {
-      sessionCachedTokens.value += Number.parseInt(String(event.metadata.cached_tokens), 10)
-      return
-    }
-    if (estTokens > 0) {
-      const completedCount = agents.value.filter(a => a.state === 'COMPLETED').length
-      if (completedCount > 1) {
-        sessionCachedTokens.value += Math.round(estTokens * 0.65)
+  function updateCachedTokens(event: SupervisorEvent) {
+    if (event.metadata?.cached_tokens !== undefined) {
+      const parsed = Number.parseInt(String(event.metadata.cached_tokens), 10)
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        sessionCachedTokens.value += parsed
       }
     }
   }
@@ -1119,7 +1109,7 @@ export const useDebateStore = defineStore('debate', () => {
     }
     updateAgentLatency(agent, event)
     const estTokens = updateAgentTokens(agent, event)
-    updateCachedTokens(event, estTokens)
+    updateCachedTokens(event)
     sessionTotalTokens.value += estTokens
     lastCompletedTurnKey = buildCompletionDedupKey(agent.role, event)
   }
@@ -1315,7 +1305,7 @@ export const useDebateStore = defineStore('debate', () => {
       }
       updateAgentLatency(targetAgent, event)
       const estTokens = updateAgentTokens(targetAgent, event)
-      updateCachedTokens(event, estTokens)
+      updateCachedTokens(event)
       sessionTotalTokens.value += estTokens
     } else if (event.content && !streamedTokenEstimates[targetAgent.role]) {
       const words = event.content.trim().split(/\s+/).filter(Boolean).length
@@ -1339,7 +1329,7 @@ export const useDebateStore = defineStore('debate', () => {
       if (targetMsg) {
         targetMsg.isStreaming = false
         if (event.content) {
-          targetMsg.content = cleanAgentMessageContent(event.content)
+          targetMsg.content = cleanAgentMessageContent(event.content, getKnownAgentNames())
         }
       }
       streamingMessageId.value = null
@@ -1394,6 +1384,7 @@ export const useDebateStore = defineStore('debate', () => {
 
     const { agentRole, agentName, colorHex } = resolveAgentDisplay(event.role)
     messages.value.push({
+      id: nextStableId('msg'),
       role: 'assistant',
       content: errorContent,
       agentRole,
@@ -1436,6 +1427,7 @@ export const useDebateStore = defineStore('debate', () => {
 
     const { agentRole, agentName, colorHex } = resolveAgentDisplay(event.role || 'supervisor')
     messages.value.push({
+      id: nextStableId('msg'),
       role: 'assistant',
       content: errorContent,
       agentRole,

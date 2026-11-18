@@ -75,10 +75,10 @@ Se recomienda ejecutar los refactors siguiendo estas **6 fases incrementales**, 
 16. ✅ `[x]` `[02][P1]` Desbloqueo del event loop `async` en backend: `ChromaDBDocumentStore` singleton en `app.state`, `asyncio.to_thread` en RAG, triage LLM, learning, Vosk, métricas del sistema y `SQLiteUserRepository`.
 17. ✅ `[x]` `[02][P2]` Eliminación de la race condition en `self._last_usage` y round-trips redundantes en `GeminiAdapter`, más `Any` faltante y `complete_stream` en `AnthropicAdapter`.
 18. ✅ `[x]` `[02][P2]` Migración de `SqliteDebateRepository.append_event` de $O(N^2)$ a tabla normalizada `debate_events` $O(1)$, helper `SqliteConnectionManager` con WAL y cierre garantizado de conexiones.
-19. `[03][P2]` Optimización de renderizado en Vue: pausa y optimización $O(n^2)$ en `ParticleOrb.vue`, montaje condicional único de `SoundBar`, gating de polling en `ObservabilityPanel.vue`, claves únicas estables y memoización en `ChatPanel.vue` / `EventStream.vue`.
-20. `[03][P2]` Consolidación de utilidades TTS en `ttsFilter.ts`, eliminación de listas hardcodeadas de agentes/dominios y CSS autocontenido offline en `presentationExporter.ts`.
-21. `[03][P3]` Debounce/`@change` en sliders de `AgentCard.vue`, simplificación de watchers en `ChatPanel.vue` y sustitución de métricas sintéticas de tokens/caché en `stores/debate.ts` por telemetría del backend.
-22. `[04][P2]` Paginación y proyección ligera en `GET /debates` (`DebateSummaryDTO`).
+19. ✅ `[x]` `[03][P2]` Optimización de renderizado en Vue: pausa y optimización $O(n^2)$ en `ParticleOrb.vue`, montaje condicional único de `SoundBar`, gating de polling en `ObservabilityPanel.vue`, claves únicas estables y memoización en `ChatPanel.vue` / `EventStream.vue`.
+20. ✅ `[x]` `[03][P2]` Consolidación de utilidades TTS en `ttsFilter.ts`, eliminación de listas hardcodeadas de agentes/dominios y CSS autocontenido offline en `presentationExporter.ts`.
+21. ✅ `[x]` `[03][P3]` Debounce/`@change` en sliders de `AgentCard.vue`, simplificación de watchers en `ChatPanel.vue` y sustitución de métricas sintéticas de tokens/caché en `stores/debate.ts` por telemetría del backend.
+22. ✅ `[x]` `[04][P2]` Paginación y proyección ligera en `GET /debates` (`DebateSummaryDTO`).
 
 ### Fase 4 — Refactor Estructural: Hexagonal Estricta y Desacoplamiento Frontend (Riesgo Medio-Alto)
 23. `[02][P1]` Purificación de `domain/`: extraer YAML, `os`, rutas y estado global mutable fuera de `sub_agent_profiles.py`, `debate_topology.py` y `task.py` hacia repositorios en `infrastructure/`.

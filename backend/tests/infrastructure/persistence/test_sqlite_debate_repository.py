@@ -221,3 +221,61 @@ def test_legacy_events_json_migrated_and_backwards_compatible(tmp_path):
     remaining = check_conn.execute("SELECT COUNT(*) FROM debate_events WHERE debate_id = 'legacy-1'").fetchone()[0]
     check_conn.close()
     assert remaining == 0
+
+
+def test_find_paginated_summaries_slices_pages_and_avoids_overfetching(repo, monkeypatch):
+    from datetime import timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    for i in range(5):
+        rec = DebateRecord(
+            id=f"sum-{i}",
+            created_at=now - timedelta(days=i * 3),
+            user_request=f"Auditoría sesión {i}",
+            status="completed",
+            user_id="usr-1",
+            events=[
+                {"type": "start", "user_request": f"Auditoría sesión {i}"},
+                {
+                    "type": "agent_completed",
+                    "role": "senior_architect",
+                    "content": f"Conclusión {i}",
+                    "metadata": {"total_tokens": str(100 + i)},
+                },
+            ],
+        )
+        repo.create(rec)
+    repo.create(DebateRecord(id="sum-other", user_request="Secret", user_id="usr-other"))
+
+    # Fail-closed when user_id is omitted without allow_unscoped
+    empty_page = repo.find_paginated_summaries(limit=2, offset=0)
+    assert empty_page.items == []
+    assert empty_page.total == 0
+
+    fetched_batches: list[list[str]] = []
+    orig_fetch = repo._fetch_events_for_debates
+
+    def _spy_fetch(conn, debate_ids):
+        fetched_batches.append(list(debate_ids))
+        return orig_fetch(conn, debate_ids)
+
+    monkeypatch.setattr(repo, "_fetch_events_for_debates", _spy_fetch)
+
+    page = repo.find_paginated_summaries(user_id="usr-1", limit=2, offset=1)
+    assert page.total == 5
+    assert page.total_all == 5
+    assert [item.id for item in page.items] == ["sum-1", "sum-2"]
+    assert fetched_batches == [["sum-1", "sum-2"]]
+    assert page.items[0].total_tokens == 101
+    assert page.items[0].agents == ["senior_architect"]
+    assert page.items[0].event_count == 2
+
+    week_page = repo.find_paginated_summaries(user_id="usr-1", filter_by="week")
+    assert [item.id for item in week_page.items] == ["sum-0", "sum-1", "sum-2"]
+    assert week_page.total_all == 5
+
+    today_page = repo.find_paginated_summaries(user_id="usr-1", filter_by="today")
+    assert [item.id for item in today_page.items] == ["sum-0"]
+
+    accent_search = repo.find_paginated_summaries(user_id="usr-1", search="Auditoría sesión 3")
+    assert [item.id for item in accent_search.items] == ["sum-3"]

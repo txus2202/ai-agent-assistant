@@ -10,8 +10,10 @@ const store = useDebateStore()
 const props = withDefaults(defineProps<{
   agents: Agent[]
   initialTab?: 'agents' | 'observability'
+  isVisible?: boolean
 }>(), {
-  initialTab: 'agents'
+  initialTab: 'agents',
+  isVisible: true
 })
 
 const activeTab = ref<'agents' | 'observability'>(props.initialTab)
@@ -144,7 +146,11 @@ watch(
     </div>
 
     <!-- Observability View -->
-    <ObservabilityPanel v-if="activeTab === 'observability'" class="flex-1 min-h-0 overflow-y-auto" />
+    <ObservabilityPanel
+      v-if="activeTab === 'observability'"
+      :is-visible="props.isVisible && activeTab === 'observability'"
+      class="flex-1 min-h-0 overflow-y-auto"
+    />
 
     <!-- Agents View (List + Orchestration Footer) -->
     <template v-else>

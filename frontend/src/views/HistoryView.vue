@@ -1,47 +1,126 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDebateStore, type SupervisorEvent, type DebateSession } from '../stores/debate'
 import { ArrowLeft, Trash2, Search, ArrowRight, Clock } from '@lucide/vue'
 
-interface DebateRecord extends DebateSession {
+interface DebateSummaryItem extends DebateSession {
   id: string
   created_at: string
-  events: SupervisorEvent[]
   user_request?: string
+  target_agent?: string
+  status?: string
+  event_count?: number
+  total_tokens?: number
+  has_hitl?: boolean
+  conclusion?: string
+  agents?: string[]
+  events?: SupervisorEvent[]
+}
+
+interface PaginatedDebatesResponse {
+  total: number
+  total_all?: number
+  limit: number
+  offset: number
+  items: DebateSummaryItem[]
 }
 
 const router = useRouter()
 const store = useDebateStore()
-const debates = ref<DebateRecord[]>([])
+const debates = ref<DebateSummaryItem[]>([])
 const isLoading = ref(true)
+const isLoadingMore = ref(false)
+const loadingDetailId = ref<string | null>(null)
 
 const searchQuery = ref('')
 const activeFilter = ref<'all' | 'hitl' | 'today' | 'week'>('all')
-const pageSize = 10
-const displayedCount = ref(10)
+const pageSize = 20
+const clientDisplayedCount = ref(pageSize)
+const totalCount = ref(0)
+const totalAllCount = ref(0)
+const nextOffset = ref(0)
+const isServerPaginated = ref(true)
 
-const fetchDebates = async () => {
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+let activeFetchSeq = 0
+
+const buildDebatesUrl = (offsetValue: number): string => {
+  const params = new URLSearchParams({
+    limit: String(pageSize),
+    offset: String(offsetValue),
+    filter: activeFilter.value
+  })
+  const query = searchQuery.value.trim()
+  if (query) {
+    params.set('search', query)
+  }
+  return `/api/debates?${params.toString()}`
+}
+
+const fetchDebates = async (reset = true) => {
+  const requestSeq = ++activeFetchSeq
+  const targetOffset = reset ? 0 : nextOffset.value
+  if (reset) {
+    isLoading.value = debates.value.length === 0
+  } else {
+    isLoadingMore.value = true
+  }
+
   try {
-    const response = await fetch('/api/debates')
-    if (response.ok) {
-      debates.value = await response.json()
+    const response = await fetch(buildDebatesUrl(targetOffset))
+    if (!response.ok || requestSeq !== activeFetchSeq) return
+
+    const payload: unknown = await response.json()
+    if (requestSeq !== activeFetchSeq) return
+
+    if (Array.isArray(payload)) {
+      isServerPaginated.value = false
+      const items = payload as DebateSummaryItem[]
+      debates.value = items
+      totalCount.value = items.length
+      totalAllCount.value = items.length
+      nextOffset.value = items.length
+      return
+    }
+
+    if (payload && typeof payload === 'object') {
+      const page = payload as PaginatedDebatesResponse
+      const incoming = Array.isArray(page.items) ? page.items : []
+      isServerPaginated.value = true
+      if (reset) {
+        debates.value = incoming
+        nextOffset.value = incoming.length
+      } else {
+        const existingIds = new Set(debates.value.map(d => d.id))
+        const uniqueIncoming = incoming.filter(item => !existingIds.has(item.id))
+        debates.value = [...debates.value, ...uniqueIncoming]
+        nextOffset.value = targetOffset + incoming.length
+      }
+      totalCount.value = typeof page.total === 'number' ? page.total : debates.value.length
+      totalAllCount.value = typeof page.total_all === 'number' ? page.total_all : totalCount.value
     }
   } catch (error) {
     console.error('Failed to fetch debates:', error)
   } finally {
-    isLoading.value = false
+    if (requestSeq === activeFetchSeq) {
+      isLoading.value = false
+      isLoadingMore.value = false
+    }
   }
 }
 
 const deleteDebate = async (id: string, event: Event) => {
   event.stopPropagation()
   if (!confirm('Are you sure you want to delete this session?')) return
-  
+
   try {
-    const response = await fetch(`/api/debates/${id}`, { method: 'DELETE' })
+    const response = await fetch(`/api/debates/${encodeURIComponent(id)}`, { method: 'DELETE' })
     if (response.ok) {
       debates.value = debates.value.filter(d => d.id !== id)
+      totalCount.value = Math.max(0, totalCount.value - 1)
+      totalAllCount.value = Math.max(0, totalAllCount.value - 1)
+      nextOffset.value = Math.max(0, nextOffset.value - 1)
     }
   } catch (error) {
     console.error('Failed to delete debate:', error)
@@ -49,17 +128,30 @@ const deleteDebate = async (id: string, event: Event) => {
 }
 
 onMounted(async () => {
-  await fetchDebates()
+  await fetchDebates(true)
 })
 
-const getDebatePrompt = (debate: DebateRecord): string => {
+onUnmounted(() => {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer)
+    searchDebounceTimer = null
+  }
+})
+
+const getDebatePrompt = (debate: DebateSummaryItem): string => {
   if (debate.user_request) return debate.user_request
   const startEvt = debate.events?.find(m => m.type === 'start')
   if (startEvt?.user_request && typeof startEvt.user_request === 'string') return startEvt.user_request
   return 'No prompt recorded'
 }
 
-const getDebateTokens = (debate: DebateRecord): number => {
+const getDebateEventCount = (debate: DebateSummaryItem): number => {
+  if (typeof debate.event_count === 'number') return debate.event_count
+  return Array.isArray(debate.events) ? debate.events.length : 0
+}
+
+const getDebateTokens = (debate: DebateSummaryItem): number => {
+  if (typeof debate.total_tokens === 'number') return debate.total_tokens
   if (!debate.events || !Array.isArray(debate.events)) return 0
   const metricEventTypes = new Set(['done', 'agent_completed', 'synthesis', 'conclusion', 'final_response'])
   let total = 0
@@ -92,7 +184,8 @@ const getDebateTokens = (debate: DebateRecord): number => {
   return total
 }
 
-const getDebateAgents = (debate: DebateRecord): string[] => {
+const getDebateAgents = (debate: DebateSummaryItem): string[] => {
+  if (Array.isArray(debate.agents)) return debate.agents
   if (!debate.events || !Array.isArray(debate.events)) return []
   const set = new Set<string>()
   for (const ev of debate.events) {
@@ -103,7 +196,8 @@ const getDebateAgents = (debate: DebateRecord): string[] => {
   return Array.from(set)
 }
 
-const hasHitl = (debate: DebateRecord): boolean => {
+const hasHitl = (debate: DebateSummaryItem): boolean => {
+  if (typeof debate.has_hitl === 'boolean') return debate.has_hitl
   if (!debate.events || !Array.isArray(debate.events)) return false
   return debate.events.some(e =>
     e.type === 'hitl_required' ||
@@ -113,7 +207,8 @@ const hasHitl = (debate: DebateRecord): boolean => {
   )
 }
 
-const getDebateConclusion = (debate: DebateRecord): string => {
+const getDebateConclusion = (debate: DebateSummaryItem): string => {
+  if (typeof debate.conclusion === 'string') return debate.conclusion
   if (!debate.events || !Array.isArray(debate.events)) return ''
   const rev = [...debate.events].reverse()
   const conclusionEvt = rev.find(e =>
@@ -142,13 +237,15 @@ const totalHitlCount = computed(() => {
 })
 
 const filteredDebates = computed(() => {
+  if (isServerPaginated.value) {
+    return debates.value
+  }
   const query = searchQuery.value.trim().toLowerCase()
   const now = new Date()
   const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
   const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
 
   return debates.value.filter(d => {
-    // Filter chip check
     if (activeFilter.value === 'hitl' && !hasHitl(d)) return false
     if (activeFilter.value === 'today') {
       const dDate = new Date(d.created_at)
@@ -159,7 +256,6 @@ const filteredDebates = computed(() => {
       if (dDate < oneWeekAgo) return false
     }
 
-    // Search query check
     if (!query) return true
     const prompt = getDebatePrompt(d).toLowerCase()
     const id = d.id.toLowerCase()
@@ -170,19 +266,50 @@ const filteredDebates = computed(() => {
 })
 
 const paginatedDebates = computed(() => {
-  return filteredDebates.value.slice(0, displayedCount.value)
+  if (isServerPaginated.value) {
+    return debates.value
+  }
+  return filteredDebates.value.slice(0, clientDisplayedCount.value)
 })
 
-watch([searchQuery, activeFilter], () => {
-  displayedCount.value = pageSize
+const effectiveTotalCount = computed(() => {
+  return isServerPaginated.value ? totalCount.value : filteredDebates.value.length
+})
+
+const hasMoreDebates = computed(() => {
+  return paginatedDebates.value.length < effectiveTotalCount.value
+})
+
+watch(activeFilter, () => {
+  clientDisplayedCount.value = pageSize
+  if (isServerPaginated.value) {
+    void fetchDebates(true)
+  }
+})
+
+watch(searchQuery, () => {
+  clientDisplayedCount.value = pageSize
+  if (isServerPaginated.value) {
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer)
+    }
+    searchDebounceTimer = setTimeout(() => {
+      searchDebounceTimer = null
+      void fetchDebates(true)
+    }, 150)
+  }
 })
 
 const handleScroll = (event: Event) => {
   const target = event.target as HTMLElement
   if (!target) return
   if (target.scrollHeight - target.scrollTop - target.clientHeight < 250) {
-    if (displayedCount.value < filteredDebates.value.length) {
-      displayedCount.value += pageSize
+    if (isServerPaginated.value) {
+      if (!isLoadingMore.value && debates.value.length < totalCount.value) {
+        void fetchDebates(false)
+      }
+    } else if (clientDisplayedCount.value < filteredDebates.value.length) {
+      clientDisplayedCount.value += pageSize
     }
   }
 }
@@ -209,8 +336,32 @@ const formatRelativeTime = (dateString: string) => {
   }
 }
 
-const restoreDebate = async (debate: DebateRecord) => {
-  store.loadDebate(debate)
+const restoreDebate = async (debate: DebateSummaryItem) => {
+  if (loadingDetailId.value === debate.id) return
+
+  const needsDetailFetch =
+    !Array.isArray(debate.events) ||
+    (typeof debate.event_count === 'number' && debate.events.length < debate.event_count)
+
+  let fullSession: DebateSession = debate
+  if (needsDetailFetch) {
+    loadingDetailId.value = debate.id
+    try {
+      const response = await fetch(`/api/debates/${encodeURIComponent(debate.id)}`)
+      if (!response.ok) return
+      const detail: unknown = await response.json()
+      if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+        fullSession = detail as DebateSession
+      }
+    } catch (error) {
+      console.error('Failed to load debate details:', error)
+      return
+    } finally {
+      loadingDetailId.value = null
+    }
+  }
+
+  store.loadDebate(fullSession)
   await router.push('/')
 }
 </script>
@@ -244,7 +395,7 @@ const restoreDebate = async (debate: DebateRecord) => {
         <div class="flex items-center gap-2 sm:gap-3 text-xs font-mono">
           <div class="bg-space-850/80 border border-space-700/60 rounded-lg px-3 py-1.5 flex items-center gap-2">
             <span class="text-slate-400">Sesiones:</span>
-            <span class="text-white font-bold">{{ debates.length }}</span>
+            <span class="text-white font-bold">{{ totalAllCount }}</span>
           </div>
           <div class="bg-space-850/80 border border-space-700/60 rounded-lg px-3 py-1.5 flex items-center gap-2">
             <span class="text-slate-400">Tokens:</span>
@@ -284,7 +435,7 @@ const restoreDebate = async (debate: DebateRecord) => {
             class="px-3 py-1.5 rounded-lg text-xs font-mono border transition-all cursor-pointer whitespace-nowrap"
             :class="activeFilter === 'all' ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 font-bold' : 'bg-space-850/60 text-slate-400 border-space-700 hover:border-slate-600'"
           >
-            Todas ({{ debates.length }})
+            Todas ({{ totalAllCount }})
           </button>
           <button 
             type="button"
@@ -325,7 +476,7 @@ const restoreDebate = async (debate: DebateRecord) => {
         </div>
         
         <!-- Empty State (No debates stored) -->
-        <div v-else-if="debates.length === 0" class="flex flex-col items-center justify-center py-20 text-space-500 font-mono">
+        <div v-else-if="totalAllCount === 0 && debates.length === 0 && !searchQuery.trim() && activeFilter === 'all'" class="flex flex-col items-center justify-center py-20 text-space-500 font-mono">
           <p class="text-xl mb-2 text-slate-400 font-semibold">No archived sessions found</p>
           <p class="text-xs text-slate-500">Start a new debate from the main interface</p>
         </div>
@@ -409,7 +560,7 @@ const restoreDebate = async (debate: DebateRecord) => {
                 <div class="mt-auto pt-2.5 border-t border-space-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
                   <div class="flex items-center gap-3">
                     <span class="px-2 py-0.5 bg-space-800 rounded text-cyan-300 text-[10px]">
-                      {{ debate.events ? debate.events.length : 0 }} events
+                      {{ getDebateEventCount(debate) }} events
                     </span>
                     <span class="flex items-center gap-1 text-slate-300 text-[10px]">
                       🪙 {{ getDebateTokens(debate).toLocaleString() }}
@@ -426,8 +577,11 @@ const restoreDebate = async (debate: DebateRecord) => {
           </div>
 
           <!-- Pagination Indicator / Footer -->
-          <div v-if="displayedCount < filteredDebates.length" class="text-center py-4 text-xs font-mono text-slate-500">
-            Mostrando {{ displayedCount }} de {{ filteredDebates.length }} sesiones (haz scroll para cargar más)
+          <div v-if="isLoadingMore" class="text-center py-3 text-xs font-mono text-cyan-400">
+            Cargando más sesiones...
+          </div>
+          <div v-else-if="hasMoreDebates" class="text-center py-4 text-xs font-mono text-slate-500">
+            Mostrando {{ paginatedDebates.length }} de {{ effectiveTotalCount }} sesiones (haz scroll para cargar más)
           </div>
         </div>
       </div>

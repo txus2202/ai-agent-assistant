@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
-from src.domain.value_objects.debate_record import DebateRecord
+from src.domain.value_objects.debate_record import DebateRecord, PaginatedDebateSummaries
 
 class IDebateRepository(ABC):
     @abstractmethod
@@ -23,6 +23,18 @@ class IDebateRepository(ABC):
     @abstractmethod
     def find_all(self, user_id: Optional[str] = None, allow_unscoped: bool = False) -> List[DebateRecord]:
         """Returns all debates, optionally filtered by user_id. Fail-closed if user_id is None unless allow_unscoped=True."""
+
+    @abstractmethod
+    def find_paginated_summaries(
+        self,
+        user_id: Optional[str] = None,
+        allow_unscoped: bool = False,
+        limit: int = 20,
+        offset: int = 0,
+        search: Optional[str] = None,
+        filter_by: Optional[str] = None,
+    ) -> PaginatedDebateSummaries:
+        """Returns paginated lightweight debate summaries without serializing full event arrays."""
 
     @abstractmethod
     def find_by_id(self, debate_id: str, user_id: Optional[str] = None, allow_unscoped: bool = False) -> Optional[DebateRecord]:

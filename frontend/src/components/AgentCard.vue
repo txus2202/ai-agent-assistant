@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, useId, watch } from 'vue'
+import { computed, ref, useId } from 'vue'
 import { useConfigStore, type AgentConfig } from '../stores/config'
 
 const props = defineProps<{
@@ -42,26 +42,8 @@ const agentConfig = computed<AgentConfig>(() => {
   }
 })
 
-const localRagTopK = ref<number | null>(null)
-const localRagMinScore = ref<number | null>(null)
-
-watch(
-  () => agentConfig.value.rag_top_k,
-  (val) => {
-    if (val !== undefined) {
-      localRagTopK.value = val
-    }
-  },
-)
-
-watch(
-  () => agentConfig.value.rag_min_score,
-  (val) => {
-    if (val !== undefined) {
-      localRagMinScore.value = val
-    }
-  },
-)
+const pendingRagTopK = ref<number | null>(null)
+const pendingRagMinScore = ref<number | null>(null)
 
 const provider = computed({
   get: () => agentConfig.value.provider,
@@ -82,35 +64,44 @@ const modelName = computed({
   }
 })
 
-const ragTopK = computed({
-  get: () => localRagTopK.value ?? agentConfig.value.rag_top_k ?? 5,
-  set: (val: number) => {
-    const normalized = Number(val)
-    localRagTopK.value = normalized
-    void store.updateAgentConfig(
-      props.role,
-      provider.value,
-      modelName.value,
-      normalized,
-      ragMinScore.value,
-    )
-  },
-})
+const ragTopK = computed(() => pendingRagTopK.value ?? agentConfig.value.rag_top_k ?? 5)
+const ragMinScore = computed(() => pendingRagMinScore.value ?? agentConfig.value.rag_min_score ?? 0.3)
 
-const ragMinScore = computed({
-  get: () => localRagMinScore.value ?? agentConfig.value.rag_min_score ?? 0.3,
-  set: (val: number) => {
-    const normalized = Number(val)
-    localRagMinScore.value = normalized
-    void store.updateAgentConfig(
-      props.role,
-      provider.value,
-      modelName.value,
-      ragTopK.value,
-      normalized,
-    )
-  },
-})
+const handleRagTopKInput = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  pendingRagTopK.value = Number(target.value)
+}
+
+const handleRagMinScoreInput = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  pendingRagMinScore.value = Number(target.value)
+}
+
+const commitRagTopK = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const normalized = Number(target.value)
+  pendingRagTopK.value = normalized
+  void store.updateAgentConfig(
+    props.role,
+    provider.value,
+    modelName.value,
+    normalized,
+    ragMinScore.value,
+  )
+}
+
+const commitRagMinScore = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const normalized = Number(target.value)
+  pendingRagMinScore.value = normalized
+  void store.updateAgentConfig(
+    props.role,
+    provider.value,
+    modelName.value,
+    ragTopK.value,
+    normalized,
+  )
+}
 
 const isGlowActive = computed(() => props.state === 'ACTIVE')
 
@@ -289,7 +280,7 @@ const statusTagText = computed(() => {
           </div>
           <input
             :id="ragTopKId"
-            v-model.number="ragTopK"
+            :value="ragTopK"
             type="range"
             min="0"
             max="20"
@@ -297,7 +288,10 @@ const statusTagText = computed(() => {
             data-test="rag-top-k-slider"
             class="rag-slider w-full cursor-pointer"
             :style="{ '--slider-progress': `${(Number(ragTopK) / 20) * 100}%` }"
+            :aria-valuetext="ragTopK === 0 ? 'Desactivado' : `${ragTopK} fragmentos`"
             title="Chunks (Top-K): 0 a 20"
+            @input="handleRagTopKInput"
+            @change="commitRagTopK"
           />
         </div>
 
@@ -308,7 +302,7 @@ const statusTagText = computed(() => {
           </div>
           <input
             :id="ragMinScoreId"
-            v-model.number="ragMinScore"
+            :value="ragMinScore"
             type="range"
             min="0"
             max="1"
@@ -317,7 +311,10 @@ const statusTagText = computed(() => {
             data-test="rag-min-score-slider"
             class="rag-slider w-full cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             :style="{ '--slider-progress': `${Number(ragMinScore) * 100}%` }"
+            :aria-valuetext="`${Number(ragMinScore).toFixed(2)} de similitud mínima`"
             title="Proximidad mínima (Min Score): 0.00 a 1.00"
+            @input="handleRagMinScoreInput"
+            @change="commitRagMinScore"
           />
         </div>
       </div>

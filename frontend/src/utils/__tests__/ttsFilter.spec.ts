@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { cleanTextForTts, splitTextIntoTtsChunks } from '../ttsFilter'
+import {
+  cleanTextForTts,
+  splitTextIntoTtsChunks,
+  stripAgentHeaderPrefixes,
+  getToolSpokenFallback,
+  findSentenceSplitIndex
+} from '../ttsFilter'
 
 describe('cleanTextForTts', () => {
   it('removes mermaid diagram code blocks and keeps introductory and trailing text', () => {
@@ -156,5 +162,32 @@ describe('splitTextIntoTtsChunks', () => {
     expect(result.length).toBeGreaterThan(1)
     expect(result[0]).toContain('Entendido, estoy comprobando todos los servicios del clúster,')
     expect(result[result.length - 1]).toContain('y verificando la memoria.')
+  })
+})
+
+describe('dynamic TTS header and tool utilities', () => {
+  it('strips dynamically passed multi-word agent display names and custom single tokens without hardcoded rosters', () => {
+    expect(
+      stripAgentHeaderPrefixes('## Minerva\n\nPropuesta limpia')
+    ).toBe('Propuesta limpia')
+
+    expect(
+      stripAgentHeaderPrefixes('## Escriba Principal\n\nManual generado', ['Escriba Principal'])
+    ).toBe('Manual generado')
+
+    expect(
+      cleanTextForTts('## Vulcano Cloud\n\nInfraestructura **lista**.', {
+        agentNames: ['Vulcano Cloud']
+      })
+    ).toBe('Infraestructura lista.')
+  })
+
+  it('provides spoken tool fallbacks and low-latency sentence split indices', () => {
+    expect(getToolSpokenFallback('mermaid')).toContain('diagrama')
+    expect(getToolSpokenFallback('markdown')).toContain('documento')
+    expect(getToolSpokenFallback('python')).toContain('código')
+    expect(findSentenceSplitIndex('Hola mundo. Adiós')).toBe(10)
+    expect(findSentenceSplitIndex('Segmento inicial largo, segunda cláusula')).toBe(22)
+    expect(findSentenceSplitIndex('Sin pausa todavía')).toBe(-1)
   })
 })

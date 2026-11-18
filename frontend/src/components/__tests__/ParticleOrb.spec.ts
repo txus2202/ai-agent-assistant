@@ -558,4 +558,39 @@ describe('ParticleOrb.vue', () => {
     expect(soundBar.vm.isCollapsed).toBe(true)
     expect(soundBar.find('[data-test="soundbar-body"]').attributes('style')).toContain('display: none')
   })
+
+  it('pauses canvas animation when isVisible becomes false or page is hidden, and omits SoundBar on mobile', async () => {
+    window.innerWidth = 375
+    window.innerHeight = 800
+    const wrapper = mount(ParticleOrb, {
+      props: {
+        isDebating: false,
+        activeAgentColor: '#00e5ff',
+        isVisible: true
+      }
+    })
+
+    // Only desktop/tablet mounts SoundBar inside ParticleOrb
+    expect(wrapper.findComponent({ name: 'SoundBar' }).exists()).toBe(false)
+
+    const initialCalls = requestAnimationFrameSpy.mock.calls.length
+    await wrapper.setProps({ isVisible: false })
+    expect(cancelAnimationFrameSpy).toHaveBeenCalled()
+
+    await wrapper.setProps({ isVisible: true })
+    expect(requestAnimationFrameSpy.mock.calls.length).toBeGreaterThan(initialCalls)
+
+    // Document hidden pauses animation too
+    const callsBeforeHide = cancelAnimationFrameSpy.mock.calls.length
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(cancelAnimationFrameSpy.mock.calls.length).toBeGreaterThan(callsBeforeHide)
+
+    const rafCallsBeforeVisible = requestAnimationFrameSpy.mock.calls.length
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(requestAnimationFrameSpy.mock.calls.length).toBeGreaterThan(rafCallsBeforeVisible)
+
+    wrapper.unmount()
+  })
 })

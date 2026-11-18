@@ -334,16 +334,91 @@ export async function setupMockBackend(
   // 7. Debates History
   await page.route('*/**/api/debates*', async (route) => {
     const method = route.request().method()
-    const url = route.request().url()
+    const parsedUrl = new URL(route.request().url())
+    const pathParts = parsedUrl.pathname.split('/').filter(Boolean)
+    const debatesSegmentIdx = pathParts.lastIndexOf('debates')
+    const maybeDebateId =
+      debatesSegmentIdx >= 0 && pathParts.length > debatesSegmentIdx + 1
+        ? pathParts[debatesSegmentIdx + 1]
+        : undefined
 
-    if (method === 'GET') {
+    if (method === 'GET' && maybeDebateId) {
+      const found = debatesList.find((d) => d.id === maybeDebateId)
+      if (!found) {
+        await route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'Debate not found' }),
+        })
+        return
+      }
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(debatesList),
+        body: JSON.stringify(found),
+      })
+    } else if (method === 'GET') {
+      const limit = Math.max(1, Number.parseInt(parsedUrl.searchParams.get('limit') || '20', 10) || 20)
+      const offset = Math.max(0, Number.parseInt(parsedUrl.searchParams.get('offset') || '0', 10) || 0)
+      const filter = parsedUrl.searchParams.get('filter') || 'all'
+      const search = (parsedUrl.searchParams.get('search') || '').trim().toLowerCase()
+
+      const filtered = debatesList.filter((d) => {
+        if (filter === 'hitl') {
+          const hitl = d.events.some((e) => String(e.type || '').toLowerCase().includes('hitl'))
+          if (!hitl) return false
+        }
+        if (search) {
+          const haystack = `${d.id} ${d.user_request} ${JSON.stringify(d.events)}`.toLowerCase()
+          if (!haystack.includes(search)) return false
+        }
+        return true
+      })
+
+      const pageItems = filtered.slice(offset, offset + limit).map((d) => {
+        const hasHitl = d.events.some((e) => String(e.type || '').toLowerCase().includes('hitl'))
+        const agents = Array.from(
+          new Set(
+            d.events
+              .map((e) => e.role)
+              .filter((r): r is string => typeof r === 'string' && r.length > 0 && r !== 'supervisor')
+          )
+        )
+        const totalTokens = d.events.reduce((acc, e) => {
+          const meta = e.metadata as Record<string, unknown> | undefined
+          const raw = meta?.total_tokens ?? meta?.tokens
+          return acc + (typeof raw === 'number' || typeof raw === 'string' ? Number(raw) || 0 : 0)
+        }, 0)
+        const lastConclusion = [...d.events]
+          .reverse()
+          .find((e) => typeof e.content === 'string' && e.content.trim().length > 0)?.content
+        return {
+          id: d.id,
+          created_at: d.created_at,
+          user_request: d.user_request,
+          target_agent: 'supervisor',
+          status: d.status,
+          event_count: d.events.length,
+          total_tokens: totalTokens,
+          has_hitl: hasHitl,
+          conclusion: typeof lastConclusion === 'string' ? `${lastConclusion.slice(0, 160)}...` : '',
+          agents,
+        }
+      })
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          total: filtered.length,
+          total_all: debatesList.length,
+          limit,
+          offset,
+          items: pageItems,
+        }),
       })
     } else if (method === 'DELETE') {
-      const debateId = url.split('/').pop()?.split('?')[0]
+      const debateId = maybeDebateId ?? parsedUrl.pathname.split('/').pop()
       debatesList = debatesList.filter((d) => d.id !== debateId)
       await route.fulfill({
         status: 200,

@@ -13,70 +13,64 @@ function escapeHtml(str: string): string {
 function renderBulletsHtml(bullets: string[]): string {
   if (!bullets.length) return ''
   const items = bullets.map(b => {
-    // Format bold **text**
-    const formatted = escapeHtml(b).replace(/\*\*([^*]+)\*\*/g, '<strong class="text-cyan-300 font-bold">$1</strong>')
-    return `<li class="flex items-start gap-2.5 my-2 text-slate-200 text-base md:text-lg">
-      <span class="inline-block w-2 h-2 mt-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(0,229,255,0.6)] shrink-0"></span>
+    const formatted = escapeHtml(b).replace(/\*\*([^*]+)\*\*/g, '<strong class="pres-bold">$1</strong>')
+    return `<li class="pres-bullet-item">
+      <span class="pres-bullet-dot"></span>
       <span>${formatted}</span>
     </li>`
   }).join('')
-  return `<ul class="list-none p-0 my-3">${items}</ul>`
+  return `<ul class="pres-bullet-list">${items}</ul>`
 }
 
 function getGridColsClass(count: number): string {
-  if (count === 2) return 'grid-cols-1 md:grid-cols-2'
-  if (count >= 3) return 'grid-cols-1 md:grid-cols-3'
-  return 'grid-cols-1'
+  if (count === 2) return 'pres-grid-2'
+  if (count >= 3) return 'pres-grid-3'
+  return 'pres-grid-1'
 }
 
 function renderCardsHtml(cards: Slide['cards']): string {
   if (!cards.length) return ''
   const items = cards.map(c => {
     const formattedContent = escapeHtml(c.content)
-      .replace(/\*\*([^*]+)\*\*/g, '<strong class="text-cyan-300 font-bold">$1</strong>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong class="pres-bold">$1</strong>')
       .replaceAll('\n- ', '<br/>• ')
       .replace(/^- /g, '• ')
 
     const badgeHtml = c.badge
-      ? `<span class="px-2 py-0.5 rounded bg-cyan-950/80 border border-cyan-500/40 text-[11px] font-mono font-bold text-cyan-300 uppercase">${escapeHtml(c.badge)}</span>`
+      ? `<span class="pres-card-badge">${escapeHtml(c.badge)}</span>`
       : ''
 
-    return `<div class="bg-[#050b18]/80 border border-cyan-500/30 rounded-xl p-5 shadow-[0_0_20px_rgba(0,229,255,0.06)] flex flex-col justify-between hover:border-cyan-400 transition-colors">
+    return `<div class="pres-card">
       <div>
-        <div class="flex items-center justify-between gap-2 mb-2.5 border-b border-cyan-500/20 pb-2">
-          <h4 class="text-base md:text-lg font-mono font-bold text-cyan-200 uppercase">${escapeHtml(c.title)}</h4>
+        <div class="pres-card-header">
+          <h4 class="pres-card-title">${escapeHtml(c.title)}</h4>
           ${badgeHtml}
         </div>
-        <p class="text-slate-300 text-sm md:text-base leading-relaxed whitespace-pre-line">${formattedContent}</p>
+        <p class="pres-card-body">${formattedContent}</p>
       </div>
     </div>`
   }).join('')
 
   const gridCols = getGridColsClass(cards.length)
-  return `<div class="grid ${gridCols} gap-4 my-4 w-full">${items}</div>`
+  return `<div class="pres-grid ${gridCols}">${items}</div>`
 }
 
 function renderSlideHtml(slide: Slide): string {
   const subtitleHtml = slide.subtitle
-    ? `<div class="p-3.5 my-3 bg-cyan-950/30 border-l-4 border-cyan-400 rounded-r-lg text-slate-300 text-base md:text-lg italic font-sans">
-        ${escapeHtml(slide.subtitle)}
-      </div>`
+    ? `<div class="pres-subtitle">${escapeHtml(slide.subtitle)}</div>`
     : ''
 
   const bulletsHtml = renderBulletsHtml(slide.bullets)
   const cardsHtml = renderCardsHtml(slide.cards)
 
-  let layoutClass = 'flex flex-col justify-center'
-  if (slide.layout === 'hero') {
-    layoutClass = 'flex flex-col justify-center items-center text-center'
-  }
+  const layoutClass = slide.layout === 'hero' ? 'pres-slide-content pres-layout-hero' : 'pres-slide-content'
 
   return `
     <section class="slide-item ${layoutClass}" data-slide="${slide.index}">
-      <div class="w-full max-w-4xl mx-auto">
-        <div class="mb-4">
-          <span class="text-xs font-mono font-bold tracking-widest text-cyan-400 uppercase">Diapositiva ${slide.index}</span>
-          <h2 class="text-2xl md:text-4xl font-mono font-bold text-white tracking-wide mt-1 uppercase text-shadow-glow">
+      <div class="pres-slide-inner">
+        <div class="pres-slide-header">
+          <span class="pres-slide-kicker">Diapositiva ${slide.index}</span>
+          <h2 class="pres-slide-title text-shadow-glow">
             ${escapeHtml(slide.title)}
           </h2>
         </div>
@@ -99,12 +93,12 @@ export function generateStandalonePresentationHtml(data: PresentationData): stri
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title}</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <style>
+    *, *::before, *::after { box-sizing: border-box; }
     body {
       background-color: #030712;
       color: #f1f5f9;
-      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       margin: 0;
       overflow: hidden;
     }
@@ -115,6 +109,7 @@ export function generateStandalonePresentationHtml(data: PresentationData): stri
       align-items: center;
       justify-content: center;
       position: relative;
+      padding: 1rem;
     }
     .slide-item {
       display: none;
@@ -127,18 +122,210 @@ export function generateStandalonePresentationHtml(data: PresentationData): stri
       border-radius: 1.25rem;
       padding: 3rem;
       box-shadow: 0 0 50px rgba(0, 229, 255, 0.15);
-      box-sizing: border-box;
       animation: fadeIn 0.3s ease-out;
+      overflow-y: auto;
     }
-    .slide-item.active {
+    .slide-item.active { display: flex; }
+    .pres-slide-content { flex-direction: column; justify-content: center; }
+    .pres-layout-hero { align-items: center; text-align: center; }
+    .pres-slide-inner { width: 100%; max-width: 56rem; margin-inline: auto; }
+    .pres-slide-header { margin-bottom: 1rem; }
+    .pres-slide-kicker {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #22d3ee;
+    }
+    .pres-slide-title {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: clamp(1.5rem, 3vw, 2.25rem);
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 0.025em;
+      text-transform: uppercase;
+      margin: 0.25rem 0 0;
+    }
+    .text-shadow-glow { text-shadow: 0 0 15px rgba(0, 229, 255, 0.4); }
+    .pres-subtitle {
+      padding: 0.875rem;
+      margin-block: 0.75rem;
+      background: rgba(8, 51, 68, 0.3);
+      border-left: 4px solid #22d3ee;
+      border-radius: 0 0.5rem 0.5rem 0;
+      color: #cbd5e1;
+      font-size: 1.0625rem;
+      font-style: italic;
+    }
+    .pres-bullet-list { list-style: none; padding: 0; margin-block: 0.75rem; }
+    .pres-bullet-item {
       display: flex;
+      align-items: flex-start;
+      gap: 0.625rem;
+      margin-block: 0.5rem;
+      color: #e2e8f0;
+      font-size: 1.0625rem;
+      line-height: 1.5;
+    }
+    .pres-bullet-dot {
+      display: inline-block;
+      width: 0.5rem;
+      height: 0.5rem;
+      margin-top: 0.5rem;
+      border-radius: 9999px;
+      background-color: #22d3ee;
+      box-shadow: 0 0 8px rgba(0, 229, 255, 0.6);
+      flex-shrink: 0;
+    }
+    .pres-bold { color: #67e8f9; font-weight: 700; }
+    .pres-grid { display: grid; gap: 1rem; margin-block: 1rem; width: 100%; grid-template-columns: 1fr; }
+    @media (min-width: 768px) {
+      .pres-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .pres-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    .pres-card {
+      background: rgba(5, 11, 24, 0.8);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      border-radius: 0.75rem;
+      padding: 1.25rem;
+      box-shadow: 0 0 20px rgba(0, 229, 255, 0.06);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: border-color 0.2s ease;
+    }
+    .pres-card:hover { border-color: #22d3ee; }
+    .pres-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 0.625rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid rgba(6, 182, 212, 0.2);
+    }
+    .pres-card-title {
+      margin: 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #a5f3fc;
+      text-transform: uppercase;
+    }
+    .pres-card-badge {
+      padding: 0.125rem 0.5rem;
+      border-radius: 0.25rem;
+      background: rgba(8, 51, 68, 0.8);
+      border: 1px solid rgba(6, 182, 212, 0.4);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 700;
+      color: #67e8f9;
+      text-transform: uppercase;
+    }
+    .pres-card-body {
+      margin: 0;
+      color: #cbd5e1;
+      font-size: 0.9375rem;
+      line-height: 1.625;
+      white-space: pre-line;
+    }
+    .controls {
+      position: fixed;
+      top: 1rem;
+      left: 1.5rem;
+      right: 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.75rem;
+      color: rgba(34, 211, 238, 0.85);
+      z-index: 50;
+    }
+    .pres-brand { display: flex; align-items: center; gap: 0.5rem; }
+    .pres-brand-dot {
+      width: 0.625rem;
+      height: 0.625rem;
+      border-radius: 9999px;
+      background-color: #22d3ee;
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    .pres-brand-title { font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #67e8f9; }
+    .pres-counter {
+      background: rgba(5, 11, 24, 0.8);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      border-radius: 0.5rem;
+      padding: 0.25rem 0.75rem;
+      color: #cbd5e1;
+    }
+    .nav-bar {
+      position: fixed;
+      bottom: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      background: rgba(5, 11, 24, 0.92);
+      border: 1px solid rgba(6, 182, 212, 0.4);
+      border-radius: 0.75rem;
+      padding: 0.5rem 1rem;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      z-index: 50;
+    }
+    .pres-btn {
+      padding: 0.25rem 0.75rem;
+      border-radius: 0.25rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: background-color 0.2s, color 0.2s;
+    }
+    .pres-btn-prev {
+      background: #03060c;
+      border: 1px solid rgba(6, 182, 212, 0.4);
+      color: #a5f3fc;
+    }
+    .pres-btn-prev:hover { color: #ffffff; }
+    .pres-btn-next {
+      background: rgba(6, 182, 212, 0.2);
+      border: 1px solid #22d3ee;
+      color: #67e8f9;
+      font-weight: 700;
+    }
+    .pres-btn-next:hover { background: rgba(6, 182, 212, 0.32); }
+    .pres-btn-fullscreen {
+      margin-left: 0.5rem;
+      padding: 0.25rem 0.625rem;
+      background: #03060c;
+      border: 1px solid #334155;
+      color: #cbd5e1;
+    }
+    .pres-btn-fullscreen:hover { color: #ffffff; }
+    .pres-dots { display: flex; align-items: center; gap: 0.375rem; padding-inline: 0.5rem; }
+    .pres-dot {
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 9999px;
+      cursor: pointer;
+      background-color: #475569;
+      transition: transform 0.2s, background-color 0.2s;
+    }
+    .pres-dot:hover { background-color: #94a3b8; }
+    .pres-dot.is-active {
+      background-color: #22d3ee;
+      transform: scale(1.25);
+      box-shadow: 0 0 8px rgba(0, 229, 255, 0.8);
     }
     @keyframes fadeIn {
       from { opacity: 0; transform: scale(0.98); }
       to { opacity: 1; transform: scale(1); }
     }
-    .text-shadow-glow {
-      text-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
     }
     @media print {
       body {
@@ -147,7 +334,7 @@ export function generateStandalonePresentationHtml(data: PresentationData): stri
         color: #000000 !important;
       }
       .controls, .nav-bar { display: none !important; }
-      .slide-stage { display: block; height: auto; }
+      .slide-stage { display: block; height: auto; padding: 0; }
       .slide-item {
         display: block !important;
         page-break-after: always;
@@ -158,6 +345,8 @@ export function generateStandalonePresentationHtml(data: PresentationData): stri
         background: #f8fafc !important;
         color: #000 !important;
       }
+      .pres-slide-title, .pres-card-title, .pres-bullet-item, .pres-card-body { color: #0f172a !important; }
+      .pres-card { background: #ffffff !important; border-color: #cbd5e1 !important; box-shadow: none !important; }
     }
   </style>
 </head>
@@ -166,26 +355,26 @@ export function generateStandalonePresentationHtml(data: PresentationData): stri
     ${slidesHtml}
 
     <!-- Top Branding & Slide Counter -->
-    <header class="controls fixed top-4 left-6 right-6 flex items-center justify-between text-xs font-mono text-cyan-400/80 z-50">
-      <div class="flex items-center gap-2">
-        <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
-        <span class="font-bold tracking-wider uppercase text-cyan-300">${title}</span>
+    <header class="controls">
+      <div class="pres-brand">
+        <span class="pres-brand-dot"></span>
+        <span class="pres-brand-title">${title}</span>
       </div>
-      <div class="bg-[#050b18]/80 border border-cyan-500/30 rounded-lg px-3 py-1 text-slate-300">
+      <div class="pres-counter">
         <span id="current-slide">1</span> / <span>${totalSlides}</span>
       </div>
     </header>
 
     <!-- Bottom Navigation Bar -->
-    <nav class="nav-bar fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-[#050b18]/90 border border-cyan-500/40 rounded-xl px-4 py-2 shadow-2xl z-50">
-      <button id="prev-btn" class="px-3 py-1 rounded bg-[#03060c] border border-cyan-500/40 text-cyan-200 hover:text-white cursor-pointer transition-colors font-mono text-xs">
+    <nav class="nav-bar">
+      <button id="prev-btn" class="pres-btn pres-btn-prev">
         ◀ Anterior
       </button>
-      <div id="dots-container" class="flex items-center gap-1.5 px-2"></div>
-      <button id="next-btn" class="px-3 py-1 rounded bg-cyan-500/20 border border-cyan-400 text-cyan-300 hover:bg-cyan-500/30 cursor-pointer transition-colors font-mono text-xs font-bold">
+      <div id="dots-container" class="pres-dots"></div>
+      <button id="next-btn" class="pres-btn pres-btn-next">
         Siguiente ▶
       </button>
-      <button id="fullscreen-btn" class="ml-2 px-2.5 py-1 rounded bg-[#03060c] border border-space-700 text-slate-300 hover:text-white cursor-pointer transition-colors font-mono text-xs" title="Pantalla Completa (F)">
+      <button id="fullscreen-btn" class="pres-btn pres-btn-fullscreen" title="Pantalla Completa (F)">
         ⛶
       </button>
     </nav>
@@ -212,8 +401,7 @@ export function generateStandalonePresentationHtml(data: PresentationData): stri
           dotsContainer.replaceChildren();
           for (let i = 1; i <= total; i++) {
             const dot = document.createElement('span');
-            dot.className = 'w-2 h-2 rounded-full cursor-pointer transition-all ' +
-              (i === currentIdx ? 'bg-cyan-400 scale-125 shadow-[0_0_8px_rgba(0,229,255,0.8)]' : 'bg-slate-600 hover:bg-slate-400');
+            dot.className = i === currentIdx ? 'pres-dot is-active' : 'pres-dot';
             dot.onclick = () => updateSlide(i);
             dotsContainer.appendChild(dot);
           }

@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { Activity, Terminal, Check, Database, ExternalLink } from '@lucide/vue'
 import { useDebateStore, type Agent } from '../stores/debate'
 import EventStream from './EventStream.vue'
+
+const props = withDefaults(defineProps<{
+  isVisible?: boolean
+}>(), {
+  isVisible: true
+})
 
 const debateStore = useDebateStore()
 
@@ -16,6 +22,8 @@ const memoryHistory = ref<number[]>([58, 59, 60, 61, 60, 62, 63, 62, 64, 62])
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let tickTimer: ReturnType<typeof setInterval> | null = null
+let isComponentUnmounted = false
+const isPageHidden = ref(typeof document !== 'undefined' ? document.visibilityState === 'hidden' : false)
 const nowTick = ref(Date.now())
 const isLangfuseEnabled = ref(
   import.meta.env.VITE_LANGFUSE_METRICS_ENABLED === 'true' ||
@@ -102,23 +110,6 @@ function computeSparkline(data: number[], height = 24, width = 100) {
 const cpuSparkline = computed(() => computeSparkline(cpuHistory.value))
 const memorySparkline = computed(() => computeSparkline(memoryHistory.value))
 
-onMounted(async () => {
-  await fetchStats()
-  pollTimer = setInterval(() => {
-    fetchStats().catch((err) => {
-      console.error('Error polling stats:', err)
-    })
-  }, 3000)
-  tickTimer = setInterval(() => {
-    nowTick.value = Date.now()
-  }, 200)
-})
-
-onUnmounted(() => {
-  if (pollTimer) clearInterval(pollTimer)
-  if (tickTimer) clearInterval(tickTimer)
-})
-
 const DEFAULT_COLOR = '#00e5ff'
 
 const displayAgents = computed(() => {
@@ -143,6 +134,103 @@ const displayAgents = computed(() => {
 // Support multiple concurrently active agents (e.g. Innovator + Senior, or Diagrammer + DevOps)
 const activeAgents = computed<Agent[]>(() => {
   return debateStore.agents?.filter(a => a.state === 'ACTIVE' || (typeof debateStore.isAgentReading === 'function' && debateStore.isAgentReading(a.role))) || []
+})
+
+const hasActiveAgents = computed(() => activeAgents.value.length > 0)
+const isPanelActiveAndVisible = computed(() => !isComponentUnmounted && props.isVisible && !isPageHidden.value)
+const shouldPollStats = computed(
+  () => isPanelActiveAndVisible.value && (hasActiveAgents.value || Boolean(debateStore.isDebating))
+)
+const shouldTickNow = computed(() => isPanelActiveAndVisible.value && hasActiveAgents.value)
+
+function stopPollTimer() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+function stopTickTimer() {
+  if (tickTimer) {
+    clearInterval(tickTimer)
+    tickTimer = null
+  }
+}
+
+function syncPollingState() {
+  if (shouldPollStats.value) {
+    if (!pollTimer) {
+      pollTimer = setInterval(() => {
+        fetchStats().catch((err) => {
+          console.error('Error polling stats:', err)
+        })
+      }, 3000)
+    }
+  } else {
+    stopPollTimer()
+  }
+}
+
+function syncTickState() {
+  if (shouldTickNow.value) {
+    nowTick.value = Date.now()
+    if (!tickTimer) {
+      tickTimer = setInterval(() => {
+        nowTick.value = Date.now()
+      }, 200)
+    }
+  } else {
+    stopTickTimer()
+  }
+}
+
+function handleVisibilityChange() {
+  if (isComponentUnmounted || typeof document === 'undefined') return
+  const wasHidden = isPageHidden.value
+  isPageHidden.value = document.visibilityState === 'hidden'
+  syncPollingState()
+  syncTickState()
+  if (wasHidden && !isPageHidden.value && props.isVisible) {
+    fetchStats().catch((err) => {
+      console.error('Error polling stats:', err)
+    })
+  }
+}
+
+watch(shouldPollStats, syncPollingState)
+watch(shouldTickNow, syncTickState)
+watch(
+  () => props.isVisible,
+  (visible, prevVisible) => {
+    syncPollingState()
+    syncTickState()
+    if (visible && !prevVisible && !isPageHidden.value) {
+      fetchStats().catch((err) => {
+        console.error('Error polling stats:', err)
+      })
+    }
+  }
+)
+
+onMounted(async () => {
+  if (typeof document !== 'undefined') {
+    isPageHidden.value = document.visibilityState === 'hidden'
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+  }
+  if (isPanelActiveAndVisible.value) {
+    await fetchStats()
+  }
+  syncPollingState()
+  syncTickState()
+})
+
+onUnmounted(() => {
+  isComponentUnmounted = true
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }
+  stopPollTimer()
+  stopTickTimer()
 })
 
 const activeAgentsTitle = computed(() => {

@@ -241,4 +241,116 @@ describe('HistoryView.vue', () => {
     expect(wrapper.text()).toContain('200')
     expect(wrapper.text()).not.toContain('320')
   })
+
+  it('consumes paginated summary DTOs and fetches full debate events on demand when restoring', async () => {
+    const pinia = createPinia()
+    const store = useDebateStore(pinia)
+    const fullDetail = {
+      id: 'sum-001',
+      created_at: '2026-11-18T12:00:00Z',
+      user_request: 'Arquitectura paginada',
+      status: 'completed',
+      events: [
+        { type: 'start', user_request: 'Arquitectura paginada' },
+        { type: 'done', role: 'supervisor', content: 'Propuesta detallada completa' }
+      ]
+    }
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      if (input.startsWith('/api/debates?')) {
+        const url = new URL(input, 'http://localhost')
+        const offset = Number(url.searchParams.get('offset') || '0')
+        if (offset === 0) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                total: 2,
+                total_all: 2,
+                limit: 20,
+                offset: 0,
+                items: [
+                  {
+                    id: 'sum-001',
+                    created_at: '2026-11-18T12:00:00Z',
+                    user_request: 'Arquitectura paginada',
+                    target_agent: 'supervisor',
+                    status: 'completed',
+                    event_count: 8,
+                    total_tokens: 450,
+                    has_hitl: true,
+                    conclusion: 'Conclusión resumida',
+                    agents: ['senior_architect']
+                  }
+                ]
+              })
+          })
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              total: 2,
+              total_all: 2,
+              limit: 20,
+              offset: 1,
+              items: [
+                {
+                  id: 'sum-002',
+                  created_at: '2026-11-18T11:00:00Z',
+                  user_request: 'Segunda página',
+                  target_agent: 'supervisor',
+                  status: 'completed',
+                  event_count: 3,
+                  total_tokens: 150,
+                  has_hitl: false,
+                  conclusion: 'Resumen página 2',
+                  agents: ['Hermes']
+                }
+              ]
+            })
+        })
+      }
+      if (input === '/api/debates/sum-001') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(fullDetail)
+        })
+      }
+      return Promise.resolve({ ok: false, json: () => Promise.resolve({}) })
+    })
+    global.fetch = fetchMock
+
+    const wrapper = mount(HistoryView, {
+      global: { plugins: [router, pinia] }
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Arquitectura paginada')
+    expect(wrapper.text()).toContain('8 events')
+    expect(wrapper.text()).toContain('450')
+    expect(wrapper.text()).toContain('Conclusión resumida')
+    expect(wrapper.text()).toContain('senior architect')
+    expect(wrapper.text()).toContain('Mostrando 1 de 2 sesiones')
+
+    // Trigger scroll near bottom to load next page
+    const mainEl = wrapper.find('main')
+    Object.defineProperty(mainEl.element, 'scrollHeight', { value: 1000, configurable: true })
+    Object.defineProperty(mainEl.element, 'scrollTop', { value: 750, configurable: true })
+    Object.defineProperty(mainEl.element, 'clientHeight', { value: 200, configurable: true })
+    await mainEl.trigger('scroll')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/debates?limit=20&offset=1&filter=all')
+    expect(wrapper.text()).toContain('Segunda página')
+
+    // Restore lightweight card: must fetch full detail from /api/debates/{id}
+    const pushSpy = vi.spyOn(router, 'push')
+    await wrapper.find('.session-card').trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/debates/sum-001')
+    expect(store.currentSessionId).toBe('sum-001')
+    expect(store.messages.some(m => m.content.includes('Propuesta detallada completa'))).toBe(true)
+    expect(pushSpy).toHaveBeenCalledWith('/')
+  })
 })

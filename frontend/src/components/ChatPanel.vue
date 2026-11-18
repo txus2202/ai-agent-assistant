@@ -43,7 +43,7 @@ import {
 } from '../utils/presentationExporter'
 import { parsePresentation } from '../utils/slideParser'
 import { cleanTextForTts, splitTextIntoTtsChunks } from '../utils/ttsFilter'
-import { parseMessageContent, getLanguageExtension } from '../utils/messageParser'
+import { parseMessageContent, getLanguageExtension, type MessageBlock } from '../utils/messageParser'
 import { getMimeTypeForExtension } from '../utils/mimeHelper'
 import {
   downloadMarkdownFile,
@@ -196,13 +196,59 @@ const closeDocumentModal = () => {
 const agentHasDocumentViewer = (agentName?: string): boolean => {
   if (!agentName) return false
   const lower = agentName.toLowerCase()
-  if (lower.includes('caliope') || lower.includes('calíope')) return true
-  const agent = store.agents?.find(a => 
-    a.name?.toLowerCase() === lower || 
-    a.role?.toLowerCase() === lower
+  const norm = store.normalizeAgentRole ? store.normalizeAgentRole(agentName).toLowerCase() : lower
+  const agent = store.agents?.find(a =>
+    a.name?.toLowerCase() === lower ||
+    a.role?.toLowerCase() === lower ||
+    (store.normalizeAgentRole ? store.normalizeAgentRole(a.role).toLowerCase() === norm : false)
   )
   return agent?.tools?.includes('document_viewer') ?? false
 }
+
+interface RenderedMessageBlock extends MessageBlock {
+  renderedHtml?: string
+}
+
+interface ParsedMessageCacheEntry {
+  content: string
+  isDocAgent: boolean
+  blocks: RenderedMessageBlock[]
+}
+
+const parsedBlocksCache = new Map<string, ParsedMessageCacheEntry>()
+
+const getMessageCacheKey = (msg: ChatMessage, index: number): string =>
+  msg.id ? `id:${msg.id}` : `idx:${index}`
+
+const memoizedMessageBlocks = computed<RenderedMessageBlock[][]>(() => {
+  const activeKeys = new Set<string>()
+  const result = props.messages.map((msg, index) => {
+    const key = getMessageCacheKey(msg, index)
+    activeKeys.add(key)
+    if (msg.role === 'user') return []
+    const isDocAgent = agentHasDocumentViewer(msg.agentName)
+    const cached = parsedBlocksCache.get(key)
+    if (cached && cached.content === msg.content && cached.isDocAgent === isDocAgent) {
+      return cached.blocks
+    }
+    const blocks: RenderedMessageBlock[] = parseMessageContent(msg.content, { isDocumentAgent: isDocAgent }).map(
+      block => (
+        block.type === 'document'
+          ? { ...block, renderedHtml: sanitizeHtml(renderMarkdownToHtml(block.content)) }
+          : block
+      )
+    )
+    parsedBlocksCache.set(key, { content: msg.content, isDocAgent, blocks })
+    return blocks
+  })
+
+  for (const cachedKey of parsedBlocksCache.keys()) {
+    if (!activeKeys.has(cachedKey)) {
+      parsedBlocksCache.delete(cachedKey)
+    }
+  }
+  return result
+})
 
 const copyDocContent = async (content: string, index: number) => {
   try {
@@ -307,43 +353,30 @@ const copyChatDiagramCode = async (code: string, blockIndex: number) => {
 
 
 const agentsList = computed(() => {
-  const fromStore = (store.agents || []).map(a => ({
+  return (store.agents || []).map(a => ({
     value: a.role,
     label: a.name,
     colorHex: a.color_hex
   }))
-  if (fromStore.some(a => a.value === 'supervisor')) {
-    return fromStore
-  }
-  return [
-    { value: 'supervisor', label: 'Atenea', colorHex: '#f59e0b' },
-    ...fromStore
-  ]
 })
 
-const getInitialSelectedAgents = (): string[] => {
-  if (store.selectedAgent && !store.selectedAgents?.includes(store.selectedAgent)) {
-    return [store.selectedAgent]
-  }
-  if (Array.isArray(store.selectedAgents) && store.selectedAgents.length > 0) {
-    return [...store.selectedAgents]
-  }
-  return [store.selectedAgent || 'supervisor']
-}
-
-const selectedAgents = ref<string[]>(getInitialSelectedAgents())
-
-watch(() => store.selectedAgent, (newAgent) => {
-  if (newAgent && (selectedAgents.value.length <= 1 || !selectedAgents.value.includes(newAgent))) {
-    selectedAgents.value = [newAgent]
+const selectedAgents = computed<string[]>({
+  get: () => {
+    const storeList = Array.isArray(store.selectedAgents) ? store.selectedAgents : []
+    if (store.selectedAgent && (storeList.length <= 1 || !storeList.includes(store.selectedAgent))) {
+      return [store.selectedAgent]
+    }
+    if (storeList.length > 0) {
+      return storeList
+    }
+    return [store.selectedAgent || 'supervisor']
+  },
+  set: (next: string[]) => {
+    const normalized = next.length > 0 ? [...next] : ['supervisor']
+    store.selectedAgents = normalized
+    store.selectedAgent = normalized[0] || 'supervisor'
   }
 })
-
-watch(() => store.selectedAgents, (newAgents) => {
-  if (Array.isArray(newAgents) && newAgents.length > 0) {
-    selectedAgents.value = [...newAgents]
-  }
-}, { deep: true })
 
 interface VaultDomainItem {
   id: string
@@ -352,14 +385,7 @@ interface VaultDomainItem {
   path?: string
 }
 
-const defaultDomains: VaultDomainItem[] = [
-  { id: '01_enterprise_architecture', name: 'Arquitectura Empresarial' },
-  { id: 'learned', name: 'Investigación Externa' },
-  { id: '00_meta_project', name: 'Plataforma & TFM' },
-  { id: 'deliberations', name: 'Deliberaciones & Actas' },
-]
-
-const availableDomains = ref<VaultDomainItem[]>([...defaultDomains])
+const availableDomains = ref<VaultDomainItem[]>([])
 const selectedDomain = ref<string>('')
 
 const loadDomains = async () => {
@@ -367,12 +393,12 @@ const loadDomains = async () => {
     const res = await fetch('/api/learning/domains')
     if (res.ok) {
       const data = await res.json()
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         availableDomains.value = data
       }
     }
-  } catch (err) {
-    // Keep fallback defaults
+  } catch {
+    // Keep empty list when domains endpoint is unavailable
   }
 }
 
@@ -404,20 +430,17 @@ const toggleAgentDropdown = () => {
 }
 
 const toggleAgent = (role: string) => {
-  const index = selectedAgents.value.indexOf(role)
+  const current = [...selectedAgents.value]
+  const index = current.indexOf(role)
   if (index >= 0) {
-    selectedAgents.value.splice(index, 1)
-    if (selectedAgents.value.length === 0) {
-      selectedAgents.value = ['supervisor']
-    }
-  } else if (selectedAgents.value.length === 1 && selectedAgents.value[0] === 'supervisor' && role !== 'supervisor') {
+    current.splice(index, 1)
+    selectedAgents.value = current.length > 0 ? current : ['supervisor']
+  } else if (current.length === 1 && current[0] === 'supervisor' && role !== 'supervisor') {
     // If only supervisor was selected and user clicks another agent, select that agent
     selectedAgents.value = [role]
   } else {
-    selectedAgents.value.push(role)
+    selectedAgents.value = [...current, role]
   }
-  store.selectedAgents = [...selectedAgents.value]
-  store.selectedAgent = selectedAgents.value[0] || 'supervisor'
 }
 
 const selectAllAgents = () => {
@@ -426,8 +449,6 @@ const selectAllAgents = () => {
   } else {
     selectedAgents.value = agentsList.value.map(a => a.value)
   }
-  store.selectedAgents = [...selectedAgents.value]
-  store.selectedAgent = selectedAgents.value[0] || 'supervisor'
 }
 
 const handleClickOutsideAgent = (event: MouseEvent) => {
@@ -1062,7 +1083,7 @@ defineExpose({
     >
       <div 
         v-for="(msg, i) in messages" 
-        :key="i"
+        :key="msg.id ?? i"
         class="flex flex-col w-full message-block min-w-0 max-w-full"
       >
         <!-- User Bubble -->
@@ -1114,7 +1135,7 @@ defineExpose({
               :style="msg.colorHex ? { borderColor: `${msg.colorHex}4d`, boxShadow: `0 0 15px -3px ${msg.colorHex}1a` } : {}"
               :class="!msg.colorHex ? 'border-neon-green/40 shadow-[0_0_15px_-3px_rgba(0,255,157,0.1)]' : ''"
             >
-              <template v-for="(block, blockIdx) in parseMessageContent(msg.content, { isDocumentAgent: agentHasDocumentViewer(msg.agentName) })" :key="blockIdx">
+              <template v-for="(block, blockIdx) in (memoizedMessageBlocks[i] ?? [])" :key="`${msg.id ?? i}-${block.type}-${blockIdx}`">
                 <!-- Text block -->
                 <div v-if="block.type === 'text'" class="whitespace-pre-wrap leading-relaxed break-words [overflow-wrap:break-word] min-w-0 max-w-full">
                   {{ block.content }}
@@ -1409,7 +1430,7 @@ defineExpose({
 
                   <!-- Document preview with internal scrollbar -->
                   <div class="p-4 bg-[#02050a] text-slate-200 text-xs leading-relaxed max-h-56 overflow-y-auto custom-scrollbar border-t border-space-900/50 selection:bg-pink-500/30">
-                    <div class="doc-body font-sans max-w-none" v-html="sanitizeHtml(renderMarkdownToHtml(block.content))"></div>
+                    <div class="doc-body font-sans max-w-none" v-html="block.renderedHtml || ''"></div>
                   </div>
                 </div>
 

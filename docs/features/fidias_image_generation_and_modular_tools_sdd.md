@@ -119,7 +119,7 @@ flowchart TD
     - Documento técnico (Markdown/Doc): `"He generado el documento técnico en pantalla."`
     - Imagen rasterizada: `"He generado la imagen en pantalla."`
 - **Saneamiento en Backend (`SpanishTechPhoneticNormalizer`):**
-  - En [`phonetic_normalizer.py`](file:///Users/jesusjimenezvaquero/Documents/WS/ai-agent-assistant/backend/src/infrastructure/audio/phonetic_normalizer.py), `strip_markdown()` elimina por completo bloques ````...````, enlaces de imagen y directivas `GENERATE_IMAGE`, garantizando que la síntesis local por Kokoro permanezca 100% limpia de sintaxis técnica.
+  - En [`phonetic_normalizer.py`](backend/src/infrastructure/audio/phonetic_normalizer.py), `strip_markdown()` elimina por completo bloques ````...````, enlaces de imagen y directivas `GENERATE_IMAGE`, garantizando que la síntesis local por Kokoro permanezca 100% limpia de sintaxis técnica.
 
 ---
 

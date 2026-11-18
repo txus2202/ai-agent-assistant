@@ -11,7 +11,7 @@ tags: [architecture, meta-agent, framework, atenea, ai-agent-assistant, clean-ar
 
 > **Documento Marco de Arquitectura y Trabajo Fin de Máster (TFM)**  
 > **Máster en Desarrollo con Inteligencia Artificial**  
-> **Autor:** Jesús Jiménez Vaquero
+> **Autor:** Txus ([@txus2202](https://github.com/txus2202))
 
 ---
 
@@ -55,8 +55,8 @@ Para resolver este problema con rigor de ingeniería de software, este proyecto 
 │    - Aracne (Diagramadora de Arquitectura en Mermaid en Tiempo Real)                  │
 │    - Metis (Aprendizaje Continuo e Ingesta RAG de Fuentes Externas)                   │
 │    - Fídias (Generación de Mockups y Artefactos Visuales)                             │
-│    - Dédalo (Generador de Diapositivas y Presentaciones Técnicas)                     │
-│    - Calíope (Documentación Técnica y Minutas Estructuradas en Markdown)              │
+│    - Dédalo (Desarrollador Full-Stack y Maestro Artesano del Software)                │
+│    - Calíope (Documentación Técnica, ADRs y Presentaciones en Diapositivas PPTX)      │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -70,8 +70,8 @@ Para resolver este problema con rigor de ingeniería de software, este proyecto 
 ### 2.2 Principios de Diseño
 1. **Clean Architecture Pura (Hexagonal):** El núcleo de la aplicación (entidades `Agent`, `Task`, `DebateRecord`) es completamente agnóstico a frameworks externos. No depende de Google ADK, LangChain ni librerías de infraestructura.
 2. **Configuración Declarativa Externa:** Toda la identidad del sistema se parametriza mediante dos archivos de configuración ubicados en la raíz:
-   - [`agents.yaml`](file:///Users/jesusjimenezvaquero/Documents/WS/ai-agent-assistant/agents.yaml): Especifica los roles, nombres, system prompts, herramientas habilitadas, configuración de voz y modelos LLM asignados.
-   - [`topology.yaml`](file:///Users/jesusjimenezvaquero/Documents/WS/ai-agent-assistant/topology.yaml): Modela el grafo de deliberación, qué agente asume la supervisión, qué agentes debaten en paralelo, cuántas rondas de revisión se ejecutan y en qué orden colaboran.
+   - [`agents.yaml`](agents.yaml): Especifica los roles, nombres, system prompts, herramientas habilitadas, configuración de voz y modelos LLM asignados.
+   - [`topology.yaml`](topology.yaml): Modela el grafo de deliberación, qué agente asume la supervisión, qué agentes debaten en paralelo, cuántas rondas de revisión se ejecutan y en qué orden colaboran.
 3. **Privacidad y Soberanía del Dato (Local-First):**
    - El almacenamiento vectorial se ejecuta 100% en local mediante **ChromaDB**.
    - Los modelos de voz operan en el hardware local sin enviar audio a terceros: Reconocimiento de Voz (**Faster-Whisper**), Detección de Palabras de Activación (**Vosk**) y Síntesis Neuronal (**Kokoro ONNX**).
@@ -103,8 +103,8 @@ Para resolver este problema con rigor de ingeniería de software, este proyecto 
 | **Aracne** | `diagrammer` | **Diagramadora de Arquitectura** | Generación automática de diagramas técnicos en sintaxis Mermaid (C4, secuencia, arquitectura, flujos). | Sí |
 | **Metis** | `learning` | **Especialista en Ingesta y RAG** | Extracción de conocimiento desde PDFs, documentación web y notas Markdown hacia el vector store. | Sí |
 | **Fídias** | `fídias` | **Diseñador Visual de Activos** | Generación de prototipos visuales, esquemas de diseño y mockups mediante modelos de imagen. | No |
-| **Dédalo** | `dedalo` | **Arquitecto de Presentaciones** | Estructuración y generación de diapositivas técnicas en Markdown con soporte de exportación a PPTX y HTML. | No |
-| **Calíope** | `caliope` | **Documentadora Técnica** | Redacción de minutas de reunión, actas de decisión de arquitectura (ADRs) y especificaciones técnicas. | Sí |
+| **Dédalo** | `dedalo` | **Desarrollador Full-Stack** | Implementación de código funcional, pruebas de concepto (POCs), scripts y componentes web con Clean Code. | No |
+| **Calíope** | `caliope` | **Documentadora y Presentaciones** | Redacción de minutas, actas de decisión (ADRs) y estructuración de diapositivas técnicas exportables a PPTX. | Sí |
 
 ---
 
@@ -114,7 +114,7 @@ Para resolver este problema con rigor de ingeniería de software, este proyecto 
 | :--- | :--- | :--- |
 | **Naturaleza** | Motor / Framework de Software Meta-Agéntico. | Instanciación concreta y caso de estudio tecnológico. |
 | **Dominio** | Agnóstico (Finanzas, Medicina, Derecho, IT, Educación). | Arquitectura de Software, Cloud y Evaluación de Sistemas IT. |
-| **Definición** | Código en `src/domain`, `src/application`, `src/infrastructure`. | Archivos declarativos [`agents.yaml`](file:///Users/jesusjimenezvaquero/Documents/WS/ai-agent-assistant/agents.yaml) y [`topology.yaml`](file:///Users/jesusjimenezvaquero/Documents/WS/ai-agent-assistant/topology.yaml). |
+| **Definición** | Código en `src/domain`, `src/application`, `src/infrastructure`. | Archivos declarativos [`agents.yaml`](agents.yaml) y [`topology.yaml`](topology.yaml). |
 | **Componentes Clave** | Bus de eventos WebSocket, Adapters LLM, Ingesta RAG, Auth, UI Shell. | El Consejo de 11 agentes (Atenea, Ícaro, Hestia, Sphinx, Hefesto, etc.). |
 | **Extensibilidad** | Se extiende creando nuevos adaptadores o casos de uso. | Se extiende editando los prompts y roles en YAML sin tocar código. |
 | **Modo de Ejecución** | API FastAPI + Servidor Web Vite + Base de Datos SQLite. | Sesiones de deliberación colegiada visualizadas en el frontend. |

@@ -172,5 +172,5 @@ Tener `BUILTIN_SUPERVISOR` embebido en Python con el nombre, saludo y prompt de 
    `load_profiles_from_file(catalog_path)` verifica obligatoriamente que al menos un agente en el catálogo tenga `is_supervisor: true`. Si no existe ninguno, lanza `ValueError(f"Agent catalog {catalog_path} must define at least one supervisor agent (is_supervisor: true)")`.
 4. **Inicialización y Reset del Registro:**
    `reset_default_profiles()` limpia el registro y carga íntegramente los perfiles desde `load_profiles_from_file(default_agents_file())`.
-5. **Auditoría Estática ([`test_decoupling_guard.py`](file:///Users/jesusjimenezvaquero/Documents/WS/ai-agent-assistant/backend/tests/application/agents/test_decoupling_guard.py)):**
+5. **Auditoría Estática ([`test_decoupling_guard.py`](backend/tests/application/agents/test_decoupling_guard.py)):**
    Se añade la comprobación de que `sub_agent_profiles.py` no contiene `BUILTIN_SUPERVISOR`, ni `"Atenea"`, ni texto de personas hardcodeadas.

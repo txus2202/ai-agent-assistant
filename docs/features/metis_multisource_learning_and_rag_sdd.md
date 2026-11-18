@@ -101,7 +101,7 @@ Se amplía la familia de extractores bajo un contrato unificado:
 - Reconocimiento de URLs introducidas en el input cuando se conversa con Metis.
 
 ### 4.2 Botón de Aprendizaje al Finalizar el Debate
-- En el componente de mensajes del chat ([ChatPanel.vue](file:///Users/jesusjimenezvaquero/Documents/WS/ai-agent-assistant/frontend/src/components/ChatPanel.vue)), cuando el evento o mensaje corresponda al dictamen final de Atenea o estado `done`:
+- En el componente de mensajes del chat ([ChatPanel.vue](frontend/src/components/ChatPanel.vue)), cuando el evento o mensaje corresponda al dictamen final de Atenea o estado `done`:
   - Renderizar un botón sutil con estilo cyberpunk: `🧠 Aprender solución con Metis`.
   - Al pulsar, envía `POST /api/learning/learn-session` con feedback de éxito (*"Solución asimilada por Metis en la base de conocimiento"*).
 

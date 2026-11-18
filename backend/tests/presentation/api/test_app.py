@@ -215,3 +215,71 @@ class TestLifespanDecoupling:
         assert attempts == 2
         assert test_app.state.db_pool is mock_pool
         mock_pg_repo.init_schema.assert_awaited_once()
+
+
+class TestAsyncEventLoopNonBlocking:
+    @pytest.mark.anyio
+    async def test_health_remains_responsive_during_slow_learning_request(self, monkeypatch, tmp_path):
+        import asyncio
+        import threading
+        import time
+        from unittest.mock import MagicMock
+        from src.application.services.learn_from_session import LearnFromSession
+        from src.application.services.learn_from_source import LearnResult
+        from src.application.services.ingest_vault import IngestResult
+        from src.domain.entities.user import User
+        from src.domain.ports.document_store import IDocumentStore
+        from src.presentation.api.app import create_app
+        from src.presentation.api.config import Settings
+        from src.presentation.api.dependencies.auth import get_current_user
+
+        main_tid = threading.get_ident()
+        entered_worker = asyncio.Event()
+        release_worker = threading.Event()
+        loop = asyncio.get_running_loop()
+        worker_tid: list[int] = []
+
+        def _slow_learn_run(**kwargs):
+            worker_tid.append(threading.get_ident())
+            loop.call_soon_threadsafe(entered_worker.set)
+            release_worker.wait(timeout=2.0)
+            return LearnResult(
+                source="slow-session",
+                generated_file=tmp_path / "learned" / "slow.md",
+                ingest_result=IngestResult(files_processed=1, chunks_upserted=1),
+                errors=[],
+            )
+
+        monkeypatch.setattr("src.presentation.api.routes.learning.get_llm_provider", lambda _: MagicMock())
+        monkeypatch.setattr(LearnFromSession, "run", staticmethod(_slow_learn_run))
+
+        settings = Settings(
+            sqlite_db_path=tmp_path / "app.db",
+            vault_path=tmp_path / "vault",
+            auth_secret_key="test_secret_key_32_bytes_minimum_length",
+        )
+        fake_store = MagicMock(spec=IDocumentStore)
+        test_app = create_app(settings=settings, document_store=fake_store)
+        test_app.dependency_overrides[get_current_user] = lambda: User(
+            id="usr-async", username="tester", password_hash="h", is_admin=False
+        )
+
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://testserver") as client:
+            slow_task = asyncio.create_task(
+                client.post(
+                    "/learning/session",
+                    json={"session_id": "slow-session", "content": "Architecture consensus notes"},
+                )
+            )
+            await asyncio.wait_for(entered_worker.wait(), timeout=2.0)
+
+            t0 = time.perf_counter()
+            health_resp = await client.get("/health")
+            health_elapsed = time.perf_counter() - t0
+            release_worker.set()
+            learn_resp = await slow_task
+
+        assert health_resp.status_code == 200
+        assert health_elapsed < 0.1
+        assert learn_resp.status_code == 200
+        assert worker_tid and worker_tid[0] != main_tid

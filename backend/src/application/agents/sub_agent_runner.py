@@ -24,7 +24,7 @@ from typing import Any
 from src.application.services.query_vault import QueryVault
 from src.domain.agents.sub_agent_profiles import SubAgentProfile, format_team_roster, get_profile
 from src.domain.ports.document_store import IDocumentStore
-from src.domain.ports.llm_provider import ILLMProvider
+from src.domain.ports.llm_provider import ILLMProvider, invoke_llm_with_usage
 from src.domain.value_objects.document_chunk import DocumentChunk
 from src.infrastructure.image_generation.service import ImageGenerationService
 
@@ -192,13 +192,20 @@ class SubAgentRunner:
         return content
 
     @classmethod
-    def _calculate_usage(cls, prompt: str, content: str, llm_provider: ILLMProvider) -> dict[str, int]:
-        usage: dict[str, int] = {}
-        if hasattr(llm_provider, "get_last_usage"):
-            usage = llm_provider.get_last_usage() or {}
+    def _calculate_usage(
+        cls,
+        prompt: str,
+        content: str,
+        llm_provider: ILLMProvider | None = None,
+        *,
+        usage: dict[str, int] | None = None,
+    ) -> dict[str, int]:
+        resolved: dict[str, int] = dict(usage) if usage is not None else {}
+        if usage is None and llm_provider is not None and hasattr(llm_provider, "get_last_usage"):
+            resolved = llm_provider.get_last_usage() or {}
 
-        in_tkn = usage.get("input", 0)
-        out_tkn = usage.get("output", 0)
+        in_tkn = resolved.get("input", 0)
+        out_tkn = resolved.get("output", 0)
         if not in_tkn or in_tkn == 0:
             in_tkn = max(15, len(prompt) // 4)
         if not out_tkn or out_tkn == 0:
@@ -224,7 +231,8 @@ class SubAgentRunner:
         thread pool via asyncio.to_thread() to avoid blocking the event loop.
         """
         profile = get_profile(role)
-        context_chunks, context_block = cls._retrieve_rag_context(
+        context_chunks, context_block = await asyncio.to_thread(
+            cls._retrieve_rag_context,
             profile,
             user_request,
             document_store,
@@ -235,13 +243,15 @@ class SubAgentRunner:
         prompt = cls._build_prompt(profile, user_request, context_block, chat_history, image_provider)
 
         start_time = time.perf_counter()
-        content = await asyncio.to_thread(llm_provider.complete, prompt, model_name)
+        content, raw_usage = await asyncio.to_thread(
+            invoke_llm_with_usage, llm_provider, prompt, model_name
+        )
         latency = round(time.perf_counter() - start_time, 2)
 
         if profile.supports_image_generation:
             content = await cls._postprocess_visual_content(content, image_provider)
 
-        usage = cls._calculate_usage(prompt, content, llm_provider)
+        usage = cls._calculate_usage(prompt, content, llm_provider, usage=raw_usage)
 
         return SubAgentResponse(
             role=role,

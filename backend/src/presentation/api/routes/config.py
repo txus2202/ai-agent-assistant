@@ -77,7 +77,7 @@ def _build_agent_item(
 
 
 @router.get("/agents")
-async def get_agents_config(
+def get_agents_config(
     repo: Annotated[IAgentConfigRepository, Depends(get_config_repo)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> List[Dict[str, Any]]:
@@ -106,7 +106,7 @@ async def get_agents_config(
         404: {"description": "Agent role not found"}
     }
 )
-async def get_agent_config(
+def get_agent_config(
     role: str,
     repo: Annotated[IAgentConfigRepository, Depends(get_config_repo)],
     current_user: Annotated[User, Depends(get_current_user)],
@@ -144,7 +144,7 @@ async def get_agent_config(
         404: {"description": "Agent role not found"}
     }
 )
-async def update_agent_config(
+def update_agent_config(
     role: str, 
     update: AgentConfigUpdate, 
     repo: Annotated[IAgentConfigRepository, Depends(get_config_repo)],
@@ -181,7 +181,7 @@ async def update_agent_config(
 
 
 @router.get("/topology")
-async def get_topology() -> Dict[str, Any]:
+def get_topology() -> Dict[str, Any]:
     """
     Devuelve la topología de roles y asignación de agentes configurada en topology.yaml.
     """

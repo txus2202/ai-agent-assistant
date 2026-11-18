@@ -53,7 +53,7 @@ from src.domain.agents.supervisor_events import (
     SupervisorEvent,
 )
 from src.domain.ports.document_store import IDocumentStore
-from src.domain.ports.llm_provider import ILLMProvider
+from src.domain.ports.llm_provider import ILLMProvider, invoke_llm_with_usage
 
 import json
 import re
@@ -479,13 +479,15 @@ def _build_role_runner(
         profile = get_profile(r)
         agent_name = profile.display_name
 
-        config = agent_config_repo.find_by_role(agent_name) or agent_config_repo.find_by_role(profile.id)
-        default_prov = getattr(profile, "default_provider", "") or settings.default_provider
-        default_mod = getattr(profile, "default_model", "") or settings.default_model
-        provider_name = config.provider if (config and config.provider) else default_prov
-        model_name = config.model_name if (config and config.model_name) else default_mod
+        def _resolve_role_sync() -> tuple[Any, str, str, ILLMProvider]:
+            cfg = agent_config_repo.find_by_role(agent_name) or agent_config_repo.find_by_role(profile.id)
+            default_prov = getattr(profile, "default_provider", "") or settings.default_provider
+            default_mod = getattr(profile, "default_model", "") or settings.default_model
+            prov_name = cfg.provider if (cfg and cfg.provider) else default_prov
+            mod_name = cfg.model_name if (cfg and cfg.model_name) else default_mod
+            return cfg, prov_name, mod_name, llm_factory(prov_name)
 
-        llm_provider = llm_factory(provider_name)
+        config, provider_name, model_name, llm_provider = await asyncio.to_thread(_resolve_role_sync)
         runner_kwargs: dict[str, Any] = {"chat_history": chat_history} if chat_history else {}
         if config and getattr(config, "rag_top_k", None) is not None:
             runner_kwargs["rag_top_k"] = config.rag_top_k
@@ -732,8 +734,10 @@ async def _debate_generator(
 
     supervisor_profile = get_profile(active_topology.supervisor)
     sup_agent_name = supervisor_profile.display_name
-    sup_provider_name, sup_model_name = _resolve_supervisor_config(agent_config_repo, supervisor_profile, settings)
-    supervisor_provider = llm_factory(sup_provider_name)
+    sup_provider_name, sup_model_name = await asyncio.to_thread(
+        _resolve_supervisor_config, agent_config_repo, supervisor_profile, settings
+    )
+    supervisor_provider = await asyncio.to_thread(llm_factory, sup_provider_name)
 
     run_role = _build_role_runner(
         agent_config_repo, document_store, llm_factory, settings, chat_history, state
@@ -748,7 +752,8 @@ async def _debate_generator(
         except KeyError:
             interpreter_name = active_topology.interpreters[0]
 
-    triage = classify_intent(
+    triage = await asyncio.to_thread(
+        classify_intent,
         user_request,
         supervisor_provider,
         sup_model_name,
@@ -1327,12 +1332,10 @@ async def _run_consolidation(
     )
     
     start_time = time.perf_counter()
-    final_response = await asyncio.to_thread(default_provider.complete, consolidation_prompt, default_model)
+    final_response, usage = await asyncio.to_thread(
+        invoke_llm_with_usage, default_provider, consolidation_prompt, default_model
+    )
     latency = round(time.perf_counter() - start_time, 2)
-
-    usage: dict[str, Any] = {}
-    if hasattr(default_provider, "get_last_usage"):
-        usage = default_provider.get_last_usage() or {}
 
     if not usage or usage.get("total", 0) == 0:
         in_tkn = max(1, len(consolidation_prompt) // 4)

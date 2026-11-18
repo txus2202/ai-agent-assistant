@@ -1,10 +1,10 @@
 import sqlite3
-from contextlib import contextmanager
-from typing import Generator, List, Optional
+from typing import List, Optional
 
 from src.domain.exceptions import RepositoryError
 from src.domain.ports.agent_config_repository import IAgentConfigRepository
 from src.domain.value_objects.agent_config import AgentConfig
+from src.infrastructure.persistence.sqlite_base import SqliteConnectionManager
 
 _CREATE_AGENT_CONFIGS_TABLE = """
     CREATE TABLE IF NOT EXISTS agent_configs (
@@ -29,9 +29,9 @@ _UPSERT_AGENT_CONFIG = """
 """
 
 
-class SqliteAgentConfigRepository(IAgentConfigRepository):
+class SqliteAgentConfigRepository(IAgentConfigRepository, SqliteConnectionManager):
     def __init__(self, db_path: str) -> None:
-        self._db_path = db_path
+        SqliteConnectionManager.__init__(self, db_path)
         self._init_schema()
 
     def save(self, config: AgentConfig) -> None:
@@ -183,19 +183,6 @@ class SqliteAgentConfigRepository(IAgentConfigRepository):
                     conn.execute("ALTER TABLE agent_configs ADD COLUMN rag_min_score REAL DEFAULT NULL")
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to initialise schema: {exc}") from exc
-
-    @contextmanager
-    def _connection(self) -> Generator[sqlite3.Connection, None, None]:
-        conn = sqlite3.connect(self._db_path)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
 
     @staticmethod
     def _row_to_config(row: sqlite3.Row) -> AgentConfig:

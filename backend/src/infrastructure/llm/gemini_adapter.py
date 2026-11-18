@@ -22,10 +22,11 @@ from pathlib import Path
 from typing import Any
 
 from src.domain.exceptions import LLMProviderError
-from src.domain.ports.llm_provider import ILLMProvider
+from src.domain.ports.llm_provider import ILLMProvider, LLMCompletion
+from src.infrastructure.llm.usage_tracking import UsageTrackingMixin, build_usage
 
 
-class GeminiAdapter(ILLMProvider):
+class GeminiAdapter(UsageTrackingMixin, ILLMProvider):
     """ILLMProvider backed by google-genai (Gemini)."""
 
     def __init__(self, api_key: str | None = None, project: str | None = None, location: str = "europe-west1") -> None:
@@ -55,54 +56,32 @@ class GeminiAdapter(ILLMProvider):
                         "or authenticate using the Gemini CLI."
                     ) from exc
 
-    def complete(self, prompt: str, model_name: str) -> str:
+    def complete_with_usage(self, prompt: str, model_name: str) -> LLMCompletion:
         clean_model = model_name.strip().lower().replace(" ", "-")
         try:
-            # Gemini Context Caching requires >= 32768 tokens.
-            # We count tokens first to decide whether to cache.
-            token_count_resp = self._client.models.count_tokens(
+            response = self._client.models.generate_content(
                 model=clean_model,
                 contents=prompt,
             )
-            
-            total_toks = getattr(token_count_resp, "total_tokens", None)
-            if total_toks is not None and total_toks >= 32768:
-                # Use explicit context caching
-                cache = self._client.caches.create(
-                    model=clean_model,
-                    config={
-                        'contents': [prompt],
-                        'ttl': '3600s',  # 1 hour
-                    },
-                )
-                response = self._client.models.generate_content(
-                    model=clean_model,
-                    contents="", # The prompt is entirely in the cache
-                    config={'cached_content': cache.name}
-                )
-                # Cleanup cache after use to save costs (since this is per-agent specific)
-                if getattr(cache, "name", None):
-                    self._client.caches.delete(name=str(cache.name))
-            else:
-                # Normal request for smaller contexts
-                response = self._client.models.generate_content(
-                    model=clean_model,
-                    contents=prompt,
-                )
 
-            if hasattr(response, "usage_metadata") and response.usage_metadata:
-                self._last_usage = {
-                    "input": getattr(response.usage_metadata, "prompt_token_count", 0) or 0,
-                    "output": getattr(response.usage_metadata, "candidates_token_count", 0) or 0,
-                    "total": getattr(response.usage_metadata, "total_token_count", 0) or 0,
-                }
-            else:
-                self._last_usage = {}
+            usage: dict[str, int] = {}
+            usage_meta = getattr(response, "usage_metadata", None)
+            if usage_meta:
+                usage = build_usage(
+                    getattr(usage_meta, "prompt_token_count", 0),
+                    getattr(usage_meta, "candidates_token_count", 0),
+                    getattr(usage_meta, "total_token_count", None),
+                )
+            self._set_scoped_usage(usage)
 
-            return getattr(response, "text", "") or ""
+            text = getattr(response, "text", "") or ""
+            return LLMCompletion(content=text, usage=usage)
 
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
+
+    def complete(self, prompt: str, model_name: str) -> str:
+        return self.complete_with_usage(prompt, model_name).content
 
     def complete_stream(self, prompt: str, model_name: str) -> Iterator[str]:
         clean_model = model_name.strip().lower().replace(" ", "-")
@@ -138,11 +117,6 @@ class GeminiAdapter(ILLMProvider):
             return getattr(response, "text", "") or ""
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
-
-    def get_last_usage(self) -> dict[str, int]:
-        """Return the token usage of the most recent complete() call."""
-        return getattr(self, "_last_usage", {})
-
 
     @staticmethod
     def _supports_generation(model: Any) -> bool:

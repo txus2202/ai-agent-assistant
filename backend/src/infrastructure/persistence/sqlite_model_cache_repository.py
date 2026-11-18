@@ -10,11 +10,11 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from contextlib import contextmanager
-from typing import Generator, Optional
+from typing import Optional
 
 from src.domain.exceptions import RepositoryError
 from src.domain.ports.model_cache_port import CachedModelCatalog, IModelCacheRepository
+from src.infrastructure.persistence.sqlite_base import SqliteConnectionManager
 
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS model_cache (
@@ -29,9 +29,9 @@ CREATE TABLE IF NOT EXISTS model_cache (
 """
 
 
-class SqliteModelCacheRepository(IModelCacheRepository):
+class SqliteModelCacheRepository(IModelCacheRepository, SqliteConnectionManager):
     def __init__(self, db_path: str, app_version: str = "0.4.0") -> None:
-        self._db_path = db_path
+        SqliteConnectionManager.__init__(self, db_path)
         self._app_version = app_version
         self._init_schema()
 
@@ -41,19 +41,6 @@ class SqliteModelCacheRepository(IModelCacheRepository):
                 conn.execute(_CREATE_TABLE_SQL)
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to initialise model_cache schema: {exc}") from exc
-
-    @contextmanager
-    def _connection(self) -> Generator[sqlite3.Connection, None, None]:
-        conn = sqlite3.connect(self._db_path, timeout=10.0)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
 
     def get(self, provider: str) -> Optional[CachedModelCatalog]:
         try:

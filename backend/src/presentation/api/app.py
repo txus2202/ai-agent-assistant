@@ -20,11 +20,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.presentation.api.config import Settings, get_settings
 from src.infrastructure.persistence.sqlite_agent_config_repository import SqliteAgentConfigRepository
 from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
+
+if TYPE_CHECKING:
+    from src.domain.ports.document_store import IDocumentStore
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +104,7 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
 def create_app(
     settings: Settings | None = None,
     auth_service: Any = None,
+    document_store: IDocumentStore | None = None,
 ) -> FastAPI:
     cfg = settings or get_settings()
 
@@ -111,6 +115,7 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.settings = cfg
+    app.state.document_store = document_store
     if auth_service is not None:
         app.state.auth_service = auth_service
 

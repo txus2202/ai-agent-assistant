@@ -15,12 +15,11 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
-from contextlib import contextmanager
-from typing import Generator
 
 from src.domain.entities.agent import Agent, AgentStatus
 from src.domain.exceptions import RepositoryError
 from src.domain.ports.agent_repository import IAgentRepository
+from src.infrastructure.persistence.sqlite_base import SqliteConnectionManager
 
 _CREATE_AGENTS_TABLE = """
     CREATE TABLE IF NOT EXISTS agents (
@@ -45,7 +44,7 @@ _UPSERT_AGENT = """
 """
 
 
-class SqliteAgentRepository(IAgentRepository):
+class SqliteAgentRepository(IAgentRepository, SqliteConnectionManager):
     """
     SQLite-backed implementation of ``IAgentRepository``.
 
@@ -55,7 +54,7 @@ class SqliteAgentRepository(IAgentRepository):
     """
 
     def __init__(self, db_path: str) -> None:
-        self._db_path = db_path
+        SqliteConnectionManager.__init__(self, db_path)
         self._init_schema()
 
     # ------------------------------------------------------------------
@@ -116,19 +115,6 @@ class SqliteAgentRepository(IAgentRepository):
                 conn.execute(_CREATE_AGENTS_TABLE)
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to initialise schema: {exc}") from exc
-
-    @contextmanager
-    def _connection(self) -> Generator[sqlite3.Connection, None, None]:
-        conn = sqlite3.connect(self._db_path)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
 
     @staticmethod
     def _row_to_agent(row: sqlite3.Row) -> Agent:

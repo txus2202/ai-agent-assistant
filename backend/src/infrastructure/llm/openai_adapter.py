@@ -15,10 +15,11 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from src.domain.exceptions import LLMProviderError
-from src.domain.ports.llm_provider import ILLMProvider
+from src.domain.ports.llm_provider import ILLMProvider, LLMCompletion
+from src.infrastructure.llm.usage_tracking import UsageTrackingMixin, build_usage
 
 
-class OpenAIAdapter(ILLMProvider):
+class OpenAIAdapter(UsageTrackingMixin, ILLMProvider):
     """ILLMProvider backed by openai (GPT models)."""
 
     def __init__(self, api_key: str | None = None) -> None:
@@ -38,23 +39,28 @@ class OpenAIAdapter(ILLMProvider):
 
         self._client = _openai.OpenAI(api_key=key)
 
-    def complete(self, prompt: str, model_name: str) -> str:
+    def complete_with_usage(self, prompt: str, model_name: str) -> LLMCompletion:
         try:
             response = self._client.chat.completions.create(
                 model=model_name,
                 messages=[{"role": "user", "content": prompt}],
             )
-            if hasattr(response, "usage") and response.usage:
-                self._last_usage = {
-                    "input": getattr(response.usage, "prompt_tokens", 0) or 0,
-                    "output": getattr(response.usage, "completion_tokens", 0) or 0,
-                    "total": getattr(response.usage, "total_tokens", 0) or 0,
-                }
-            else:
-                self._last_usage = {}
-            return response.choices[0].message.content or ""
+            usage: dict[str, int] = {}
+            resp_usage = getattr(response, "usage", None)
+            if resp_usage:
+                usage = build_usage(
+                    getattr(resp_usage, "prompt_tokens", 0),
+                    getattr(resp_usage, "completion_tokens", 0),
+                    getattr(resp_usage, "total_tokens", None),
+                )
+            self._set_scoped_usage(usage)
+            content = response.choices[0].message.content or ""
+            return LLMCompletion(content=content, usage=usage)
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
+
+    def complete(self, prompt: str, model_name: str) -> str:
+        return self.complete_with_usage(prompt, model_name).content
 
     def complete_stream(self, prompt: str, model_name: str) -> Iterator[str]:
         try:
@@ -93,11 +99,6 @@ class OpenAIAdapter(ILLMProvider):
             return response.choices[0].message.content or ""
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
-
-    def get_last_usage(self) -> dict[str, int]:
-        """Return the token usage of the most recent complete() call."""
-        return getattr(self, "_last_usage", {})
-
 
     @staticmethod
     def _is_chat_candidate(name_id: str) -> bool:

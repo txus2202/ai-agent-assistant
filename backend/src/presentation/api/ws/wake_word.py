@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import json
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -40,14 +41,14 @@ async def _send_detection_event(websocket: WebSocket, detected: Any) -> None:
             "agent_role": role,
             "display_name": name,
         }))
-    wake_word_service.reset()
+    await asyncio.to_thread(wake_word_service.reset)
 
 
-def _handle_control_text(text: str) -> None:
+async def _handle_control_text(text: str) -> None:
     try:
         payload = json.loads(text)
         if payload.get("type") in ("RESET", "reset"):
-            wake_word_service.reset()
+            await asyncio.to_thread(wake_word_service.reset)
             logger.info("Wake-Word service reset via client control command")
     except Exception:
         pass
@@ -59,14 +60,14 @@ async def _process_incoming_message(websocket: WebSocket, message: Mapping[str, 
 
     data_bytes = message.get("bytes")
     if data_bytes:
-        detected = wake_word_service.process_chunk(data_bytes)
+        detected = await asyncio.to_thread(wake_word_service.process_chunk, data_bytes)
         if detected:
             await _send_detection_event(websocket, detected)
         return
 
     data_text = message.get("text")
     if data_text:
-        _handle_control_text(data_text)
+        await _handle_control_text(data_text)
 
 
 @router.websocket("/wake-word")
@@ -104,7 +105,7 @@ async def wake_word_endpoint(websocket: WebSocket):
 
     await websocket.accept()
     logger.info("Client connected to Wake-Word stream (user: %s)", authenticated_user.username)
-    wake_word_service.reset()
+    await asyncio.to_thread(wake_word_service.reset)
     
     try:
         while True:

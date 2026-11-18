@@ -1,9 +1,12 @@
+import asyncio
+import threading
 from unittest.mock import MagicMock
 import pytest
 from starlette.requests import HTTPConnection
 
 from src.domain.ports.agent_config_repository import IAgentConfigRepository
 from src.domain.ports.debate_repository import IDebateRepository
+from src.domain.ports.document_store import IDocumentStore
 from src.infrastructure.persistence.postgres_user_repository import PostgreSQLUserRepository
 from src.infrastructure.persistence.sqlite_agent_config_repository import SqliteAgentConfigRepository
 from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
@@ -18,6 +21,7 @@ from src.presentation.api.dependencies.auth import (
     reset_auth_service,
 )
 from src.presentation.api.dependencies.model_cache import get_model_cache_repository
+from src.presentation.api.dependencies.rag import get_document_store
 
 
 def _make_sqlite_settings(tmp_path, database_url: str = "") -> Settings:
@@ -126,3 +130,40 @@ def test_composition_root_prefers_app_state_auth_service(tmp_path):
     mock_conn = MagicMock(spec=HTTPConnection)
     mock_conn.app = app
     assert get_auth_service(mock_conn) is custom_auth
+
+
+@pytest.mark.asyncio
+async def test_document_store_singleton_cached_on_app_state(monkeypatch, tmp_path):
+    settings = _make_sqlite_settings(tmp_path)
+    app = create_app(settings=settings)
+    main_tid = threading.get_ident()
+    init_threads: list[int] = []
+    created_instances: list[MagicMock] = []
+
+    def _fake_store(*args, **kwargs):
+        init_threads.append(threading.get_ident())
+        inst = MagicMock(spec=IDocumentStore)
+        created_instances.append(inst)
+        return inst
+
+    monkeypatch.setattr("src.presentation.api.dependencies.rag.ChromaDBDocumentStore", _fake_store)
+
+    mock_conn = MagicMock(spec=HTTPConnection)
+    mock_conn.app = app
+
+    s1, s2, s3 = await asyncio.gather(
+        get_document_store(mock_conn),
+        get_document_store(mock_conn),
+        get_document_store(mock_conn),
+    )
+
+    assert len(created_instances) == 1
+    assert s1 is s2 is s3 is app.state.document_store
+    assert init_threads == [t for t in init_threads if t != main_tid]
+
+
+def test_create_app_accepts_preconfigured_document_store(tmp_path):
+    settings = _make_sqlite_settings(tmp_path)
+    custom_store = MagicMock(spec=IDocumentStore)
+    app = create_app(settings=settings, document_store=custom_store)
+    assert app.state.document_store is custom_store

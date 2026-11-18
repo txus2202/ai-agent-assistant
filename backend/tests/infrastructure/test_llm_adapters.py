@@ -79,32 +79,75 @@ class TestGeminiAdapter:
         assert isinstance(result, str)
         assert result == "Gemini response"
 
-    def test_complete_with_context_caching(self):
+    def test_complete_skips_count_tokens_and_single_use_cache_round_trips(self):
         from src.infrastructure.llm.gemini_adapter import GeminiAdapter
 
-        # Simulate large prompt >= 32768 tokens
-        count_mock = MagicMock()
-        count_mock.total_tokens = 35000
-        self._mock_genai.Client.return_value.models.count_tokens.return_value = count_mock
-
-        cache_mock = MagicMock()
-        cache_mock.name = "cachedContents/test-cache-id"
-        self._mock_genai.Client.return_value.caches.create.return_value = cache_mock
+        self._mock_genai.Client.return_value.models.count_tokens.reset_mock()
+        self._mock_genai.Client.return_value.caches.create.reset_mock()
+        self._mock_genai.Client.return_value.caches.delete.reset_mock()
 
         adapter = GeminiAdapter(api_key="test-key")
-        result = adapter.complete("Very large prompt", "gemini-2.5-flash")
+        small_res = adapter.complete("Short prompt", "gemini-2.5-flash")
+        large_res = adapter.complete("x" * 130_000, "gemini-2.5-flash")
 
-        assert result == "Gemini response"
-        self._mock_genai.Client.return_value.caches.create.assert_called_once_with(
-            model="gemini-2.5-flash",
-            config={
-                "contents": ["Very large prompt"],
-                "ttl": "3600s",
-            },
+        assert small_res == "Gemini response"
+        assert large_res == "Gemini response"
+        self._mock_genai.Client.return_value.models.count_tokens.assert_not_called()
+        self._mock_genai.Client.return_value.caches.create.assert_not_called()
+        self._mock_genai.Client.return_value.caches.delete.assert_not_called()
+        assert self._mock_genai.Client.return_value.models.generate_content.call_count == 2
+
+    def test_concurrent_complete_isolates_usage_per_task_and_thread(self):
+        from concurrent.futures import ThreadPoolExecutor
+        import threading
+        from src.infrastructure.llm.gemini_adapter import GeminiAdapter
+
+        barrier = threading.Barrier(2, timeout=2.0)
+
+        def _generate_side_effect(model, contents):
+            resp = MagicMock()
+            if contents == "prompt-A":
+                resp.text = "reply-A"
+                resp.usage_metadata = MagicMock(
+                    prompt_token_count=100,
+                    candidates_token_count=20,
+                    total_token_count=120,
+                )
+            else:
+                resp.text = "reply-B"
+                resp.usage_metadata = MagicMock(
+                    prompt_token_count=500,
+                    candidates_token_count=50,
+                    total_token_count=550,
+                )
+            barrier.wait()
+            return resp
+
+        self._mock_genai.Client.return_value.models.generate_content.side_effect = _generate_side_effect
+        adapter = GeminiAdapter(api_key="test-key")
+        assert not hasattr(adapter, "_last_usage")
+
+        def _run_call(prompt: str):
+            completion = adapter.complete_with_usage(prompt, "gemini-2.5-flash")
+            return completion.content, completion.usage, adapter.get_last_usage()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            fut_a = pool.submit(_run_call, "prompt-A")
+            fut_b = pool.submit(_run_call, "prompt-B")
+            res_a = fut_a.result(timeout=3.0)
+            res_b = fut_b.result(timeout=3.0)
+
+        assert res_a == (
+            "reply-A",
+            {"input": 100, "output": 20, "total": 120},
+            {"input": 100, "output": 20, "total": 120},
         )
-        self._mock_genai.Client.return_value.caches.delete.assert_called_once_with(
-            name="cachedContents/test-cache-id"
+        assert res_b == (
+            "reply-B",
+            {"input": 500, "output": 50, "total": 550},
+            {"input": 500, "output": 50, "total": 550},
         )
+        assert not hasattr(adapter, "_last_usage")
 
     def test_complete_image_returns_string(self, tmp_path: Path):
         from src.infrastructure.llm.gemini_adapter import GeminiAdapter
@@ -320,6 +363,40 @@ class TestOpenAIAdapter:
         assert result[0]["id"] == "gpt-4o"
         self._mock_openai.OpenAI.return_value.chat.completions.create.assert_not_called()
 
+    def test_concurrent_complete_isolates_usage_without_shared_state(self):
+        from concurrent.futures import ThreadPoolExecutor
+        import threading
+        from src.infrastructure.llm.openai_adapter import OpenAIAdapter
+
+        barrier = threading.Barrier(2, timeout=2.0)
+
+        def _create_side_effect(model, messages):
+            prompt = messages[0]["content"]
+            resp = MagicMock()
+            if prompt == "p1":
+                resp.choices = [MagicMock(message=MagicMock(content="c1"))]
+                resp.usage = MagicMock(prompt_tokens=11, completion_tokens=22, total_tokens=33)
+            else:
+                resp.choices = [MagicMock(message=MagicMock(content="c2"))]
+                resp.usage = MagicMock(prompt_tokens=77, completion_tokens=88, total_tokens=165)
+            barrier.wait()
+            return resp
+
+        self._mock_openai.OpenAI.return_value.chat.completions.create.side_effect = _create_side_effect
+        adapter = OpenAIAdapter(api_key="test-key")
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            f1 = pool.submit(adapter.complete_with_usage, "p1", "gpt-4o")
+            f2 = pool.submit(adapter.complete_with_usage, "p2", "gpt-4o")
+            r1 = f1.result(timeout=3.0)
+            r2 = f2.result(timeout=3.0)
+
+        assert r1.content == "c1"
+        assert r1.usage == {"input": 11, "output": 22, "total": 33}
+        assert r2.content == "c2"
+        assert r2.usage == {"input": 77, "output": 88, "total": 165}
+        assert not hasattr(adapter, "_last_usage")
+
 
 
 
@@ -405,5 +482,34 @@ class TestAnthropicAdapter:
         assert len(result) == 1
         assert result[0]["id"] == "claude-3-5-sonnet-latest"
         self._mock_anthropic.Anthropic.return_value.messages.count_tokens.assert_not_called()
+
+    def test_complete_stream_yields_chunks_and_records_usage(self):
+        from src.infrastructure.llm.anthropic_adapter import AnthropicAdapter
+
+        stream_ctx = MagicMock()
+        stream_ctx.text_stream = iter(["Hello ", "", "Claude!"])
+        stream_ctx.get_final_message.return_value = MagicMock(
+            usage=MagicMock(input_tokens=42, output_tokens=18)
+        )
+        stream_cm = MagicMock()
+        stream_cm.__enter__.return_value = stream_ctx
+        stream_cm.__exit__.return_value = False
+        self._mock_anthropic.Anthropic.return_value.messages.stream.return_value = stream_cm
+
+        adapter = AnthropicAdapter(api_key="test-key")
+        chunks = list(adapter.complete_stream("Say hi", "claude-3-5-sonnet-latest"))
+
+        assert chunks == ["Hello ", "Claude!"]
+        assert adapter.get_last_usage() == {"input": 42, "output": 18, "total": 60}
+        assert not hasattr(adapter, "_last_usage")
+
+    def test_complete_stream_wraps_sdk_exception_as_llm_provider_error(self):
+        from src.infrastructure.llm.anthropic_adapter import AnthropicAdapter
+
+        self._mock_anthropic.Anthropic.return_value.messages.stream.side_effect = RuntimeError("stream boom")
+        adapter = AnthropicAdapter(api_key="test-key")
+
+        with pytest.raises(LLMProviderError, match="Anthropic streaming error: stream boom"):
+            list(adapter.complete_stream("Say hi", "claude-3-5-sonnet-latest"))
 
 

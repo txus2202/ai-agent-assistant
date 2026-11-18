@@ -11,7 +11,7 @@ def get_debate_repo(settings: Settings = Depends(get_settings)) -> IDebateReposi
     return get_debate_repository(settings)
 
 @router.get("")
-async def get_all_debates(
+def get_all_debates(
     repo: IDebateRepository = Depends(get_debate_repo),
     current_user: User = Depends(get_current_user),
 ) -> List[Dict[str, Any]]:
@@ -33,7 +33,7 @@ async def get_all_debates(
     return result
 
 @router.get("/{debate_id}", responses={404: {"description": "Debate not found"}})
-async def get_debate(
+def get_debate(
     debate_id: str,
     repo: IDebateRepository = Depends(get_debate_repo),
     current_user: User = Depends(get_current_user),
@@ -55,7 +55,7 @@ async def get_debate(
     }
 
 @router.delete("/{debate_id}", responses={404: {"description": "Debate not found"}})
-async def delete_debate(
+def delete_debate(
     debate_id: str,
     repo: IDebateRepository = Depends(get_debate_repo),
     current_user: User = Depends(get_current_user),

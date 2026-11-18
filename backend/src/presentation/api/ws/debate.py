@@ -21,14 +21,15 @@ from src.application.agents.supervisor_agent import SupervisorAgent
 from src.application.services.learn_from_source import LearnFromSource, SourceType
 from src.domain.agents.sub_agent_profiles import SubAgentProfile, get_profile
 from src.domain.agents.supervisor_events import HITLResponse, SupervisorEvent, EventType, HITLDecision
+from src.domain.ports.document_store import IDocumentStore
 from src.domain.ports.llm_provider import ILLMProvider
 from src.domain.ports.observability_port import TraceContext, SpanContext
 from src.domain.value_objects.debate_record import DebateRecord
 from src.infrastructure.llm.registry import get_llm_provider
 from src.infrastructure.persistence.sqlite_agent_config_repository import SqliteAgentConfigRepository
 from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
-from src.infrastructure.rag.chroma_document_store import ChromaDBDocumentStore
 from src.presentation.api.config import get_settings
+from src.presentation.api.dependencies.rag import get_document_store
 from src.presentation.api.routes.observability import get_observability_service
 from src.presentation.api.routes.upload import resolve_user_attachment_path
 from src.presentation.api.ws.serializers import dict_to_hitl_response, event_to_dict
@@ -149,10 +150,24 @@ class DebateCancelledError(Exception):
     """Raised when the client explicitly cancels/aborts an active debate."""
 
 
+def _reset_wake_word_sync() -> None:
+    try:
+        from src.presentation.api.ws.wake_word import wake_word_service
+        wake_word_service.reset()
+    except Exception:
+        pass
+
+
 class DebateWebSocketHandler:
     """Handles the WebSocket debate streaming and HITL responses."""
     
-    def __init__(self, websocket: WebSocket, authenticated_user: Any = None, auth_service: Any = None):
+    def __init__(
+        self,
+        websocket: WebSocket,
+        authenticated_user: Any = None,
+        auth_service: Any = None,
+        document_store: IDocumentStore | None = None,
+    ):
         self.websocket = websocket
         self.authenticated_user = authenticated_user
         self.auth_service = auth_service
@@ -164,18 +179,45 @@ class DebateWebSocketHandler:
         user_id_scope = self.authenticated_user.id if self.authenticated_user else None
         self.agent_config_repo = UserScopedAgentConfigRepository(base_agent_repo, user_id=user_id_scope)
         self.debate_repo = SqliteDebateRepository(db_path)
-        store_kwargs: dict[str, Any] = {}
-        if self.settings.chroma_host:
-            store_kwargs["host"] = self.settings.chroma_host
-            store_kwargs["port"] = self.settings.chroma_port
-        self.document_store = ChromaDBDocumentStore(
-            persist_directory=str(self.settings.chroma_persist_dir),
-            **store_kwargs,
-        )
+        self._document_store = document_store
         self.debate_record: DebateRecord | None = None
         self.observability = get_observability_service()
         self.current_trace: TraceContext | None = None
         self.active_spans: dict[str, SpanContext] = {}
+
+    @property
+    def document_store(self) -> IDocumentStore | None:
+        return self._document_store
+
+    @document_store.setter
+    def document_store(self, value: IDocumentStore | None) -> None:
+        self._document_store = value
+
+    async def _get_doc_store(self) -> IDocumentStore:
+        if self._document_store is None:
+            self._document_store = await get_document_store(self.websocket)
+        return self._document_store
+
+    def _update_debate_status_sync(self, status: str) -> None:
+        if self.debate_record:
+            self.debate_repo.update_status(self.debate_record.id, status)
+
+    def _end_trace_sync(self, status: str, output: str) -> None:
+        if not self.current_trace:
+            return
+        try:
+            self.observability.end_trace(
+                trace_context=self.current_trace,
+                status=status,
+                output=output,
+            )
+        except Exception:
+            pass
+        self.current_trace = None
+
+    def _mark_error_and_end_trace_sync(self, exc_text: str) -> None:
+        self._update_debate_status_sync("error")
+        self._end_trace_sync("ERROR", exc_text)
 
     def _persist_event(self, event_dict: dict[str, Any], event: SupervisorEvent) -> None:
         if not self.debate_record or event.type == EventType.STREAM_CHUNK:
@@ -183,6 +225,10 @@ class DebateWebSocketHandler:
         self.debate_repo.append_event(self.debate_record.id, json.dumps(event_dict))
         if event.type == EventType.DONE:
             self.debate_repo.update_status(self.debate_record.id, "completed")
+
+    def _record_event_sync(self, event_dict: dict[str, Any], event: SupervisorEvent) -> None:
+        self._persist_event(event_dict, event)
+        self._track_event_observability(event)
 
     def _on_agent_started(self, event: SupervisorEvent) -> None:
         if not (self.current_trace and event.role):
@@ -257,28 +303,10 @@ class DebateWebSocketHandler:
                 event_dict["metadata"] = {}
             event_dict["metadata"]["trace_id"] = self.current_trace.trace_id
         await self.websocket.send_json(event_dict)
-        self._persist_event(event_dict, event)
-        self._track_event_observability(event)
+        if event.type != EventType.STREAM_CHUNK:
+            await asyncio.to_thread(self._record_event_sync, event_dict, event)
 
-
-    async def hitl_callback(self, event: SupervisorEvent) -> HITLResponse:
-        """
-        Pause debate execution and await client response for the HITL checkpoint.
-        (The HITL_REQUIRED event itself was already yielded by the generator and sent).
-        """
-        if self._cancel_event.is_set():
-            raise DebateCancelledError("Debate cancelled before HITL checkpoint response")
-
-        raw_resp = await self.websocket.receive_json()
-        if isinstance(raw_resp, dict) and (
-            str(raw_resp.get("type", "")).lower() in ("cancel", "abort")
-            or str(raw_resp.get("decision", "")).lower() in ("cancel", "abort")
-        ):
-            self.abort()
-            raise DebateCancelledError("Debate cancelled by user during HITL checkpoint")
-
-        hitl_resp = dict_to_hitl_response(raw_resp)
-
+    def _finalize_hitl_response_sync(self, hitl_resp: HITLResponse) -> None:
         if self.current_trace:
             decision_val = (
                 hitl_resp.decision.value
@@ -308,18 +336,34 @@ class DebateWebSocketHandler:
                 "metadata": {"decision": "refine", "target_agents": hitl_resp.target_agents}
             }
             self.debate_repo.append_event(self.debate_record.id, json.dumps(refine_event_dict))
-        try:
-            from src.presentation.api.ws.wake_word import wake_word_service
-            wake_word_service.reset()
-        except Exception:
-            pass
+        _reset_wake_word_sync()
+
+    async def hitl_callback(self, event: SupervisorEvent) -> HITLResponse:
+        """
+        Pause debate execution and await client response for the HITL checkpoint.
+        (The HITL_REQUIRED event itself was already yielded by the generator and sent).
+        """
+        if self._cancel_event.is_set():
+            raise DebateCancelledError("Debate cancelled before HITL checkpoint response")
+
+        raw_resp = await self.websocket.receive_json()
+        if isinstance(raw_resp, dict) and (
+            str(raw_resp.get("type", "")).lower() in ("cancel", "abort")
+            or str(raw_resp.get("decision", "")).lower() in ("cancel", "abort")
+        ):
+            await self.abort_async()
+            raise DebateCancelledError("Debate cancelled by user during HITL checkpoint")
+
+        hitl_resp = dict_to_hitl_response(raw_resp)
+        await asyncio.to_thread(self._finalize_hitl_response_sync, hitl_resp)
         return hitl_resp
 
     async def _handle_supervisor(self, user_request: str, chat_history: list[dict[str, Any]] | None = None) -> None:
         try:
+            doc_store = await self._get_doc_store()
             async for event in SupervisorAgent.run(
                 user_request=user_request,
-                document_store=self.document_store,
+                document_store=doc_store,
                 agent_config_repo=self.agent_config_repo,
                 llm_factory=get_llm_provider,
                 hitl_callback=self.hitl_callback,
@@ -331,7 +375,7 @@ class DebateWebSocketHandler:
                 await self.send_event(event)
         except DebateCancelledError:
             logger.info("Debate cancelled cleanly during execution")
-            self.abort()
+            await self.abort_async()
             try:
                 await self.websocket.send_json({
                     "type": "done",
@@ -343,31 +387,16 @@ class DebateWebSocketHandler:
                 pass
         except WebSocketDisconnect:
             logger.info("WebSocket disconnected during supervisor debate; aborting")
-            self.abort()
+            await self.abort_async()
             raise
         except Exception as e:
             logger.exception("Error during supervisor debate execution")
-            if self.debate_record:
-                self.debate_repo.update_status(self.debate_record.id, "error")
-            if self.current_trace:
-                try:
-                    self.observability.end_trace(
-                        trace_context=self.current_trace,
-                        status="ERROR",
-                        output=str(e),
-                    )
-                except Exception:
-                    pass
-                self.current_trace = None
+            await asyncio.to_thread(self._mark_error_and_end_trace_sync, str(e))
             await self.send_event(SupervisorEvent(
                 type=EventType.ERROR, role="supervisor", content=str(e)
             ))
         finally:
-            try:
-                from src.presentation.api.ws.wake_word import wake_word_service
-                wake_word_service.reset()
-            except Exception:
-                pass
+            await asyncio.to_thread(_reset_wake_word_sync)
 
     def _get_pending_learning(self) -> dict[str, Any] | None:
         if not self.debate_record or not self.debate_record.events:
@@ -427,13 +456,14 @@ class DebateWebSocketHandler:
             temp_file_to_delete = safe_path
             display_name = safe_path.name
 
+        doc_store = await self._get_doc_store()
         try:
             res = await asyncio.to_thread(
                 LearnFromSource.run,
                 source=source_arg,
                 source_type=stype,
                 llm_provider=llm_prov,
-                document_store=self.document_store,
+                document_store=doc_store,
                 vault_root=self.settings.vault_root,
                 model_name=mod_name,
                 tags=tags,
@@ -442,7 +472,7 @@ class DebateWebSocketHandler:
         finally:
             if temp_file_to_delete is not None:
                 try:
-                    temp_file_to_delete.unlink(missing_ok=True)
+                    await asyncio.to_thread(temp_file_to_delete.unlink, missing_ok=True)
                 except OSError:
                     logger.warning("Failed to remove temporary attachment %s", temp_file_to_delete, exc_info=True)
 
@@ -461,12 +491,13 @@ class DebateWebSocketHandler:
         mod_name: str,
         target_domain: str = "learned",
     ) -> str:
+        doc_store = await self._get_doc_store()
         res = await asyncio.to_thread(
             LearnFromSource.run,
             source=text_to_learn,
             source_type=SourceType.TEXT,
             llm_provider=llm_prov,
-            document_store=self.document_store,
+            document_store=doc_store,
             vault_root=self.settings.vault_root,
             model_name=mod_name,
             tags=tags,
@@ -497,6 +528,15 @@ class DebateWebSocketHandler:
             return [await self._learn_single_text(text_to_learn, tags, tag_suffix, llm_prov, mod_name, target_domain=target_domain)]
         return []
 
+    def _resolve_learning_llm_sync(self, learn_profile: Any) -> tuple[ILLMProvider, str]:
+        learn_role = learn_profile.display_name
+        config = self.agent_config_repo.find_by_role(learn_profile.id)
+        if not config:
+            config = self.agent_config_repo.find_by_role(learn_role)
+        prov_name = config.provider if config else self.settings.default_provider
+        mod_name = config.model_name if config else self.settings.default_model
+        return get_llm_provider(prov_name), mod_name
+
     async def _handle_learning(
         self,
         learn_profile: Any,
@@ -508,13 +548,8 @@ class DebateWebSocketHandler:
         learn_role = learn_profile.display_name
         yield_event = SupervisorEvent(type=EventType.AGENT_STARTED, role=learn_role, content="")
         await self.send_event(yield_event)
-        
-        config = self.agent_config_repo.find_by_role(learn_profile.id)
-        if not config:
-            config = self.agent_config_repo.find_by_role(learn_role)
-        prov_name = config.provider if config else self.settings.default_provider
-        mod_name = config.model_name if config else self.settings.default_model
-        llm_prov = get_llm_provider(prov_name)
+
+        llm_prov, mod_name = await asyncio.to_thread(self._resolve_learning_llm_sync, learn_profile)
         
         extracted_tags = _extract_tags(user_request)
         resolved_domain = target_domain or _extract_domain(user_request)
@@ -581,12 +616,7 @@ class DebateWebSocketHandler:
         yield_event = SupervisorEvent(type=EventType.AGENT_STARTED, role=learn_role, content="")
         await self.send_event(yield_event)
         
-        config = self.agent_config_repo.find_by_role(learn_profile.id)
-        if not config:
-            config = self.agent_config_repo.find_by_role(learn_role)
-        prov_name = config.provider if config else self.settings.default_provider
-        mod_name = config.model_name if config else self.settings.default_model
-        llm_prov = get_llm_provider(prov_name)
+        llm_prov, mod_name = await asyncio.to_thread(self._resolve_learning_llm_sync, learn_profile)
         
         target_domain = (
             _extract_domain(user_request)
@@ -636,6 +666,18 @@ class DebateWebSocketHandler:
         mod_name = config.model_name if (config and config.model_name) else default_mod
         return get_llm_provider(prov_name), mod_name
 
+    def _resolve_sub_agent_runtime_sync(
+        self, profile: SubAgentProfile, agent_role: str
+    ) -> tuple[ILLMProvider, str, dict[str, Any]]:
+        llm_prov, mod_name = self._resolve_agent_llm(profile, agent_role)
+        config = self.agent_config_repo.find_by_role(profile.id) or self.agent_config_repo.find_by_role(agent_role)
+        extra_kwargs: dict[str, Any] = {}
+        if config and getattr(config, "rag_top_k", None) is not None:
+            extra_kwargs["rag_top_k"] = config.rag_top_k
+        if config and getattr(config, "rag_min_score", None) is not None:
+            extra_kwargs["rag_min_score"] = config.rag_min_score
+        return llm_prov, mod_name, extra_kwargs
+
     async def _emit_sub_agent_completion(
         self, agent_role: str, resp: SubAgentResponse, mod_name: str, emit_message: bool, emit_done: bool
     ) -> None:
@@ -664,18 +706,7 @@ class DebateWebSocketHandler:
 
     async def _handle_sub_agent_exception(self, agent_role: str, exc: Exception) -> None:
         logger.exception("Error during sub-agent execution: %s", agent_role)
-        if self.debate_record:
-            self.debate_repo.update_status(self.debate_record.id, "error")
-        if self.current_trace:
-            try:
-                self.observability.end_trace(
-                    trace_context=self.current_trace,
-                    status="ERROR",
-                    output=str(exc),
-                )
-            except Exception:
-                pass
-            self.current_trace = None
+        await asyncio.to_thread(self._mark_error_and_end_trace_sync, str(exc))
         await self.send_event(SupervisorEvent(
             type=EventType.ERROR, role=agent_role, content=str(exc)
         ))
@@ -696,18 +727,17 @@ class DebateWebSocketHandler:
                 type=EventType.AGENT_STARTED, role=agent_role, content=""
             ))
 
-            llm_prov, mod_name = self._resolve_agent_llm(profile, agent_role)
-            config = self.agent_config_repo.find_by_role(profile.id) or self.agent_config_repo.find_by_role(agent_role)
+            doc_store = await self._get_doc_store()
+            llm_prov, mod_name, rag_kwargs = await asyncio.to_thread(
+                self._resolve_sub_agent_runtime_sync, profile, agent_role
+            )
             runner_kwargs: dict[str, Any] = {"chat_history": chat_history} if chat_history else {}
-            if config and getattr(config, "rag_top_k", None) is not None:
-                runner_kwargs["rag_top_k"] = config.rag_top_k
-            if config and getattr(config, "rag_min_score", None) is not None:
-                runner_kwargs["rag_min_score"] = config.rag_min_score
+            runner_kwargs.update(rag_kwargs)
             resp = await SubAgentRunner.run(
                 role=agent_role,
                 user_request=user_request,
                 llm_provider=llm_prov,
-                document_store=self.document_store,
+                document_store=doc_store,
                 model_name=mod_name,
                 **runner_kwargs,
             )
@@ -716,8 +746,7 @@ class DebateWebSocketHandler:
             return resp.content
 
         except KeyError:
-            if self.debate_record:
-                self.debate_repo.update_status(self.debate_record.id, "aborted")
+            await asyncio.to_thread(self._update_debate_status_sync, "aborted")
             await self.websocket.send_json({"type": "error", "content": f"Unknown agent role: {target_agent}"})
             await self.websocket.close(code=1003)
             return None
@@ -828,8 +857,7 @@ class DebateWebSocketHandler:
         try:
             target_profile = get_profile(target_agent)
         except KeyError:
-            if self.debate_record:
-                self.debate_repo.update_status(self.debate_record.id, "aborted")
+            await asyncio.to_thread(self._update_debate_status_sync, "aborted")
             await self.websocket.send_json({"type": "error", "content": f"Unknown agent role: {target_agent}"})
             await self.websocket.close(code=1003)
             return False
@@ -889,8 +917,7 @@ class DebateWebSocketHandler:
         await self.send_event(SupervisorEvent(
             type=EventType.DONE, role=last_agent_role, content=""
         ))
-        if self.debate_record:
-            self.debate_repo.update_status(self.debate_record.id, "finished")
+        await asyncio.to_thread(self._update_debate_status_sync, "finished")
 
     async def _handle_start_request(self, raw_start: dict) -> None:
         self._cancel_event.clear()
@@ -900,7 +927,7 @@ class DebateWebSocketHandler:
             return
 
         try:
-            _ = get_llm_provider(self.settings.default_provider)
+            _ = await asyncio.to_thread(get_llm_provider, self.settings.default_provider)
         except Exception as e:
             await self.websocket.send_json({"type": "error", "content": f"Default provider error: {str(e)}"})
             return
@@ -908,7 +935,9 @@ class DebateWebSocketHandler:
         target_agents = self._extract_target_agents(raw_start)
         primary_target = target_agents[0] if target_agents else "supervisor"
         try:
-            attachments = self._validate_attachments(raw_start.get("attachments", []))
+            attachments = await asyncio.to_thread(
+                self._validate_attachments, raw_start.get("attachments", [])
+            )
         except (ValueError, PermissionError) as exc:
             logger.warning("Rejected unsafe attachments in debate start request: %s", exc)
             await self.websocket.send_json({"type": "error", "content": "Invalid or unauthorized attachment path"})
@@ -917,7 +946,8 @@ class DebateWebSocketHandler:
         user_id = self.authenticated_user.id if self.authenticated_user else raw_start.get("user_id")
         target_domain = raw_start.get("target_domain")
 
-        self._init_session_and_trace(
+        await asyncio.to_thread(
+            self._init_session_and_trace,
             raw_start.get("session_id"),
             user_request,
             primary_target,
@@ -950,7 +980,7 @@ class DebateWebSocketHandler:
                 self.authenticated_user = refreshed_user
             msg_type = raw_start.get("type")
             if msg_type in ("cancel", "abort"):
-                self.abort()
+                await self.abort_async()
                 await self.websocket.send_json({
                     "type": "done",
                     "role": "supervisor",
@@ -962,8 +992,7 @@ class DebateWebSocketHandler:
                 continue
             await self._handle_start_request(raw_start)
 
-    def abort(self) -> None:
-        self._cancel_event.set()
+    def _finalize_abort_sync(self) -> None:
         if self.debate_record:
             try:
                 record = self.debate_repo.find_by_id(self.debate_record.id, allow_unscoped=True)
@@ -971,17 +1000,15 @@ class DebateWebSocketHandler:
                     self.debate_repo.update_status(self.debate_record.id, "aborted")
             except Exception:
                 pass
+        self._end_trace_sync("ABORTED", "Debate execution was aborted")
 
-        if self.current_trace:
-            try:
-                self.observability.end_trace(
-                    trace_context=self.current_trace,
-                    status="ABORTED",
-                    output="Debate execution was aborted"
-                )
-            except Exception:
-                pass
-            self.current_trace = None
+    def abort(self) -> None:
+        self._cancel_event.set()
+        self._finalize_abort_sync()
+
+    async def abort_async(self) -> None:
+        self._cancel_event.set()
+        await asyncio.to_thread(self._finalize_abort_sync)
 
 
 @router.websocket("/ws/debate")
@@ -1024,30 +1051,23 @@ async def debate_ws(websocket: WebSocket) -> None:
         return
 
     await websocket.accept()
+    document_store = await get_document_store(websocket)
     handler = DebateWebSocketHandler(
         websocket,
         authenticated_user=authenticated_user,
         auth_service=auth_service,
+        document_store=document_store,
     )
     
     try:
         await handler.process_messages()
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected")
-        handler.abort()
+        await handler.abort_async()
     except Exception as e:
         logger.exception("Error during debate WebSocket execution")
-        if handler.current_trace:
-            try:
-                handler.observability.end_trace(
-                    trace_context=handler.current_trace,
-                    status="ERROR",
-                    output=str(e)
-                )
-            except Exception:
-                pass
-            handler.current_trace = None
-        handler.abort()
+        await asyncio.to_thread(handler._end_trace_sync, "ERROR", str(e))
+        await handler.abort_async()
         try:
             await websocket.send_json({"type": "error", "content": str(e)})
             await websocket.close(code=1011)

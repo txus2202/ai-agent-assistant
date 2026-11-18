@@ -1,6 +1,7 @@
+import asyncio
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
@@ -9,7 +10,7 @@ from src.application.services.vault_domain_service import VaultDomainService
 from src.domain.entities.user import User
 from src.domain.ports.agent_config_repository import IAgentConfigRepository
 from src.domain.ports.debate_repository import IDebateRepository
-from src.infrastructure.rag.chroma_document_store import ChromaDBDocumentStore
+from src.domain.ports.document_store import IDocumentStore
 from src.infrastructure.llm.registry import get_llm_provider
 from src.presentation.api.config import get_settings, Settings
 from src.presentation.api.dependencies.auth import (
@@ -17,6 +18,7 @@ from src.presentation.api.dependencies.auth import (
     get_current_user,
     get_debate_repository,
 )
+from src.presentation.api.dependencies.rag import get_document_store
 
 router = APIRouter(prefix="/learning", tags=["learning"])
 
@@ -87,23 +89,19 @@ async def learn_session(
     settings: Settings = Depends(get_settings),
     repo: IDebateRepository = Depends(get_debate_repo),
     agent_config_repo: IAgentConfigRepository = Depends(get_agent_config_repo),
+    doc_store: IDocumentStore = Depends(get_document_store),
     current_user: User = Depends(get_current_user),
-) -> Dict[str, Any]:
-    chat_history = _extract_chat_history(repo, payload.session_id, user_id=current_user.id)
-    prov_name, mod_name = _resolve_learning_config(agent_config_repo, settings, user_id=current_user.id)
-
-    llm = get_llm_provider(prov_name)
-    vault_root = Path(settings.vault_root)
-    store_kwargs: dict[str, Any] = {}
-    if settings.chroma_host:
-        store_kwargs["host"] = settings.chroma_host
-        store_kwargs["port"] = settings.chroma_port
-    doc_store = ChromaDBDocumentStore(
-        persist_directory=str(settings.chroma_persist_dir),
-        **store_kwargs,
+) -> dict[str, Any]:
+    chat_history = await asyncio.to_thread(_extract_chat_history, repo, payload.session_id, current_user.id)
+    prov_name, mod_name = await asyncio.to_thread(
+        _resolve_learning_config, agent_config_repo, settings, current_user.id
     )
 
-    result = LearnFromSession.run(
+    llm = await asyncio.to_thread(get_llm_provider, prov_name)
+    vault_root = Path(settings.vault_root)
+
+    result = await asyncio.to_thread(
+        LearnFromSession.run,
         session_id=payload.session_id,
         chat_history=chat_history,
         llm_provider=llm,
@@ -132,7 +130,7 @@ async def list_domains(
     current_user: User = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
     vault_root = Path(settings.vault_root)
-    domains = VaultDomainService.list_domains(vault_root)
+    domains = await asyncio.to_thread(VaultDomainService.list_domains, vault_root)
     return [
         {
             "id": d.id,
@@ -165,7 +163,8 @@ async def create_domain(
 
     vault_root = Path(settings.vault_root)
     try:
-        domain = VaultDomainService.create_domain(
+        domain = await asyncio.to_thread(
+            VaultDomainService.create_domain,
             vault_root=vault_root,
             domain_id=clean_domain_id,
             name=payload.name,

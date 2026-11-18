@@ -97,3 +97,127 @@ def test_delete_by_user_id(repo):
     assert purged == 1
     assert repo.find_all(user_id="to-purge") == []
     assert len(repo.find_all(user_id="other")) == 1
+
+
+def test_wal_mode_enabled_and_connection_closed_on_exception(tmp_path, monkeypatch):
+    import sqlite3
+    import src.infrastructure.persistence.sqlite_base as sqlite_base_mod
+    from src.infrastructure.persistence.sqlite_base import SqliteConnectionManager
+
+    db_path = str(tmp_path / "wal_check.db")
+    SqliteDebateRepository(db_path)
+
+    with sqlite3.connect(db_path) as check_conn:
+        mode = check_conn.execute("PRAGMA journal_mode").fetchone()[0]
+    check_conn.close()
+    assert str(mode).lower() == "wal"
+
+    closed_flags: list[bool] = []
+    orig_connect = sqlite3.connect
+
+    def _tracking_connect(*args, **kwargs):
+        real_conn = orig_connect(*args, **kwargs)
+
+        class _ConnWrapper:
+            def __getattr__(self, name):
+                return getattr(real_conn, name)
+
+            def close(self):
+                closed_flags.append(True)
+                return real_conn.close()
+
+        return _ConnWrapper()
+
+    mgr = SqliteConnectionManager(db_path)
+    monkeypatch.setattr(sqlite_base_mod.sqlite3, "connect", _tracking_connect)
+    with pytest.raises(RuntimeError, match="boom"):
+        with mgr.connection() as conn:
+            conn.execute("SELECT 1")
+            raise RuntimeError("boom")
+
+    assert closed_flags == [True]
+
+
+def test_append_event_uses_normalized_debate_events_o1_and_handles_concurrency(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    import sqlite3
+
+    db_path = str(tmp_path / "events_o1.db")
+    repo = SqliteDebateRepository(db_path)
+    record = DebateRecord(user_request="concurrent", status="running", user_id="usr-1")
+    repo.create(record)
+
+    def _append_worker(idx: int) -> None:
+        repo.append_event(record.id, json.dumps({"type": "msg", "seq_tag": idx}))
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures = [pool.submit(_append_worker, i) for i in range(20)]
+        for fut in futures:
+            fut.result(timeout=5.0)
+
+    found = repo.find_by_id(record.id, user_id="usr-1")
+    assert found is not None
+    assert len(found.events) == 20
+    assert {ev["seq_tag"] for ev in found.events} == set(range(20))
+
+    with sqlite3.connect(db_path) as conn:
+        blob = conn.execute("SELECT events_json FROM debates WHERE id = ?", (record.id,)).fetchone()[0]
+        event_rows = conn.execute(
+            "SELECT seq, event_json FROM debate_events WHERE debate_id = ? ORDER BY seq ASC",
+            (record.id,),
+        ).fetchall()
+    conn.close()
+    assert blob == "[]"
+    assert [r[0] for r in event_rows] == list(range(20))
+
+
+def test_legacy_events_json_migrated_and_backwards_compatible(tmp_path):
+    import sqlite3
+
+    db_path = str(tmp_path / "legacy_debates.db")
+    legacy_conn = sqlite3.connect(db_path)
+    legacy_conn.execute(
+        """
+        CREATE TABLE debates (
+            id TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL,
+            user_request TEXT NOT NULL,
+            target_agent TEXT NOT NULL,
+            events_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            user_id TEXT
+        )
+        """
+    )
+    legacy_conn.execute(
+        "INSERT INTO debates (id, created_at, user_request, target_agent, events_json, status, user_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            "legacy-1",
+            "2026-01-01T10:00:00+00:00",
+            "legacy query",
+            "supervisor",
+            json.dumps([{"type": "old1"}, {"type": "old2"}]),
+            "running",
+            "usr-legacy",
+        ),
+    )
+    legacy_conn.commit()
+    legacy_conn.close()
+
+    repo = SqliteDebateRepository(db_path)
+    found_before = repo.find_by_id("legacy-1", user_id="usr-legacy")
+    assert found_before is not None
+    assert [e["type"] for e in found_before.events] == ["old1", "old2"]
+
+    repo.append_event("legacy-1", json.dumps({"type": "new3"}))
+    found_after = repo.find_by_id("legacy-1", user_id="usr-legacy")
+    assert found_after is not None
+    assert [e["type"] for e in found_after.events] == ["old1", "old2", "new3"]
+
+    # Deleting debate also removes normalized debate_events rows
+    repo.delete("legacy-1")
+    check_conn = sqlite3.connect(db_path)
+    remaining = check_conn.execute("SELECT COUNT(*) FROM debate_events WHERE debate_id = 'legacy-1'").fetchone()[0]
+    check_conn.close()
+    assert remaining == 0

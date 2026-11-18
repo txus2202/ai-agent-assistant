@@ -399,3 +399,56 @@ class TestSubAgentRunner:
         finally:
             unregister_profile("fidias")
 
+    @pytest.mark.anyio
+    async def test_parallel_sub_agents_isolate_token_usage_on_shared_provider(self):
+        import asyncio
+        import threading
+        from src.domain.ports.llm_provider import LLMCompletion
+
+        barrier = threading.Barrier(2, timeout=2.0)
+
+        class ConcurrentSharedProvider(ILLMProvider):
+            def list_models(self, probe: bool = True) -> list[dict[str, str]]:
+                return [{"id": "shared", "name": "Shared"}]
+
+            def complete(self, prompt: str, model_name: str) -> str:
+                return self.complete_with_usage(prompt, model_name).content
+
+            def complete_with_usage(self, prompt: str, model_name: str) -> LLMCompletion:
+                is_first = "REQ_ALPHA" in prompt
+                barrier.wait()
+                if is_first:
+                    return LLMCompletion(
+                        content="answer-alpha",
+                        usage={"input": 111, "output": 22, "total": 133},
+                    )
+                return LLMCompletion(
+                    content="answer-beta",
+                    usage={"input": 999, "output": 88, "total": 1087},
+                )
+
+        shared_provider = ConcurrentSharedProvider()
+        store = InMemoryDocumentStore()
+
+        res_a, res_b = await asyncio.gather(
+            SubAgentRunner.run(
+                role="Interpreter",
+                user_request="REQ_ALPHA",
+                llm_provider=shared_provider,
+                document_store=store,
+                model_name="gemini-2.5-flash",
+            ),
+            SubAgentRunner.run(
+                role="Interpreter",
+                user_request="REQ_BETA",
+                llm_provider=shared_provider,
+                document_store=store,
+                model_name="gemini-2.5-flash",
+            ),
+        )
+
+        assert res_a.content == "answer-alpha"
+        assert res_a.tokens == {"input": 111, "output": 22, "total": 133}
+        assert res_b.content == "answer-beta"
+        assert res_b.tokens == {"input": 999, "output": 88, "total": 1087}
+

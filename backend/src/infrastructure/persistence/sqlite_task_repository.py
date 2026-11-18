@@ -24,13 +24,12 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
-from contextlib import contextmanager
 from datetime import datetime
-from typing import Generator
 
 from src.domain.entities.task import Task, TaskStatus
 from src.domain.exceptions import RepositoryError
 from src.domain.ports.task_repository import ITaskRepository
+from src.infrastructure.persistence.sqlite_base import SqliteConnectionManager
 
 _CREATE_TASKS_TABLE = """
     CREATE TABLE IF NOT EXISTS tasks (
@@ -57,7 +56,7 @@ _UPSERT_TASK = """
 """
 
 
-class SqliteTaskRepository(ITaskRepository):
+class SqliteTaskRepository(ITaskRepository, SqliteConnectionManager):
     """
     SQLite-backed implementation of ``ITaskRepository``.
 
@@ -66,7 +65,7 @@ class SqliteTaskRepository(ITaskRepository):
     """
 
     def __init__(self, db_path: str) -> None:
-        self._db_path = db_path
+        SqliteConnectionManager.__init__(self, db_path)
         self._init_schema()
 
     # ------------------------------------------------------------------
@@ -139,19 +138,6 @@ class SqliteTaskRepository(ITaskRepository):
                 conn.execute(_CREATE_TASKS_TABLE)
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to initialise schema: {exc}") from exc
-
-    @contextmanager
-    def _connection(self) -> Generator[sqlite3.Connection, None, None]:
-        conn = sqlite3.connect(self._db_path)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
 
     @staticmethod
     def _row_to_task(row: sqlite3.Row) -> Task:

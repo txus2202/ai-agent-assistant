@@ -11,14 +11,16 @@ API key resolution order:
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 
 from src.domain.exceptions import LLMProviderError
-from src.domain.ports.llm_provider import ILLMProvider
+from src.domain.ports.llm_provider import ILLMProvider, LLMCompletion
+from src.infrastructure.llm.usage_tracking import UsageTrackingMixin, build_usage
 
 _DEFAULT_MAX_TOKENS = 4096
 
 
-class AnthropicAdapter(ILLMProvider):
+class AnthropicAdapter(UsageTrackingMixin, ILLMProvider):
     """ILLMProvider backed by anthropic (Claude models)."""
 
     def __init__(self, api_key: str | None = None) -> None:
@@ -38,34 +40,58 @@ class AnthropicAdapter(ILLMProvider):
 
         self._client = _anthropic.Anthropic(api_key=key)
 
-    def complete(self, prompt: str, model_name: str) -> str:
+    def complete_with_usage(self, prompt: str, model_name: str) -> LLMCompletion:
         try:
             message = self._client.messages.create(
                 model=model_name,
                 max_tokens=_DEFAULT_MAX_TOKENS,
                 messages=[{"role": "user", "content": prompt}],
             )
-            if hasattr(message, "usage") and message.usage:
-                in_t = getattr(message.usage, "input_tokens", 0) or 0
-                out_t = getattr(message.usage, "output_tokens", 0) or 0
-                self._last_usage = {
-                    "input": in_t,
-                    "output": out_t,
-                    "total": in_t + out_t,
-                }
-            else:
-                self._last_usage = {}
+            usage: dict[str, int] = {}
+            msg_usage = getattr(message, "usage", None)
+            if msg_usage:
+                usage = build_usage(
+                    getattr(msg_usage, "input_tokens", 0),
+                    getattr(msg_usage, "output_tokens", 0),
+                )
+            self._set_scoped_usage(usage)
+
+            text = ""
             for block in message.content:
-                text = getattr(block, "text", None)
-                if isinstance(text, str):
-                    return text
-            return ""
+                block_text = getattr(block, "text", None)
+                if isinstance(block_text, str):
+                    text = block_text
+                    break
+            return LLMCompletion(content=text, usage=usage)
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
 
-    def get_last_usage(self) -> dict[str, int]:
-        """Return the token usage of the most recent complete() call."""
-        return getattr(self, "_last_usage", {})
+    def complete(self, prompt: str, model_name: str) -> str:
+        return self.complete_with_usage(prompt, model_name).content
+
+    def complete_stream(self, prompt: str, model_name: str) -> Iterator[str]:
+        try:
+            with self._client.messages.stream(
+                model=model_name,
+                max_tokens=_DEFAULT_MAX_TOKENS,
+                messages=[{"role": "user", "content": prompt}],
+            ) as stream:
+                for text in stream.text_stream:
+                    if text:
+                        yield text
+                final_msg = stream.get_final_message() if hasattr(stream, "get_final_message") else None
+                usage_obj = getattr(final_msg, "usage", None) if final_msg is not None else None
+                if usage_obj:
+                    self._set_scoped_usage(
+                        build_usage(
+                            getattr(usage_obj, "input_tokens", 0),
+                            getattr(usage_obj, "output_tokens", 0),
+                        )
+                    )
+                else:
+                    self._set_scoped_usage({})
+        except Exception as exc:  # noqa: BLE001
+            raise LLMProviderError(f"Anthropic streaming error: {exc}") from exc
 
 
     @staticmethod

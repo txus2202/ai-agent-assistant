@@ -51,7 +51,8 @@ def test_in_memory_store_filter_with_list_category():
     f1 = SearchFilter(category=["enterprise", "external-learning"])
     res1 = InMemoryDocumentStore._apply_filter(chunks, f1)
     assert len(res1) == 2
-    assert chunk1 in res1 and chunk2 in res1
+    assert chunk1 in res1
+    assert chunk2 in res1
     assert chunk3 not in res1
 
     # Filter by single scalar category

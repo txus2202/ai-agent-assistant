@@ -478,7 +478,7 @@ const handleClickOutsideCancelInfo = (event: MouseEvent) => {
 }
 
 onMounted(() => {
-  loadDomains()
+  void loadDomains()
   document.addEventListener('click', handleClickOutsideAgent)
   document.addEventListener('click', handleClickOutsideCancelInfo)
   document.addEventListener('click', closePresentationDownloadMenu)

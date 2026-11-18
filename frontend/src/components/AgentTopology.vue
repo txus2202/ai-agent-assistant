@@ -44,7 +44,7 @@ const isSupervisorActive = (normAgent: string) => {
 
   // If subagent(s) are directly targeted and supervisor is not included,
   // supervisor should not be marked active during debate
-  const selected = store.selectedAgents && store.selectedAgents.length > 0 
+  const selected = store.selectedAgents?.length
     ? store.selectedAgents 
     : [store.selectedAgent || 'supervisor']
   const isSupervisorTargeted = selected.some(role => {
@@ -53,7 +53,7 @@ const isSupervisorActive = (normAgent: string) => {
   })
 
   if (!isSupervisorTargeted) {
-    return Boolean(isRoleSpeakingTts(normAgent) || (store.readingAgentRoles && store.readingAgentRoles.includes(normAgent)))
+    return Boolean(isRoleSpeakingTts(normAgent) || store.readingAgentRoles?.includes(normAgent))
   }
 
   return Boolean(store.isDebating || store.isTtsPlaying || store.readingAgentRoles?.length)

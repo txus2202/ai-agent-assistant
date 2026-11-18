@@ -48,6 +48,9 @@ Return ONLY the Markdown document with frontmatter. No extra commentary.
 """
 
 
+DEFAULT_TARGET_DOMAIN: str = "deliberations/sessions"
+
+
 class LearnFromSession:
     """Extracts and persists knowledge from completed sessions."""
 
@@ -60,7 +63,7 @@ class LearnFromSession:
         vault_root: Path,
         model_name: str,
         solution_content: str | None = None,
-        target_domain: str = "deliberations/sessions",
+        target_domain: str = DEFAULT_TARGET_DOMAIN,
     ) -> LearnResult:
         if not chat_history and not solution_content:
             return LearnResult(
@@ -97,12 +100,22 @@ class LearnFromSession:
         slug = _derive_slug(md_content, fallback=f"sesion-{session_id[:8]}")
         filename = f"{date_str}_solucion_{slug}.md"
 
-        clean_domain = target_domain.strip().strip("/") if target_domain else "deliberations/sessions"
-        if ".." in clean_domain:
-            clean_domain = "deliberations/sessions"
-        dest_dir = vault_root / clean_domain
+        raw_clean = (target_domain or DEFAULT_TARGET_DOMAIN).strip().strip("/")
+        resolved_vault = vault_root.resolve()
+        candidate_dir = (resolved_vault / raw_clean).resolve()
+        if candidate_dir.is_relative_to(resolved_vault):
+            dest_dir = candidate_dir
+        else:
+            dest_dir = (resolved_vault / DEFAULT_TARGET_DOMAIN).resolve()
+
         dest_dir.mkdir(parents=True, exist_ok=True)
-        file_path = dest_dir / filename
+        candidate_file = (dest_dir / filename).resolve()
+        if candidate_file.is_relative_to(dest_dir):
+            file_path = candidate_file
+        else:
+            file_path = (resolved_vault / DEFAULT_TARGET_DOMAIN / filename).resolve()
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+
         file_path.write_text(md_content, encoding="utf-8")
 
         ingest_result = IngestVault.run(

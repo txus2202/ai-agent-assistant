@@ -1167,41 +1167,40 @@ export const useDebateStore = defineStore('debate', () => {
     feedTtsStreamingChunk(chunk, agentRole || event.role || undefined)
   }
 
-  function handleDone(event: SupervisorEvent) {
-    isDebating.value = false
-    resetWakeWordSession()
-    
-    // Mark any remaining active agents as COMPLETED unless they are currently reading TTS
+  function markRemainingActiveAgentsDone() {
     agents.value.forEach(a => {
       if (a.state === 'ACTIVE' && !isAgentReading(a.role)) {
         a.state = 'COMPLETED'
       }
     })
+  }
 
-    // Update target agent observability metrics from the DONE event
-    const doneRole = event.role || 'supervisor'
+  function updateDoneAgentMetrics(event: SupervisorEvent, doneRole: string): Agent | undefined {
     const targetAgent = findAgent(doneRole) || (normalizeAgentRole(doneRole) === 'supervisor' ? findAgent('supervisor') : undefined)
-    if (targetAgent) {
-      if (event.metadata) {
-        updateAgentLatency(targetAgent, event)
-        const estTokens = updateAgentTokens(targetAgent, event)
-        updateCachedTokens(event, estTokens)
-        sessionTotalTokens.value += estTokens
-      } else if (event.content) {
-        const words = event.content.trim().split(/\s+/).filter(Boolean).length
-        const outTokens = Math.max(12, Math.round(words * 1.35))
-        const inTokens = Math.max(25, Math.round(outTokens * 1.4))
-        targetAgent.tokens = (targetAgent.tokens || 0) + outTokens + inTokens
-        targetAgent.promptTokens = (targetAgent.promptTokens || 0) + inTokens
-        targetAgent.completionTokens = (targetAgent.completionTokens || 0) + outTokens
-        sessionTotalTokens.value += outTokens + inTokens
-      }
-      targetAgent.turns = Math.max(1, (targetAgent.turns || 0) + 1)
-      if (!isAgentReading(targetAgent.role)) {
-        targetAgent.state = 'COMPLETED'
-      }
+    if (!targetAgent) return undefined
+
+    if (event.metadata) {
+      updateAgentLatency(targetAgent, event)
+      const estTokens = updateAgentTokens(targetAgent, event)
+      updateCachedTokens(event, estTokens)
+      sessionTotalTokens.value += estTokens
+    } else if (event.content) {
+      const words = event.content.trim().split(/\s+/).filter(Boolean).length
+      const outTokens = Math.max(12, Math.round(words * 1.35))
+      const inTokens = Math.max(25, Math.round(outTokens * 1.4))
+      targetAgent.tokens = (targetAgent.tokens || 0) + outTokens + inTokens
+      targetAgent.promptTokens = (targetAgent.promptTokens || 0) + inTokens
+      targetAgent.completionTokens = (targetAgent.completionTokens || 0) + outTokens
+      sessionTotalTokens.value += outTokens + inTokens
     }
-    
+    targetAgent.turns = Math.max(1, (targetAgent.turns || 0) + 1)
+    if (!isAgentReading(targetAgent.role)) {
+      targetAgent.state = 'COMPLETED'
+    }
+    return targetAgent
+  }
+
+  function finalizeDoneMessage(event: SupervisorEvent) {
     if (streamingMessageId.value) {
       const targetMsg = messages.value.find(m => m.id === streamingMessageId.value)
       if (targetMsg) {
@@ -1215,6 +1214,18 @@ export const useDebateStore = defineStore('debate', () => {
     } else if (event.content?.trim()) {
       pushAgentMessage(event.content, event.role)
     }
+  }
+
+  function handleDone(event: SupervisorEvent) {
+    isDebating.value = false
+    resetWakeWordSession()
+    markRemainingActiveAgentsDone()
+
+    // Update target agent observability metrics from the DONE event
+    const doneRole = event.role || 'supervisor'
+    const targetAgent = updateDoneAgentMetrics(event, doneRole)
+    finalizeDoneMessage(event)
+
     const finalRoleNorm = normalizeAgentRole(doneRole)
     if (finalRoleNorm === 'supervisor' || finalRoleNorm === 'atenea') {
       recordExecutionTrail('Atenea')

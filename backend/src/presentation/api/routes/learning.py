@@ -115,7 +115,7 @@ async def learn_session(
     }
 
 
-@router.get("/domains", response_model=list[dict[str, Any]])
+@router.get("/domains")
 async def list_domains(
     settings: Settings = Depends(get_settings),
     current_user: User = Depends(get_current_user),
@@ -136,7 +136,13 @@ async def list_domains(
     ]
 
 
-@router.post("/domains", status_code=201, response_model=dict[str, Any])
+@router.post(
+    "/domains",
+    status_code=201,
+    responses={
+        400: {"description": "Validation or path error creating domain"},
+    },
+)
 async def create_domain(
     payload: CreateDomainRequest,
     settings: Settings = Depends(get_settings),

@@ -52,44 +52,45 @@ class VaultDomainService:
     """Stateless service to manage vault knowledge domains."""
 
     @classmethod
-    def list_domains(cls, vault_root: Path) -> list[KnowledgeDomain]:
-        """Scan vault_root and return all configured and discovered knowledge domains."""
-        domains: list[KnowledgeDomain] = []
-        if not vault_root.exists() or not vault_root.is_dir():
-            return domains
+    def _resolve_moc_rel(cls, dir_path: Path, vault_root: Path, fallback_id: str) -> str:
+        candidates = list(dir_path.glob("MOC_*.md"))
+        if candidates:
+            return candidates[0].relative_to(vault_root).as_posix()
+        return f"{fallback_id}/MOC_{fallback_id}.md"
 
-        # 1. Process known core domains first
+    @classmethod
+    def _list_system_domains(cls, vault_root: Path) -> list[KnowledgeDomain]:
+        domains: list[KnowledgeDomain] = []
         for domain_id, info in CORE_DOMAINS.items():
             dir_path = vault_root / domain_id
-            if dir_path.is_dir():
-                doc_count = len(list(dir_path.rglob("*.md")))
-                moc_candidates = list(dir_path.glob("MOC_*.md"))
-                moc_rel = moc_candidates[0].relative_to(vault_root).as_posix() if moc_candidates else f"{domain_id}/MOC_{domain_id}.md"
-
-                domains.append(
-                    KnowledgeDomain(
-                        id=domain_id,
-                        name=info["name"],
-                        description=info["description"],
-                        path=domain_id,
-                        moc_file=moc_rel,
-                        document_count=doc_count,
-                        is_system=True,
-                    )
-                )
-
-        # 2. Discover custom domains (top-level directories not starting with "." and not core)
-        for item in sorted(vault_root.iterdir()):
-            if not item.is_dir():
+            if not dir_path.is_dir():
                 continue
-            if item.name.startswith(".") or item.name in CORE_DOMAINS:
+
+            doc_count = len(list(dir_path.rglob("*.md")))
+            moc_rel = cls._resolve_moc_rel(dir_path, vault_root, domain_id)
+            domains.append(
+                KnowledgeDomain(
+                    id=domain_id,
+                    name=info["name"],
+                    description=info["description"],
+                    path=domain_id,
+                    moc_file=moc_rel,
+                    document_count=doc_count,
+                    is_system=True,
+                )
+            )
+        return domains
+
+    @classmethod
+    def _discover_custom_domains(cls, vault_root: Path) -> list[KnowledgeDomain]:
+        domains: list[KnowledgeDomain] = []
+        for item in sorted(vault_root.iterdir()):
+            if not item.is_dir() or item.name.startswith(".") or item.name in CORE_DOMAINS:
                 continue
 
             doc_count = len(list(item.rglob("*.md")))
-            moc_candidates = list(item.glob("MOC_*.md"))
-            moc_rel = moc_candidates[0].relative_to(vault_root).as_posix() if moc_candidates else f"{item.name}/MOC_{item.name}.md"
+            moc_rel = cls._resolve_moc_rel(item, vault_root, item.name)
             clean_name = item.name.replace("_", " ").title()
-
             domains.append(
                 KnowledgeDomain(
                     id=item.name,
@@ -101,8 +102,16 @@ class VaultDomainService:
                     is_system=False,
                 )
             )
-
         return domains
+
+    @classmethod
+    def list_domains(cls, vault_root: Path) -> list[KnowledgeDomain]:
+        """Scan vault_root and return all configured and discovered knowledge domains."""
+        if not vault_root.exists() or not vault_root.is_dir():
+            return []
+
+        resolved_root = vault_root.resolve()
+        return cls._list_system_domains(resolved_root) + cls._discover_custom_domains(resolved_root)
 
     @classmethod
     def create_domain(
@@ -120,13 +129,20 @@ class VaultDomainService:
         if not clean_id or not _SAFE_ID_RE.match(clean_id):
             raise ValueError(f"Invalid domain ID '{domain_id}'. Must contain only alphanumeric, '_' or '-'.")
 
-        domain_dir = vault_root / clean_id
+        resolved_vault = vault_root.resolve()
+        domain_dir = (resolved_vault / clean_id).resolve()
+        if not domain_dir.is_relative_to(resolved_vault) or domain_dir == resolved_vault:
+            raise ValueError(f"Invalid domain ID '{domain_id}': path traversal detected.")
+
         domain_dir.mkdir(parents=True, exist_ok=True)
 
         clean_slug = clean_id.replace("-", "_")
         moc_filename = f"MOC_{clean_slug}.md"
-        moc_path = domain_dir / moc_filename
-        moc_rel = moc_path.relative_to(vault_root).as_posix()
+        moc_path = (domain_dir / moc_filename).resolve()
+        if not moc_path.is_relative_to(domain_dir):
+            raise ValueError(f"Invalid MOC filename '{moc_filename}'.")
+
+        moc_rel = moc_path.relative_to(resolved_vault).as_posix()
 
         today_str = datetime.now().strftime("%Y-%m-%d")
         if not moc_path.exists():
@@ -146,8 +162,8 @@ class VaultDomainService:
             moc_path.write_text(moc_content, encoding="utf-8")
 
         # Update HOME.md if present
-        home_path = vault_root / "HOME.md"
-        if home_path.exists():
+        home_path = (resolved_vault / "HOME.md").resolve()
+        if home_path.is_relative_to(resolved_vault) and home_path.exists():
             home_text = home_path.read_text(encoding="utf-8")
             link_entry = f"\n* [[{clean_id}/{moc_path.stem}|📁 {clean_id} — {name}]]: {description or name}"
             if f"[[{clean_id}/" not in home_text:

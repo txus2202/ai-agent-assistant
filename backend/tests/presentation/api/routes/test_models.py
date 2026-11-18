@@ -152,3 +152,30 @@ def test_refresh_query_param_invalidates_shared_cache(client, shared_cache_repo,
     res = client.get("/models?refresh=true")
     assert res.status_code == 200
     assert probe_called is True
+
+
+def test_unconfigured_providers_are_never_attempted_or_probed(client, monkeypatch):
+    """Verifies that providers without configured environment variables are skipped completely."""
+    attempted_providers = []
+
+    class FakeGemini:
+        def list_models(self, probe: bool = True):
+            return [{"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash"}]
+
+    def fake_get_provider(name: str):
+        attempted_providers.append(name)
+        if name == "gemini":
+            return FakeGemini()
+        raise AssertionError(f"Provider {name} should not have been attempted!")
+
+    monkeypatch.setattr(models_module, "is_provider_configured", lambda name: name == "gemini")
+    monkeypatch.setattr(models_module, "get_llm_provider", fake_get_provider)
+
+    res = client.get("/models")
+    assert res.status_code == 200
+    data = res.json()
+
+    assert len(data) == 1
+    assert data[0]["id"] == "gemini"
+    assert "openai" not in attempted_providers
+    assert "anthropic" not in attempted_providers

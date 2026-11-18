@@ -21,6 +21,9 @@ const isLangfuseEnabled = ref(
   import.meta.env.VITE_LANGFUSE_METRICS_ENABLED === 'true' ||
   import.meta.env.VITE_LANGFUSE_METRICS_ENABLED === true
 )
+const configuredDashboardUrl = ref<string>(
+  import.meta.env.VITE_LANGFUSE_DASHBOARD_URL || ''
+)
 
 async function fetchStats() {
   try {
@@ -40,6 +43,9 @@ async function fetchStats() {
       }
       if (typeof data.langfuse_metrics_enabled === 'boolean') {
         isLangfuseEnabled.value = data.langfuse_metrics_enabled
+      }
+      if (typeof data.langfuse_dashboard_url === 'string' && data.langfuse_dashboard_url) {
+        configuredDashboardUrl.value = data.langfuse_dashboard_url
       }
     }
   } catch {
@@ -228,6 +234,9 @@ function getAgentStatusBadge(agent: { state: string; latency?: number; tokens?: 
 }
 
 const langfuseDashboardUrl = computed(() => {
+  if (configuredDashboardUrl.value) {
+    return configuredDashboardUrl.value
+  }
   if (typeof window !== 'undefined' && window.location) {
     const hostname = window.location.hostname
     return `http://${hostname}:3000`

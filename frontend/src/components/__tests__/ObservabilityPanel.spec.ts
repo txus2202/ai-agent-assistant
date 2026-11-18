@@ -97,6 +97,29 @@ describe('ObservabilityPanel.vue', () => {
     expect(link.attributes('target')).toBe('_blank')
   })
 
+  it('renders custom configured dashboard URL when provided by observability stats API', async () => {
+    global.fetch = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            cpu_percent: 42,
+            memory_percent: 65,
+            cluster_status: 'HEALTHY',
+            langfuse_metrics_enabled: true,
+            langfuse_dashboard_url: 'https://langfuse.mycompany.internal',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    )
+
+    const wrapper = mount(ObservabilityPanel)
+    await flushPromises()
+    const link = wrapper.find('[data-test="langfuse-dashboard-link"]')
+    expect(link.exists()).toBe(true)
+    expect(link.attributes('href')).toBe('https://langfuse.mycompany.internal')
+  })
+
   it('displays ERROR status badge for agents in error state', () => {
     const wrapper = mount(ObservabilityPanel)
     // The Judge is ACTIVE with 1.8s running..., Senior Arch is COMPLETED with 1.12s

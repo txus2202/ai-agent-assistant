@@ -79,6 +79,7 @@ class Settings(BaseSettings):
     langfuse_secret_key: str = ""
     langfuse_host: str = "http://localhost:3000"
     langfuse_base_url: str = ""
+    langfuse_dashboard_url: str = ""
     langfuse_default_user_id: str = "local_user"
 
     # Authentication & Security (Phase 7)
@@ -99,6 +100,10 @@ class Settings(BaseSettings):
     @property
     def effective_langfuse_host(self) -> str:
         return self.langfuse_base_url or self.langfuse_host or "http://localhost:3000"
+
+    @property
+    def effective_langfuse_dashboard_url(self) -> str:
+        return self.langfuse_dashboard_url or self.langfuse_base_url or self.langfuse_host or "http://localhost:3000"
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),

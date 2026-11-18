@@ -6,11 +6,33 @@ handling API key initialization via config.
 """
 from __future__ import annotations
 
+import os
 from src.domain.ports.llm_provider import ILLMProvider
 from src.infrastructure.llm.gemini_adapter import GeminiAdapter
 from src.infrastructure.llm.openai_adapter import OpenAIAdapter
 from src.infrastructure.llm.anthropic_adapter import AnthropicAdapter
 from src.presentation.api.config import get_settings
+
+
+def is_provider_configured(name: str) -> bool:
+    """
+    Checks whether the required API key / environment variable is configured
+    for the given provider.
+    """
+    settings = get_settings()
+    provider_name = name.lower().strip()
+    if provider_name == "gemini":
+        return bool(
+            settings.gemini_api_key
+            or settings.google_cloud_project
+            or os.getenv("GEMINI_API_KEY")
+            or os.getenv("GOOGLE_CLOUD_PROJECT")
+        )
+    if provider_name == "openai":
+        return bool(settings.openai_api_key or os.getenv("OPENAI_API_KEY"))
+    if provider_name == "anthropic":
+        return bool(settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY"))
+    return False
 
 
 def get_llm_provider(name: str) -> ILLMProvider:

@@ -52,5 +52,6 @@ async def get_stats(
         "active_agents_count": metrics.active_agents_count,
         "additional_stats": metrics.additional_stats,
         "langfuse_metrics_enabled": settings.langfuse_metrics_enabled,
+        "langfuse_dashboard_url": getattr(settings, "effective_langfuse_dashboard_url", settings.effective_langfuse_host),
     }
 

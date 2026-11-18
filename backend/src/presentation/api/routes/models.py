@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from src.domain.entities.user import User
 from src.domain.ports.model_cache_port import CachedModelCatalog, IModelCacheRepository
-from src.infrastructure.llm.registry import get_llm_provider
+from src.infrastructure.llm.registry import get_llm_provider, is_provider_configured
 from src.presentation.api.config import get_settings
 from src.presentation.api.dependencies.auth import get_current_user
 from src.presentation.api.dependencies.model_cache import get_model_cache_repository
@@ -37,6 +37,10 @@ def _probe_provider_in_background(
     Background worker for a single provider that runs healthcheck probes,
     saves the verified catalog to the shared database, and releases the probe lock.
     """
+    if not is_provider_configured(provider_name):
+        cache_repo.release_probe_lock(provider_name)
+        return
+
     try:
         provider = get_llm_provider(provider_name)
         verified_models = provider.list_models(probe=True)
@@ -69,6 +73,9 @@ def _resolve_provider_catalog(
     Resolves models for one provider using SWR from the shared database.
     Returns (provider_dict_or_None, is_probing_triggered).
     """
+    if not is_provider_configured(provider_name):
+        return (None, False)
+
     cached = cache_repo.get(provider_name)
     if cached and cached.is_verified and (now - cached.updated_at) < CACHE_TTL_SECONDS and not refresh:
         return ({"id": provider_name, "name": provider_name.upper(), "models": cached.models}, False)
@@ -131,6 +138,8 @@ def get_available_models(
     any_probing = False
 
     for provider_name in providers:
+        if not is_provider_configured(provider_name):
+            continue
         try:
             catalog, probing = _resolve_provider_catalog(
                 provider_name, now, refresh, app_version, cache_repo, background_tasks

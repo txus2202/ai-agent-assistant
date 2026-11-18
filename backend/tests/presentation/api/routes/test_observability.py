@@ -52,6 +52,8 @@ def test_get_observability_stats_endpoint(client):
         assert data["memory_percent"] == 60.5
         assert data["active_agents_count"] == 2
         assert "langfuse_metrics_enabled" in data
+        assert "langfuse_dashboard_url" in data
+        assert data["langfuse_dashboard_url"] == "http://localhost:3000"
 
 
 def test_get_observability_stats_reflects_settings(client):

@@ -32,11 +32,15 @@ class DockerObservabilityManager:
         return shutil.which("docker") is not None
 
     def is_stack_running(self) -> bool:
-        """Check if any containers of the docker-compose stack are currently running."""
+        """Check if the core Langfuse web container of the stack is currently running."""
         if not self.is_docker_available() or not self.compose_file.exists():
             return False
         try:
-            cmd = ["docker", "compose", "-f", str(self.compose_file), "--profile", "observability", "ps", "--status", "running", "-q"]
+            cmd = [
+                "docker", "compose", "-f", str(self.compose_file),
+                "--profile", "observability",
+                "ps", "--status", "running", "-q", "langfuse-web"
+            ]
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=False)
             return bool(res.stdout and res.stdout.strip())
         except Exception as exc:
@@ -58,7 +62,11 @@ class DockerObservabilityManager:
 
         try:
             logger.info("Starting Langfuse Docker stack via docker compose up -d...")
-            cmd = ["docker", "compose", "-f", str(self.compose_file), "--profile", "observability", "up", "-d"]
+            cmd = [
+                "docker", "compose", "-f", str(self.compose_file),
+                "--profile", "observability",
+                "up", "-d", "langfuse-web", "langfuse-worker"
+            ]
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=False)
             if res.returncode == 0:
                 logger.info("Langfuse Docker stack started successfully.")
@@ -80,7 +88,11 @@ class DockerObservabilityManager:
 
         try:
             logger.info("Stopping Langfuse Docker stack via docker compose stop...")
-            cmd = ["docker", "compose", "-f", str(self.compose_file), "--profile", "observability", "stop"]
+            cmd = [
+                "docker", "compose", "-f", str(self.compose_file),
+                "--profile", "observability",
+                "stop", "langfuse-web", "langfuse-worker", "clickhouse", "minio"
+            ]
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
             if res.returncode == 0:
                 logger.info("Langfuse Docker stack stopped successfully.")

@@ -9,6 +9,16 @@ import tailwindcss from '@tailwindcss/vite'
 const env = loadEnv(process.env.NODE_ENV || 'development', '../', '')
 const langfuseMetricsEnabled =
   env.LANGFUSE_METRICS_ENABLED || process.env.LANGFUSE_METRICS_ENABLED || 'false'
+const langfuseDashboardUrl =
+  env.VITE_LANGFUSE_DASHBOARD_URL ||
+  env.LANGFUSE_DASHBOARD_URL ||
+  env.LANGFUSE_BASE_URL ||
+  env.LANGFUSE_HOST ||
+  process.env.VITE_LANGFUSE_DASHBOARD_URL ||
+  process.env.LANGFUSE_DASHBOARD_URL ||
+  process.env.LANGFUSE_BASE_URL ||
+  process.env.LANGFUSE_HOST ||
+  ''
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -19,6 +29,7 @@ export default defineConfig({
   ],
   define: {
     'import.meta.env.VITE_LANGFUSE_METRICS_ENABLED': JSON.stringify(langfuseMetricsEnabled),
+    'import.meta.env.VITE_LANGFUSE_DASHBOARD_URL': JSON.stringify(langfuseDashboardUrl),
   },
   resolve: {
     alias: {

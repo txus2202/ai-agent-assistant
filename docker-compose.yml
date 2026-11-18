@@ -217,6 +217,8 @@ services:
       - app-net
       - data-net
     environment:
+      HOSTNAME: "0.0.0.0"
+      PORT: 3000
       NODE_ENV: production
       NODE_OPTIONS: "--max-old-space-size=1536"
       DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}}
@@ -271,6 +273,8 @@ services:
     networks:
       - data-net
     environment:
+      HOSTNAME: "0.0.0.0"
+      PORT: 3000
       NODE_ENV: production
       NODE_OPTIONS: "--max-old-space-size=1024"
       DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}}

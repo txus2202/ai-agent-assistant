@@ -30,6 +30,7 @@ import {
   ArrowUp
 } from '@lucide/vue'
 import { useDebateStore, type ChatMessage } from '../stores/debate'
+import { useTimedReset } from '../composables/useTimedReset'
 import DiagramModal from './tools/DiagramModal.vue'
 import CodeModal from './tools/CodeModal.vue'
 import ImageModal from './tools/ImageModal.vue'
@@ -50,6 +51,7 @@ import {
   extractDocumentTitle,
   renderMarkdownToHtml
 } from '../utils/markdownRenderer'
+import { sanitizeHtml } from '../utils/sanitize'
 
 const props = defineProps<{
   messages: ChatMessage[]
@@ -104,7 +106,7 @@ const handleScrollToggle = () => {
 const isDiagramModalOpen = ref(false)
 const activeDiagramCode = ref('')
 const activeDiagramTitle = ref('Diagrama')
-const copiedDiagramIndex = ref<number | null>(null)
+const { state: copiedDiagramIndex, trigger: triggerCopiedDiagram } = useTimedReset<number | null>(null)
 
 // Code Modal State
 const isCodeModalOpen = ref(false)
@@ -112,7 +114,7 @@ const activeCode = ref('')
 const activeCodeLanguage = ref('code')
 const activeCodeExtension = ref('')
 const activeCodeTitle = ref('Visualizador de Código')
-const copiedCodeIndex = ref<number | null>(null)
+const { state: copiedCodeIndex, trigger: triggerCopiedCode } = useTimedReset<number | null>(null)
 
 // Image Modal State
 const isImageModalOpen = ref(false)
@@ -124,13 +126,13 @@ const activeImageTitle = ref('Visualizador de Imagen')
 const isDocumentModalOpen = ref(false)
 const activeDocContent = ref('')
 const activeDocTitle = ref('Documento Técnico')
-const copiedDocIndex = ref<number | null>(null)
+const { state: copiedDocIndex, trigger: triggerCopiedDoc } = useTimedReset<number | null>(null)
 
 // Presentation Modal State (Calíope / presentation_viewer)
 const isPresentationModalOpen = ref(false)
 const activePresentationContent = ref('')
 const activePresentationTitle = ref('Presentación')
-const copiedPresentationIndex = ref<number | null>(null)
+const { state: copiedPresentationIndex, trigger: triggerCopiedPresentation } = useTimedReset<number | null>(null)
 const activePresentationDownloadMenu = ref<number | null>(null)
 
 const togglePresentationDownloadMenu = (index: number) => {
@@ -156,12 +158,7 @@ const closePresentationModal = () => {
 const copyPresentationContent = async (content: string, index: number) => {
   try {
     await navigator.clipboard.writeText(content)
-    copiedPresentationIndex.value = index
-    setTimeout(() => {
-      if (copiedPresentationIndex.value === index) {
-        copiedPresentationIndex.value = null
-      }
-    }, 2000)
+    triggerCopiedPresentation(index)
   } catch (err) {
     console.error('Failed to copy presentation content:', err)
   }
@@ -210,12 +207,7 @@ const agentHasDocumentViewer = (agentName?: string): boolean => {
 const copyDocContent = async (content: string, index: number) => {
   try {
     await navigator.clipboard.writeText(content)
-    copiedDocIndex.value = index
-    setTimeout(() => {
-      if (copiedDocIndex.value === index) {
-        copiedDocIndex.value = null
-      }
-    }, 2000)
+    triggerCopiedDoc(index)
   } catch (err) {
     console.error('Failed to copy document content:', err)
   }
@@ -257,12 +249,7 @@ const closeImageModal = () => {
 const copyChatCode = async (code: string, blockIndex: number) => {
   try {
     await navigator.clipboard.writeText(code)
-    copiedCodeIndex.value = blockIndex
-    setTimeout(() => {
-      if (copiedCodeIndex.value === blockIndex) {
-        copiedCodeIndex.value = null
-      }
-    }, 2000)
+    triggerCopiedCode(blockIndex)
   } catch (err) {
     console.error('Failed to copy code snippet:', err)
   }
@@ -311,12 +298,7 @@ const downloadChatImage = (imageUrl: string, title?: string) => {
 const copyChatDiagramCode = async (code: string, blockIndex: number) => {
   try {
     await navigator.clipboard.writeText(code)
-    copiedDiagramIndex.value = blockIndex
-    setTimeout(() => {
-      if (copiedDiagramIndex.value === blockIndex) {
-        copiedDiagramIndex.value = null
-      }
-    }, 2000)
+    triggerCopiedDiagram(blockIndex)
   } catch (err) {
     console.error('Failed to copy diagram code:', err)
   }
@@ -477,6 +459,9 @@ const handleClickOutsideCancelInfo = (event: MouseEvent) => {
   }
 }
 
+let unsubscribeTtsChunk: (() => void) | null = null
+let unsubscribeTtsStop: (() => void) | null = null
+
 onMounted(() => {
   void loadDomains()
   document.addEventListener('click', handleClickOutsideAgent)
@@ -484,14 +469,16 @@ onMounted(() => {
   document.addEventListener('click', closePresentationDownloadMenu)
   window.addEventListener('resize', updateChatScrollState)
   if (typeof store.onTtsChunkReady === 'function') {
-    store.onTtsChunkReady((chunk: string, role?: string) => {
+    const unsub = store.onTtsChunkReady((chunk: string, role?: string) => {
       queueTtsSentence(chunk, role)
     })
+    unsubscribeTtsChunk = typeof unsub === 'function' ? unsub : null
   }
   if (typeof store.onTtsStop === 'function') {
-    store.onTtsStop(() => {
+    const unsub = store.onTtsStop(() => {
       clearTtsQueues()
     })
+    unsubscribeTtsStop = typeof unsub === 'function' ? unsub : null
   }
   void nextTick(() => {
     updateChatScrollState()
@@ -513,6 +500,11 @@ onUnmounted(() => {
   document.removeEventListener('click', closePresentationDownloadMenu)
   window.removeEventListener('resize', updateChatScrollState)
   scrollResizeObserver?.disconnect()
+  scrollResizeObserver = null
+  unsubscribeTtsChunk?.()
+  unsubscribeTtsChunk = null
+  unsubscribeTtsStop?.()
+  unsubscribeTtsStop = null
 })
 
 // TTS Queue logic for gapless sentence-by-sentence playback with per-agent role tracking
@@ -1417,7 +1409,7 @@ defineExpose({
 
                   <!-- Document preview with internal scrollbar -->
                   <div class="p-4 bg-[#02050a] text-slate-200 text-xs leading-relaxed max-h-56 overflow-y-auto custom-scrollbar border-t border-space-900/50 selection:bg-pink-500/30">
-                    <div class="doc-body font-sans max-w-none" v-html="renderMarkdownToHtml(block.content)"></div>
+                    <div class="doc-body font-sans max-w-none" v-html="sanitizeHtml(renderMarkdownToHtml(block.content))"></div>
                   </div>
                 </div>
 

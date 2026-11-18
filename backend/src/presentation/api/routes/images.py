@@ -28,7 +28,6 @@ IMAGE_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 
 @router.get("/images/{filename}", responses=IMAGE_RESPONSES)
-@router.get("/api/images/{filename}", responses=IMAGE_RESPONSES)
 async def get_generated_image(
     filename: str,
     current_user: Annotated[User, Depends(get_current_user)],

@@ -29,6 +29,7 @@ from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebate
 from src.infrastructure.rag.chroma_document_store import ChromaDBDocumentStore
 from src.presentation.api.config import get_settings
 from src.presentation.api.routes.observability import get_observability_service
+from src.presentation.api.routes.upload import resolve_user_attachment_path
 from src.presentation.api.ws.serializers import dict_to_hitl_response, event_to_dict
 
 router = APIRouter(tags=["debate"])
@@ -52,6 +53,10 @@ NL_TAGS_REGEX = re.compile(
 HASHTAGS_REGEX = re.compile(
     r"(?<!\S)#([a-zA-Z0-9_\-\.]+)",
 )
+
+
+def _is_http_url(source: str) -> bool:
+    return isinstance(source, str) and source.strip().lower().startswith(("http://", "https://"))
 
 
 def _detect_source_type(source: str) -> SourceType:
@@ -139,6 +144,10 @@ def _extract_pending_from_event(ev: dict[str, Any]) -> dict[str, Any] | None:
     return _parse_pending_learning_payload(meta.get("pending_learning"))
 
 
+class DebateCancelledError(Exception):
+    """Raised when the client explicitly cancels/aborts an active debate."""
+
+
 class DebateWebSocketHandler:
     """Handles the WebSocket debate streaming and HITL responses."""
     
@@ -147,6 +156,7 @@ class DebateWebSocketHandler:
         self.authenticated_user = authenticated_user
         self.auth_service = auth_service
         self.settings = get_settings()
+        self._cancel_event = asyncio.Event()
         db_path = str(self.settings.sqlite_db_path)
         from src.infrastructure.persistence.sqlite_agent_config_repository import UserScopedAgentConfigRepository
         base_agent_repo = SqliteAgentConfigRepository(db_path)
@@ -255,7 +265,17 @@ class DebateWebSocketHandler:
         Pause debate execution and await client response for the HITL checkpoint.
         (The HITL_REQUIRED event itself was already yielded by the generator and sent).
         """
+        if self._cancel_event.is_set():
+            raise DebateCancelledError("Debate cancelled before HITL checkpoint response")
+
         raw_resp = await self.websocket.receive_json()
+        if isinstance(raw_resp, dict) and (
+            str(raw_resp.get("type", "")).lower() in ("cancel", "abort")
+            or str(raw_resp.get("decision", "")).lower() in ("cancel", "abort")
+        ):
+            self.abort()
+            raise DebateCancelledError("Debate cancelled by user during HITL checkpoint")
+
         hitl_resp = dict_to_hitl_response(raw_resp)
 
         if self.current_trace:
@@ -303,8 +323,23 @@ class DebateWebSocketHandler:
                 llm_factory=get_llm_provider,
                 hitl_callback=self.hitl_callback,
                 chat_history=chat_history,
+                cancel_event=self._cancel_event,
             ):
+                if self._cancel_event.is_set():
+                    raise DebateCancelledError("Debate cancelled by user")
                 await self.send_event(event)
+        except DebateCancelledError:
+            logger.info("Debate cancelled cleanly during execution")
+            self.abort()
+            try:
+                await self.websocket.send_json({
+                    "type": "done",
+                    "role": "supervisor",
+                    "content": "Debate cancelado por el usuario.",
+                    "metadata": {"cancelled": "true", "metrics_reported": "true"},
+                })
+            except Exception:
+                pass
         except WebSocketDisconnect:
             logger.info("WebSocket disconnected during supervisor debate; aborting")
             self.abort()
@@ -344,6 +379,25 @@ class DebateWebSocketHandler:
                 break
         return None
 
+    def _validate_attachments(self, raw_attachments: Any) -> list[str]:
+        if raw_attachments is None:
+            return []
+        if not isinstance(raw_attachments, list):
+            raise ValueError("attachments must be a list")
+
+        user_id = self.authenticated_user.id if self.authenticated_user else None
+        validated: list[str] = []
+        for item in raw_attachments:
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError("Each attachment must be a non-empty string")
+            cleaned = item.strip()
+            if _is_http_url(cleaned):
+                validated.append(cleaned)
+            else:
+                safe_path = resolve_user_attachment_path(cleaned, user_id)
+                validated.append(str(safe_path))
+        return validated
+
     async def _learn_single_attachment(
         self,
         attachment_path: str,
@@ -353,23 +407,49 @@ class DebateWebSocketHandler:
         mod_name: str,
         target_domain: str = "learned",
     ) -> str:
-        stype = _detect_source_type(attachment_path)
-        res = await asyncio.to_thread(
-            LearnFromSource.run,
-            source=attachment_path,
-            source_type=stype,
-            llm_provider=llm_prov,
-            document_store=self.document_store,
-            vault_root=self.settings.vault_root,
-            model_name=mod_name,
-            tags=tags,
-            target_domain=target_domain,
-        )
+        temp_file_to_delete: Path | None = None
+        if _is_http_url(attachment_path):
+            source_arg = attachment_path.strip()
+            stype = SourceType.URL
+            display_name = source_arg
+        else:
+            user_id = self.authenticated_user.id if self.authenticated_user else None
+            try:
+                safe_path = resolve_user_attachment_path(attachment_path, user_id)
+            except (ValueError, PermissionError):
+                logger.warning("Blocked unsafe attachment path for user %s", user_id)
+                return "❌ Ruta de archivo adjunto no permitida."
+            if not safe_path.is_file():
+                return f"❌ El archivo adjunto '{safe_path.name}' no existe o ha expirado."
+            source_arg = str(safe_path)
+            stype = _detect_source_type(source_arg)
+            temp_file_to_delete = safe_path
+            display_name = safe_path.name
+
+        try:
+            res = await asyncio.to_thread(
+                LearnFromSource.run,
+                source=source_arg,
+                source_type=stype,
+                llm_provider=llm_prov,
+                document_store=self.document_store,
+                vault_root=self.settings.vault_root,
+                model_name=mod_name,
+                tags=tags,
+                target_domain=target_domain,
+            )
+        finally:
+            if temp_file_to_delete is not None:
+                try:
+                    temp_file_to_delete.unlink(missing_ok=True)
+                except OSError:
+                    logger.warning("Failed to remove temporary attachment %s", temp_file_to_delete, exc_info=True)
+
         if res.errors:
-            return f"❌ Error al procesar {attachment_path}: {res.errors}"
+            return f"❌ Error al procesar {display_name}: {res.errors}"
         file_name = res.generated_file.name if res.generated_file else "nota"
         dom_msg = f" en [{target_domain}]" if target_domain != "learned" else ""
-        return f"✅ Conocimiento asimilado{dom_msg} desde {attachment_path}. Generada nota: {file_name}{tag_suffix}"
+        return f"✅ Conocimiento asimilado{dom_msg} desde {display_name}. Generada nota: {file_name}{tag_suffix}"
 
     async def _learn_single_text(
         self,
@@ -462,7 +542,10 @@ class DebateWebSocketHandler:
                 type=EventType.AGENT_COMPLETED, role=learn_role, content=ask_content, metadata=learn_meta
             ))
             await self.send_event(SupervisorEvent(
-                type=EventType.DONE, role=learn_role, content=ask_content, metadata=learn_meta
+                type=EventType.DONE,
+                role=learn_role,
+                content=ask_content,
+                metadata={**learn_meta, "metrics_reported": "true"},
             ))
             return
 
@@ -481,7 +564,10 @@ class DebateWebSocketHandler:
             type=EventType.AGENT_COMPLETED, role=learn_role, content=content, metadata=learn_meta
         ))
         await self.send_event(SupervisorEvent(
-            type=EventType.DONE, role=learn_role, content=content, metadata=learn_meta
+            type=EventType.DONE,
+            role=learn_role,
+            content=content,
+            metadata={"model": mod_name, "metrics_reported": "true"},
         ))
 
     async def _handle_pending_learning(
@@ -533,7 +619,10 @@ class DebateWebSocketHandler:
             type=EventType.AGENT_COMPLETED, role=learn_role, content=content, metadata=learn_meta
         ))
         await self.send_event(SupervisorEvent(
-            type=EventType.DONE, role=learn_role, content=content, metadata=learn_meta
+            type=EventType.DONE,
+            role=learn_role,
+            content=content,
+            metadata={"model": mod_name, "metrics_reported": "true"},
         ))
 
     def _resolve_agent_llm(self, profile: SubAgentProfile, agent_role: str) -> tuple[ILLMProvider, str]:
@@ -566,7 +655,10 @@ class DebateWebSocketHandler:
         ))
         if emit_done:
             await self.send_event(SupervisorEvent(
-                type=EventType.DONE, role=agent_role, content=resp.content, metadata=sub_meta
+                type=EventType.DONE,
+                role=agent_role,
+                content=resp.content,
+                metadata={"model": sub_meta["model"], "metrics_reported": "true"},
             ))
 
     async def _handle_sub_agent_exception(self, agent_role: str, exc: Exception) -> None:
@@ -800,6 +892,7 @@ class DebateWebSocketHandler:
             self.debate_repo.update_status(self.debate_record.id, "finished")
 
     async def _handle_start_request(self, raw_start: dict) -> None:
+        self._cancel_event.clear()
         user_request = raw_start.get("user_request", "")
         if not user_request:
             await self.websocket.send_json({"type": "error", "content": "user_request is required"})
@@ -813,7 +906,12 @@ class DebateWebSocketHandler:
 
         target_agents = self._extract_target_agents(raw_start)
         primary_target = target_agents[0] if target_agents else "supervisor"
-        attachments = raw_start.get("attachments", [])
+        try:
+            attachments = self._validate_attachments(raw_start.get("attachments", []))
+        except (ValueError, PermissionError) as exc:
+            logger.warning("Rejected unsafe attachments in debate start request: %s", exc)
+            await self.websocket.send_json({"type": "error", "content": "Invalid or unauthorized attachment path"})
+            return
         chat_history = raw_start.get("history", [])
         user_id = self.authenticated_user.id if self.authenticated_user else raw_start.get("user_id")
         target_domain = raw_start.get("target_domain")
@@ -864,6 +962,7 @@ class DebateWebSocketHandler:
             await self._handle_start_request(raw_start)
 
     def abort(self) -> None:
+        self._cancel_event.set()
         if self.debate_record:
             try:
                 record = self.debate_repo.find_by_id(self.debate_record.id, allow_unscoped=True)

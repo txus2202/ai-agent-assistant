@@ -91,7 +91,7 @@ export async function setupMockBackend(
             timestamp: new Date().toISOString(),
           },
           {
-            type: 'conclusion',
+            type: 'done',
             role: 'supervisor',
             content: 'Arquitectura establecida con Clean Architecture.',
             timestamp: new Date().toISOString(),
@@ -111,13 +111,13 @@ export async function setupMockBackend(
             timestamp: new Date(Date.now() - 3600000).toISOString(),
           },
           {
-            type: 'hitl_approval_required',
+            type: 'hitl_required',
             role: 'supervisor',
             content: 'Se requiere confirmación para aplicar reglas de red.',
             timestamp: new Date(Date.now() - 3500000).toISOString(),
           },
           {
-            type: 'synthesis',
+            type: 'done',
             role: 'supervisor',
             content: 'Reglas validadas y aprobadas.',
             timestamp: new Date(Date.now() - 3400000).toISOString(),
@@ -272,9 +272,13 @@ export async function setupMockBackend(
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        total_tokens: 1500,
-        total_sessions: 12,
-        avg_latency: 0.85,
+        cluster_status: 'HEALTHY',
+        cpu_percent: 38.0,
+        memory_percent: 62.0,
+        active_agents_count: 0,
+        additional_stats: {},
+        langfuse_metrics_enabled: false,
+        langfuse_dashboard_url: 'http://localhost:3000',
       }),
     })
   })

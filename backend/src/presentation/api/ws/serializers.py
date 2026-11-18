@@ -37,7 +37,11 @@ def dict_to_hitl_response(raw: dict) -> HITLResponse:
 
     Falls back to APPROVE on invalid decision (avoids WebSocket deadlock).
     """
+    raw_type = str(raw.get("type", "")).lower()
     raw_decision = str(raw.get("decision", "approve")).lower()
+    if raw_type in ("cancel", "abort") or raw_decision in ("cancel", "abort"):
+        raise ValueError("Cancellation payload is not a HITL decision")
+
     try:
         decision = HITLDecision(raw_decision)
     except ValueError:

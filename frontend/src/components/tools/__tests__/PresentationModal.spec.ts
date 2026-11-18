@@ -1,5 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { mount, enableAutoUnmount } from '@vue/test-utils'
+
+enableAutoUnmount(afterEach)
 import PresentationModal from '../PresentationModal.vue'
 import * as exporter from '../../../utils/presentationExporter'
 
@@ -247,6 +249,47 @@ describe('PresentationModal.vue', () => {
 
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-test="slide-counter"]').text()).toContain('1 / 3')
+  })
+
+  it('invokes toggleFullscreen once on "f" key inside dialog and detaches listener on unmount', async () => {
+    const originalRequestFullscreen = HTMLElement.prototype.requestFullscreen
+    const requestFullscreenMock = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
+      value: requestFullscreenMock,
+      configurable: true,
+      writable: true
+    })
+
+    const wrapper = mount(PresentationModal, {
+      attachTo: document.body,
+      props: {
+        isOpen: true,
+        content: sampleMarkdown,
+        teleportDisabled: true
+      }
+    })
+
+    try {
+      const dialog = wrapper.find('dialog')
+      expect(dialog.exists()).toBe(true)
+
+      dialog.element.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', bubbles: true }))
+      await wrapper.vm.$nextTick()
+      expect(requestFullscreenMock).toHaveBeenCalledTimes(1)
+
+      wrapper.unmount()
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', bubbles: true }))
+      await wrapper.vm.$nextTick()
+      expect(requestFullscreenMock).toHaveBeenCalledTimes(1)
+    } finally {
+      wrapper.unmount()
+      Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
+        value: originalRequestFullscreen,
+        configurable: true,
+        writable: true
+      })
+    }
   })
 })
 

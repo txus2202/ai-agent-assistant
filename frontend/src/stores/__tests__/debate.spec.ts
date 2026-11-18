@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { useDebateStore, normalizeAgentRole, cleanAgentMessageContent } from '../debate'
+import { useDebateStore, normalizeAgentRole, cleanAgentMessageContent, resolveWsUrl } from '../debate'
 
 interface MockWebSocketInstance {
   readyState: number
@@ -239,18 +239,40 @@ describe('useDebateStore', () => {
     expect(store.rawEvents).toHaveLength(0)
   })
 
-  it('handles uploadFile', async () => {
+  it('handles uploadFile and prefers opaque attachment_id when provided', async () => {
     const store = useDebateStore()
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ path: '/tmp/test.pdf' })
+      json: () => Promise.resolve({ ok: true, attachment_id: 'abc123_test.pdf', path: '/tmp/abc123_test.pdf' })
     })
 
     const file = new File([''], 'test.pdf')
-    const path = await store.uploadFile(file)
+    const refId = await store.uploadFile(file)
 
-    expect(path).toBe('/tmp/test.pdf')
+    expect(refId).toBe('abc123_test.pdf')
     expect(global.fetch).toHaveBeenCalled()
+  })
+
+  it('resolveWsUrl derives ws/wss from window.location or respects VITE_WS_URL', () => {
+    vi.stubEnv('VITE_WS_URL', '')
+    const origLocation = window.location
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { protocol: 'https:', host: 'atenea.example.com', port: '443', hostname: 'atenea.example.com' }
+    })
+    expect(resolveWsUrl('/ws/debate')).toBe('wss://atenea.example.com/ws/debate')
+
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { protocol: 'http:', host: 'localhost:5173', port: '5173', hostname: 'localhost' }
+    })
+    expect(resolveWsUrl('/ws/audio/wake-word')).toBe('ws://localhost:5173/ws/audio/wake-word')
+
+    vi.stubEnv('VITE_WS_URL', 'wss://ws-api.example.com/ws/debate')
+    expect(resolveWsUrl('/ws/audio/wake-word')).toBe('wss://ws-api.example.com/ws/audio/wake-word')
+
+    vi.unstubAllEnvs()
+    Object.defineProperty(window, 'location', { configurable: true, value: origLocation })
   })
 
   it('handles HITL_REQUIRED event', () => {
@@ -801,6 +823,71 @@ describe('useDebateStore', () => {
     expect(store.globalAnalyser).toBeDefined()
   })
 
+  it('stops WS reconnection on auth close code (1008) and caps max reconnect attempts', () => {
+    vi.useFakeTimers()
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const store = useDebateStore()
+    store.connect()
+
+    const firstSock = activeSockets[0] as unknown as { onclose?: (e?: { code?: number }) => void }
+    firstSock.onclose?.({ code: 1008 })
+    vi.advanceTimersByTime(60000)
+    expect(activeSockets).toHaveLength(1)
+
+    // Bounded retries on generic disconnect
+    store.connect()
+    expect(activeSockets).toHaveLength(2)
+    for (let i = 0; i < 12; i++) {
+      const sock = activeSockets.at(-1) as unknown as { onclose?: (e?: { code?: number }) => void }
+      sock?.onclose?.({ code: 1006 })
+      vi.advanceTimersByTime(15000)
+    }
+    // 2 initial connects + max 8 retries = 10 sockets total
+    expect(activeSockets).toHaveLength(10)
+    vi.useRealTimers()
+  })
+
+  it('resyncs interrupted debate session from /api/debates/{id} upon reconnect', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        id: 'sess-resync',
+        status: 'completed',
+        user_request: 'Arquitectura',
+        events: [
+          { type: 'user_message', content: 'Arquitectura' },
+          { type: 'done', role: 'supervisor', content: 'Dictamen recuperado tras reconexión.' }
+        ]
+      })
+    })
+
+    const store = useDebateStore()
+    store.currentSessionId = 'sess-resync'
+    store.isDebating = true
+    store.connect()
+    const firstSock = activeSockets[0]!
+    firstSock.onopen?.()
+
+    // Unexpected drop while debating
+    ;(firstSock as unknown as { onclose?: (e?: { code?: number }) => void }).onclose?.({ code: 1006 })
+    vi.advanceTimersByTime(1100)
+    expect(activeSockets).toHaveLength(2)
+
+    activeSockets[1]!.onopen?.()
+    vi.useRealTimers()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(global.fetch).toHaveBeenCalledWith('/api/debates/sess-resync')
+    expect(store.messages.some(m => m.content.includes('Dictamen recuperado'))).toBe(true)
+    expect(store.isDebating).toBe(false)
+  })
+
   it('handles playTtsAudioChunk gracefully based on isTtsPlaying state', async () => {
     const store = useDebateStore()
 
@@ -1312,6 +1399,96 @@ describe('useDebateStore', () => {
     const icaro = store.agents.find(a => a.role === 'innovator_architect')!
     expect(icaro.state).toBe('ACTIVE')
   })
+
+  it('returns working unsubscribe functions from onTtsChunkReady and onTtsStop', () => {
+    const store = useDebateStore()
+    store.agents = [
+      { role: 'supervisor', name: 'Atenea', state: 'STANDBY' }
+    ]
+    store.isVoiceOutputEnabled = true
+
+    const chunkSpy1 = vi.fn()
+    const chunkSpy2 = vi.fn()
+    const stopSpy1 = vi.fn()
+    const stopSpy2 = vi.fn()
+
+    const unsubChunk1 = store.onTtsChunkReady(chunkSpy1)
+    const unsubChunk2 = store.onTtsChunkReady(chunkSpy2)
+    const unsubStop1 = store.onTtsStop(stopSpy1)
+    const unsubStop2 = store.onTtsStop(stopSpy2)
+
+    unsubChunk1()
+    unsubStop1()
+
+    store.handleSupervisorEvent({ type: 'agent_started', role: 'supervisor', content: '' })
+    store.handleSupervisorEvent({ type: 'stream_chunk', role: 'supervisor', content: 'Primera frase lista. ' })
+    store.handleSupervisorEvent({ type: 'agent_completed', role: 'supervisor', content: 'Primera frase lista.' })
+    store.stopTts()
+
+    expect(chunkSpy1).not.toHaveBeenCalled()
+    expect(chunkSpy2).toHaveBeenCalled()
+    expect(stopSpy1).not.toHaveBeenCalled()
+    expect(stopSpy2).toHaveBeenCalledTimes(1)
+
+    unsubChunk2()
+    unsubStop2()
+  })
+
+  it('detaches wakeWordWs handlers in stopAutoListen before closing socket', () => {
+    const mockGetUserMedia = vi.fn().mockResolvedValue({
+      getTracks: () => [{ stop: vi.fn() }]
+    })
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: { getUserMedia: mockGetUserMedia },
+      writable: true,
+      configurable: true
+    })
+
+    const store = useDebateStore()
+    store.startAutoListen()
+
+    const wwSocket = activeSockets[activeSockets.length - 1]!
+    expect(wwSocket.onclose).toBeTypeOf('function')
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    wwSocket.close.mockImplementation(() => {
+      wwSocket.onclose?.()
+    })
+
+    try {
+      store.stopAutoListen()
+      expect(wwSocket.onclose).toBeNull()
+      expect(wwSocket.onerror).toBeNull()
+      expect(wwSocket.onmessage).toBeNull()
+      expect(wwSocket.close).toHaveBeenCalledTimes(1)
+      expect(logSpy).not.toHaveBeenCalledWith('[WW] Disconnected from wake-word stream')
+    } finally {
+      logSpy.mockRestore()
+    }
+  })
+
+  it('detaches window gesture unlock listeners after the first user interaction', () => {
+    const addSpy = vi.spyOn(window, 'addEventListener')
+    const removeSpy = vi.spyOn(window, 'removeEventListener')
+
+    try {
+      setActivePinia(createPinia())
+      useDebateStore()
+
+      expect(addSpy).toHaveBeenCalledWith('pointerdown', expect.any(Function), expect.objectContaining({ once: true }))
+      expect(addSpy).toHaveBeenCalledWith('keydown', expect.any(Function), expect.objectContaining({ once: true }))
+      expect(addSpy).toHaveBeenCalledWith('touchstart', expect.any(Function), expect.objectContaining({ once: true }))
+
+      window.dispatchEvent(new Event('pointerdown'))
+
+      expect(removeSpy).toHaveBeenCalledWith('pointerdown', expect.any(Function))
+      expect(removeSpy).toHaveBeenCalledWith('keydown', expect.any(Function))
+      expect(removeSpy).toHaveBeenCalledWith('touchstart', expect.any(Function))
+    } finally {
+      addSpy.mockRestore()
+      removeSpy.mockRestore()
+    }
+  })
 })
 
 
@@ -1399,6 +1576,22 @@ describe('learnSession action', () => {
     expect(result.message).toBe('No conversation events found')
     expect(store.isLearningSession).toBe(false)
     expect(store.learningStatusMessage).toContain('No conversation events found')
+  })
+
+  it('supports canonical backend file field and rejects missing session_id before calling API', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true, file: '2026-11-18_note.md', chunks_ingested: 2 })
+    })
+    const store = useDebateStore()
+
+    const noSid = await store.learnSession()
+    expect(noSid.success).toBe(false)
+    expect(global.fetch).not.toHaveBeenCalled()
+
+    const okRes = await store.learnSession('sid-1')
+    expect(okRes.success).toBe(true)
+    expect(okRes.message).toContain('2026-11-18_note.md')
   })
 
   it('handles stream_chunk events by accumulating text in streaming message and triggering TTS callbacks', () => {
@@ -1683,5 +1876,65 @@ describe('learnSession action', () => {
     expect(store.messages).toHaveLength(2)
     expect(store.messages[1]!.content).toBe('Propuesta arquitectónica de Hestia')
     expect(store.messages[1]!.content).not.toContain('Ícaro')
+  })
+
+  it('displays Phase 4 message events live and on loadDebate replay without losing implementer content', () => {
+    const store = useDebateStore()
+    store.agents = [
+      { role: 'supervisor', name: 'Atenea', state: 'STANDBY' },
+      { role: 'devops_secops', name: 'Hefesto', state: 'STANDBY' }
+    ]
+
+    store.handleSupervisorEvent({ type: 'agent_started', role: 'Hefesto', content: '' })
+    store.handleSupervisorEvent({ type: 'message', role: 'Hefesto', content: 'Dockerfile multi-stage generado.' })
+    store.handleSupervisorEvent({
+      type: 'agent_completed',
+      role: 'Hefesto',
+      content: 'Dockerfile multi-stage generado.',
+      metadata: { total_tokens: '110', tokens: '110' }
+    })
+
+    expect(store.messages.some(m => m.agentName === 'Hefesto' && m.content.includes('Dockerfile multi-stage'))).toBe(true)
+
+    store.loadDebate({
+      id: 'deb-p4',
+      user_request: 'Despliegue seguro',
+      status: 'completed',
+      events: [
+        { type: 'agent_started', role: 'Hefesto', content: '' },
+        { type: 'message', role: 'Hefesto', content: 'Dockerfile multi-stage generado.' },
+        { type: 'agent_completed', role: 'Hefesto', content: 'Dockerfile multi-stage generado.', metadata: { total_tokens: '110' } },
+      ]
+    })
+    expect(store.messages.some(m => m.agentName === 'Hefesto' && m.content.includes('Dockerfile multi-stage'))).toBe(true)
+  })
+
+  it('does not double-count tokens or turns across stream_chunk, agent_completed, and companion done events', () => {
+    const store = useDebateStore()
+    store.agents = [
+      { role: 'supervisor', name: 'Atenea', state: 'STANDBY', turns: 0, tokens: 0, promptTokens: 0, completionTokens: 0 }
+    ]
+
+    store.handleSupervisorEvent({ type: 'agent_started', role: 'supervisor', content: '' })
+    store.handleSupervisorEvent({ type: 'stream_chunk', role: 'supervisor', content: 'Respuesta parcial en streaming ' })
+    store.handleSupervisorEvent({
+      type: 'agent_completed',
+      role: 'supervisor',
+      content: 'Respuesta parcial en streaming completa.',
+      metadata: { prompt_tokens: '70', completion_tokens: '30', total_tokens: '100', tokens: '100', latency_seconds: '0.5' }
+    })
+    store.handleSupervisorEvent({
+      type: 'done',
+      role: 'supervisor',
+      content: 'Respuesta parcial en streaming completa.',
+      metadata: { model: 'gemini-3.6-flash', metrics_reported: 'true' }
+    })
+
+    const atenea = store.agents.find(a => a.role === 'supervisor')!
+    expect(atenea.tokens).toBe(100)
+    expect(atenea.promptTokens).toBe(70)
+    expect(atenea.completionTokens).toBe(30)
+    expect(atenea.turns).toBe(1)
+    expect(store.sessionTotalTokens).toBe(100)
   })
 })

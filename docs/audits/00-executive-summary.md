@@ -56,13 +56,13 @@ Se recomienda ejecutar los refactors siguiendo estas **6 fases incrementales**, 
 3. ✅ `[x]` `[01][P1]` Actualización de `frontend/.dockerignore` (excluir `.env*`, `e2e/`, reportes) y adición de `healthcheck` HTTP al servicio `frontend` en `docker-compose.yml`.
 
 ### Fase 1 — Seguridad crítica, bugs de contrato activos y fugas de memoria puntuales (Bajo Riesgo)
-4. `[02][P1]` Cierre de **Path Traversal** en `ws/debate.py` (`attachments` / `routes/upload.py` usando `settings.max_learn_file_mb` y `attachment_id` opaco) y protección **SSRF** en `URLExtractor`.
-5. `[03][P1]` Cambio de `DiagramModal.vue` a `securityLevel: 'strict'` + integración de `DOMPurify` en todos los `v-html` e `innerHTML`.
-6. `[01][P1]` Endurecimiento de `frontend/nginx.conf` (`client_max_body_size 55m`, cabeceras de seguridad, `gzip`, `Cache-Control` y timeouts `/api/` + `/ws/`).
-7. `[04][P1]` Corrección de contratos REST/WS rotos: esquema `/api/learning/session`, `ok: True` booleano en `/api/upload`, proxy `/ws` en `frontend/vite.config.ts`, `VITE_WS_URL` relativo por defecto y `LANGFUSE_DASHBOARD_URL` pública.
-8. `[04][P1]` Solución a la pérdida silenciosa de mensajes en **Fase 4**, eliminación del doble conteo de tokens/turnos (`AGENT_COMPLETED` + `DONE`) y actualización de eventos legacy en `HistoryView.vue` y `mockBackend.ts`.
-9. `[04][P1]` Corrección del bug de cancelación durante HITL (`{type: 'cancel'}` disparando `HITLDecision.APPROVE`) y acotación inicial de `attemptReconnect()`.
-10. `[03][P1]` Limpieza determinista en frontend: desuscripción de callbacks TTS en `onUnmounted`, `wakeWordWs.onclose = null` en `stopAutoListen()`, limpieza de `setTimeout`/RAF y eliminación de listeners de teclado duplicados en modales.
+4. ✅ `[x]` `[02][P1]` Cierre de **Path Traversal** en `ws/debate.py` (`attachments` / `routes/upload.py` usando `settings.max_learn_file_mb` y `attachment_id` opaco) y protección **SSRF** en `URLExtractor`.
+5. ✅ `[x]` `[03][P1]` Cambio de `DiagramModal.vue` a `securityLevel: 'strict'` + integración de `DOMPurify` en todos los `v-html` e `innerHTML`.
+6. ✅ `[x]` `[01][P1]` Endurecimiento de `frontend/nginx.conf` (`client_max_body_size 55m`, cabeceras de seguridad, `gzip`, `Cache-Control` y timeouts `/api/` + `/ws/`).
+7. ✅ `[x]` `[04][P1]` Corrección de contratos REST/WS rotos: esquema `/api/learning/session`, `ok: True` booleano en `/api/upload`, proxy `/ws` en `frontend/vite.config.ts`, `VITE_WS_URL` relativo por defecto y `LANGFUSE_DASHBOARD_URL` pública.
+8. ✅ `[x]` `[04][P1]` Solución a la pérdida silenciosa de mensajes en **Fase 4**, eliminación del doble conteo de tokens/turnos (`AGENT_COMPLETED` + `DONE`) y actualización de eventos legacy en `HistoryView.vue` y `mockBackend.ts`.
+9. ✅ `[x]` `[04][P1]` Corrección del bug de cancelación durante HITL (`{type: 'cancel'}` disparando `HITLDecision.APPROVE`) y acotación inicial de `attemptReconnect()`.
+10. ✅ `[x]` `[03][P1]` Limpieza determinista en frontend: desuscripción de callbacks TTS en `onUnmounted`, `wakeWordWs.onclose = null` en `stopAutoListen()`, limpieza de `setTimeout`/RAF y eliminación de listeners de teclado duplicados en modales.
 
 ### Fase 2 — Infraestructura, CI/CD y Operación de Contenedores (Riesgo Bajo-Medio)
 11. `[01][P1]` Unificación de variables entre `.env.example`, `docker-compose.yml` y `Settings`, separación entre puerto host y puerto interno de `chroma-server` (`CHROMA_PORT=8000`) y eliminación de secretos hardcoded en Compose.

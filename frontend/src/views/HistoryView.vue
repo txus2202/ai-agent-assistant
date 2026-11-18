@@ -61,10 +61,29 @@ const getDebatePrompt = (debate: DebateRecord): string => {
 
 const getDebateTokens = (debate: DebateRecord): number => {
   if (!debate.events || !Array.isArray(debate.events)) return 0
+  const metricEventTypes = new Set(['done', 'agent_completed', 'synthesis', 'conclusion', 'final_response'])
   let total = 0
-  for (const ev of debate.events) {
-    if (ev.metadata?.tokens) {
-      total += Number.parseInt(String(ev.metadata.tokens), 10) || 0
+  for (let idx = 0; idx < debate.events.length; idx++) {
+    const ev = debate.events[idx]
+    if (!ev || !ev.type || !metricEventTypes.has(ev.type)) continue
+    if (ev.type === 'done') {
+      if (ev.metadata?.metrics_reported === 'true') continue
+      const prev = idx > 0 ? debate.events[idx - 1] : undefined
+      const evTokens = ev.metadata?.total_tokens ?? ev.metadata?.tokens
+      const prevTokens = prev?.metadata?.total_tokens ?? prev?.metadata?.tokens
+      if (
+        prev?.type === 'agent_completed' &&
+        prev.role === ev.role &&
+        evTokens !== undefined &&
+        evTokens === prevTokens
+      ) {
+        continue
+      }
+    }
+
+    const rawTokens = ev.metadata?.total_tokens ?? ev.metadata?.tokens
+    if (rawTokens) {
+      total += Number.parseInt(String(rawTokens), 10) || 0
     } else if (ev.content && typeof ev.content === 'string') {
       const words = ev.content.trim().split(/\s+/).filter(Boolean).length
       total += Math.max(12, Math.round(words * 1.35))
@@ -86,9 +105,10 @@ const getDebateAgents = (debate: DebateRecord): string[] => {
 
 const hasHitl = (debate: DebateRecord): boolean => {
   if (!debate.events || !Array.isArray(debate.events)) return false
-  return debate.events.some(e => 
-    e.type === 'hitl_approval_required' || 
-    e.type === 'hitl_feedback' || 
+  return debate.events.some(e =>
+    e.type === 'hitl_required' ||
+    e.type === 'hitl_approval_required' ||
+    e.type === 'hitl_feedback' ||
     e.type?.includes('hitl')
   )
 }
@@ -96,9 +116,16 @@ const hasHitl = (debate: DebateRecord): boolean => {
 const getDebateConclusion = (debate: DebateRecord): string => {
   if (!debate.events || !Array.isArray(debate.events)) return ''
   const rev = [...debate.events].reverse()
-  const conclusionEvt = rev.find(e => 
-    e.content && 
-    (e.type === 'synthesis' || e.type === 'conclusion' || e.type === 'agent_completed' || e.type === 'final_response')
+  const conclusionEvt = rev.find(e =>
+    e.content &&
+    (
+      e.type === 'done' ||
+      e.type === 'agent_completed' ||
+      e.type === 'message' ||
+      e.type === 'synthesis' ||
+      e.type === 'conclusion' ||
+      e.type === 'final_response'
+    )
   )
   if (conclusionEvt?.content && typeof conclusionEvt.content === 'string') {
     return conclusionEvt.content.trim().replace(/^#+\s*/g, '').slice(0, 160) + '...'

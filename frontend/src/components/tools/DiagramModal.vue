@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
+import { useModalShortcuts } from '../../composables/useModalShortcuts'
+import { useTimedReset } from '../../composables/useTimedReset'
 import { Copy, Check, X, ZoomIn, ZoomOut, RotateCcw, Network, Download } from '@lucide/vue'
 import mermaid from 'mermaid'
+import { sanitizeSvg } from '../../utils/sanitize'
 
 const props = withDefaults(
   defineProps<{
@@ -23,7 +26,7 @@ const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
-const isCopied = ref(false)
+const { state: isCopied, trigger: triggerCopied } = useTimedReset(false)
 const zoomLevel = ref(1)
 const diagramSvg = ref<string>('')
 const renderError = ref<string | null>(null)
@@ -34,11 +37,11 @@ try {
   mermaid.initialize({
     startOnLoad: false,
     theme: 'dark',
-    securityLevel: 'loose',
+    securityLevel: 'strict',
     fontFamily: 'monospace, sans-serif',
     flowchart: {
       useMaxWidth: false,
-      htmlLabels: true
+      htmlLabels: false
     },
     sequence: {
       useMaxWidth: false
@@ -65,8 +68,8 @@ const renderDiagram = async () => {
   const id = `mermaid-modal-${Date.now()}-${Math.floor(Math.random() * 10000)}`
   try {
     const { svg } = await mermaid.render(id, props.code)
-    // Remove rigid inline max-width from SVG so it scales fluidly and never clips
-    diagramSvg.value = svg.replace(/max-width:\s*[\d.]+px;?/gi, '')
+    // Remove rigid inline max-width from SVG so it scales fluidly, and sanitize SVG markup
+    diagramSvg.value = sanitizeSvg(svg.replace(/max-width:\s*[\d.]+px;?/gi, ''))
   } catch (err: unknown) {
     console.error('Error rendering Mermaid diagram:', err)
     renderError.value = err instanceof Error ? err.message : 'Error de sintaxis en el diagrama'
@@ -88,10 +91,7 @@ const copyCode = async () => {
   if (!props.code) return
   try {
     await navigator.clipboard.writeText(props.code)
-    isCopied.value = true
-    setTimeout(() => {
-      isCopied.value = false
-    }, 2000)
+    triggerCopied(true)
   } catch (err) {
     console.error('Failed to copy to clipboard:', err)
   }
@@ -140,13 +140,7 @@ const handleKeyDown = (event: KeyboardEvent) => {
   }
 }
 
-onMounted(() => {
-  window.addEventListener('keydown', handleKeyDown)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeyDown)
-})
+useModalShortcuts(() => props.isOpen, handleKeyDown)
 </script>
 
 <template>
@@ -158,7 +152,6 @@ onUnmounted(() => {
       class="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-2 sm:p-4 md:p-8 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] animate-fade-in border-0 m-0 w-full h-full max-w-none max-h-none text-inherit"
       @click.self="emit('close')"
       @cancel.prevent="emit('close')"
-      @keydown="handleKeyDown"
       aria-labelledby="diagram-modal-title"
       aria-modal="true"
     >

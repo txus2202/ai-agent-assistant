@@ -263,9 +263,13 @@ class TestDebateWebSocket:
             ev_completed = websocket.receive_json()
             assert ev_completed["type"] == EventType.AGENT_COMPLETED.value
             assert ev_completed["content"] == "Sphinx review"
+            assert ev_completed["metadata"]["total_tokens"] == "30"
 
             ev_done = websocket.receive_json()
             assert ev_done["type"] == EventType.DONE.value
+            assert ev_done["metadata"].get("metrics_reported") == "true"
+            assert "total_tokens" not in ev_done["metadata"]
+            assert "tokens" not in ev_done["metadata"]
 
         mock_runner.assert_awaited_once()
         _, kwargs = mock_runner.call_args
@@ -492,11 +496,23 @@ def test_debate_learning_interactive_tag_flow(ws_client, monkeypatch):
     assert captured["tags"] == ["atenea", "arquitectura"]
 
 
-def test_debate_learning_multisource_attachments(ws_client, monkeypatch):
+def test_debate_learning_multisource_attachments(ws_client, monkeypatch, tmp_path):
     """Metis processes different attachment file extensions with explicit tags."""
     from src.application.services.learn_from_source import LearnFromSource, SourceType, LearnResult
     from src.application.services.ingest_vault import IngestResult
+    from src.presentation.api.routes import upload
     from pathlib import Path
+
+    monkeypatch.setattr(upload, "TEMP_UPLOAD_DIR", str(tmp_path / "uploads"))
+    user_dir = upload.get_user_upload_dir("usr-test-ws")
+    user_dir.mkdir(parents=True, exist_ok=True)
+
+    pdf_file = user_dir / "guide.pdf"
+    md_file = user_dir / "architecture.md"
+    img_file = user_dir / "diagram.png"
+    pdf_file.write_bytes(b"%PDF-1.4")
+    md_file.write_text("# Arch", encoding="utf-8")
+    img_file.write_bytes(b"\x89PNG")
 
     captured_types = []
 
@@ -518,9 +534,9 @@ def test_debate_learning_multisource_attachments(ws_client, monkeypatch):
             "target_agent": "learning",
             "user_request": "Metis aprende estos documentos #docs #arquitectura",
             "attachments": [
-                "/tmp/guide.pdf",
-                "/tmp/architecture.md",
-                "/tmp/diagram.png",
+                str(pdf_file),
+                str(md_file),
+                str(img_file),
                 "https://example.com/spec",
             ],
         })
@@ -540,6 +556,9 @@ def test_debate_learning_multisource_attachments(ws_client, monkeypatch):
         SourceType.IMAGE,
         SourceType.URL,
     ]
+    assert not pdf_file.exists()
+    assert not md_file.exists()
+    assert not img_file.exists()
 
 
 def test_multi_agent_sequential_dispatch_in_arrival_order(ws_client, monkeypatch):
@@ -753,6 +772,176 @@ def test_debate_learning_explicit_target_domain_skips_prompting(ws_client, monke
         ev2 = websocket.receive_json()
         assert ev2["type"] == EventType.AGENT_COMPLETED.value
         assert captured_kwargs.get("target_domain") == "01_enterprise_architecture"
+
+
+@pytest.mark.parametrize(
+    "malicious_path",
+    [
+        "../../../app/.env",
+        "../../atenea.db",
+        "/etc/passwd",
+        "/app/data/atenea.db",
+        "../other_user/secret.pdf",
+        "/tmp/atenea_uploads/other_user/secret.pdf",
+        "file:///etc/passwd",
+    ],
+)
+def test_debate_rejects_path_traversal_attachments(ws_client, monkeypatch, tmp_path, malicious_path):
+    """WebSocket rejects arbitrary filesystem paths outside the authenticated user's upload directory."""
+    from src.application.services.learn_from_source import LearnFromSource
+    from src.presentation.api.routes import upload
+
+    monkeypatch.setattr(upload, "TEMP_UPLOAD_DIR", str(tmp_path / "uploads"))
+    called = False
+
+    def spy_learn_run(**kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("LearnFromSource.run must never execute for blocked paths")
+
+    monkeypatch.setattr(LearnFromSource, "run", spy_learn_run)
+
+    with ws_client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({
+            "type": "start",
+            "session_id": str(uuid.uuid4()),
+            "target_agent": "learning",
+            "user_request": "Aprende esto #sec",
+            "attachments": [malicious_path],
+        })
+
+        err = websocket.receive_json()
+        assert err["type"] == "error"
+        assert "attachment" in err["content"].lower()
+
+    assert not called
+
+
+def test_debate_rejects_symlink_escape_attachment(ws_client, monkeypatch, tmp_path):
+    """A symlink inside the user upload folder pointing outside must be rejected."""
+    from src.application.services.learn_from_source import LearnFromSource
+    from src.presentation.api.routes import upload
+
+    monkeypatch.setattr(upload, "TEMP_UPLOAD_DIR", str(tmp_path / "uploads"))
+    user_dir = upload.get_user_upload_dir("usr-test-ws")
+    user_dir.mkdir(parents=True, exist_ok=True)
+
+    secret_file = tmp_path / "host_secret.txt"
+    secret_file.write_text("SECRET_TOKEN=123", encoding="utf-8")
+    symlink_path = user_dir / "leak.md"
+    symlink_path.symlink_to(secret_file)
+
+    called = False
+
+    def spy_learn_run(**kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(LearnFromSource, "run", spy_learn_run)
+
+    with ws_client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({
+            "type": "start",
+            "session_id": str(uuid.uuid4()),
+            "target_agent": "learning",
+            "user_request": "Aprende esto #sec",
+            "attachments": [str(symlink_path)],
+        })
+
+        err = websocket.receive_json()
+        assert err["type"] == "error"
+        assert "attachment" in err["content"].lower()
+
+    assert not called
+
+
+def test_debate_learning_accepts_opaque_attachment_id_and_deletes_temp_file(ws_client, monkeypatch, tmp_path):
+    """Clients can pass the opaque attachment_id returned by /upload and the temp file is purged afterwards."""
+    from pathlib import Path
+    from src.application.services.learn_from_source import LearnFromSource, LearnResult
+    from src.application.services.ingest_vault import IngestResult
+    from src.presentation.api.routes import upload
+
+    monkeypatch.setattr(upload, "TEMP_UPLOAD_DIR", str(tmp_path / "uploads"))
+    user_dir = upload.get_user_upload_dir("usr-test-ws")
+    user_dir.mkdir(parents=True, exist_ok=True)
+    uploaded = user_dir / "abc12345_notes.md"
+    uploaded.write_text("# Clean Arch", encoding="utf-8")
+
+    seen_sources = []
+
+    def fake_learn_run(**kwargs):
+        seen_sources.append(kwargs["source"])
+        return LearnResult(
+            source=kwargs["source"],
+            generated_file=Path("/vault/learned/notes.md"),
+            ingest_result=IngestResult(files_processed=1, chunks_upserted=1),
+            errors=[],
+        )
+
+    monkeypatch.setattr(LearnFromSource, "run", fake_learn_run)
+
+    with ws_client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({
+            "type": "start",
+            "session_id": str(uuid.uuid4()),
+            "target_agent": "learning",
+            "user_request": "Aprende esto #arch",
+            "attachments": ["abc12345_notes.md"],
+        })
+
+        assert websocket.receive_json()["type"] == EventType.AGENT_STARTED.value
+        assert websocket.receive_json()["type"] == EventType.AGENT_COMPLETED.value
+        assert websocket.receive_json()["type"] == EventType.DONE.value
+
+    assert seen_sources == [str(uploaded.resolve())]
+    assert not uploaded.exists()
+
+
+def test_dict_to_hitl_response_rejects_cancel_payload():
+    from src.presentation.api.ws.serializers import dict_to_hitl_response
+
+    with pytest.raises(ValueError, match="Cancellation"):
+        dict_to_hitl_response({"type": "cancel"})
+
+    with pytest.raises(ValueError, match="Cancellation"):
+        dict_to_hitl_response({"type": "hitl_response", "decision": "abort"})
+
+
+def test_cancel_during_hitl_aborts_without_approving_next_phase(ws_client):
+    """Sending {type: 'cancel'} while paused at HITL must abort cleanly instead of defaulting to APPROVE."""
+    from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
+    from src.presentation.api.config import get_settings
+
+    session_id = f"cancel-hitl-{uuid.uuid4()}"
+
+    with ws_client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({
+            "type": "start",
+            "session_id": session_id,
+            "user_request": "Diseñar arquitectura multi-región",
+        })
+
+        ev1 = websocket.receive_json()
+        assert ev1["type"] == EventType.AGENT_STARTED.value
+
+        ev_hitl1 = websocket.receive_json()
+        assert ev_hitl1["type"] == EventType.HITL_REQUIRED.value
+
+        # Cancel mid-HITL instead of responding with hitl_response
+        websocket.send_json({"type": "cancel"})
+
+        ev_done = websocket.receive_json()
+        assert ev_done["type"] == EventType.DONE.value
+        assert "cancelado" in ev_done["content"].lower()
+        assert ev_done["metadata"].get("cancelled") == "true"
+
+    repo = SqliteDebateRepository(str(get_settings().sqlite_db_path))
+    record = repo.find_by_id(session_id, allow_unscoped=True)
+    assert record is not None
+    assert record.status == "aborted"
+
+
 
 
 

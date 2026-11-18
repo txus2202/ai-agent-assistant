@@ -211,4 +211,34 @@ describe('HistoryView.vue', () => {
 
     expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to delete debate:', expect.any(Error))
   })
+
+  it('extracts done conclusions, detects hitl_required badges, and avoids token double counting', async () => {
+    const mockDebates = [
+      {
+        id: 'deb-metrics',
+        created_at: '2026-11-18T12:00:00Z',
+        user_request: 'Revisión de arquitectura',
+        events: [
+          { type: 'start', user_request: 'Revisión de arquitectura' },
+          { type: 'hitl_required', role: 'Hermes', content: 'Aprobar alcance' },
+          { type: 'agent_completed', role: 'Hermes', content: 'Alcance ok', metadata: { total_tokens: '120', tokens: '120' } },
+          { type: 'done', role: 'Hermes', content: 'Alcance ok', metadata: { metrics_reported: 'true' } },
+          { type: 'done', role: 'Atenea', content: 'Dictamen final consolidado.', metadata: { total_tokens: '80', tokens: '80' } },
+        ]
+      }
+    ]
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockDebates)
+    })
+
+    const wrapper = mount(HistoryView, {
+      global: { plugins: [router, createPinia()] }
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Dictamen final consolidado.')
+    expect(wrapper.text()).toContain('200')
+    expect(wrapper.text()).not.toContain('320')
+  })
 })

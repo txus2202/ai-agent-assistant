@@ -72,16 +72,19 @@ export interface DebateTopology {
   implementers: string[]
 }
 
-// Resolves WebSocket URL dynamically to support local dev, reverse proxies, and Tailscale (WSS)
+// Resolves WebSocket URL dynamically to support local Vite /ws proxy, Nginx HTTPS/WSS, and Tailscale
 export function resolveWsUrl(path: string): string {
-  if (import.meta.env.VITE_WS_URL) {
-    return import.meta.env.VITE_WS_URL.replace('/ws/debate', path)
-  }
-  if (typeof window !== 'undefined' && window.location) {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    if (window.location.port === '5173' || window.location.port === '4173') {
-      return `ws://${window.location.hostname}:8000${path}`
+  const configured = import.meta.env.VITE_WS_URL?.trim()
+  if (configured) {
+    try {
+      const parsed = new URL(configured)
+      return `${parsed.origin}${path}`
+    } catch {
+      return configured.replace(/\/ws\/debate\/?$/, '') + path
     }
+  }
+  if (typeof window !== 'undefined' && window.location?.host) {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     return `${protocol}//${window.location.host}${path}`
   }
   return `ws://localhost:8000${path}`
@@ -115,7 +118,7 @@ export async function uploadFile(file: File): Promise<string> {
   }
 
   const data = await response.json()
-  return data.path
+  return data.attachment_id || data.path
 }
 
 export function normalizeAgentRole(r?: string | null): string {
@@ -339,8 +342,14 @@ export const useDebateStore = defineStore('debate', () => {
   let audioPlaySessionId = 0
   const ttsStopCallbacks: Array<() => void> = []
 
-  function onTtsStop(callback: () => void) {
+  function onTtsStop(callback: () => void): () => void {
     ttsStopCallbacks.push(callback)
+    return () => {
+      const idx = ttsStopCallbacks.indexOf(callback)
+      if (idx !== -1) {
+        ttsStopCallbacks.splice(idx, 1)
+      }
+    }
   }
 
   let silentWavUrl: string | null = null
@@ -481,10 +490,13 @@ export const useDebateStore = defineStore('debate', () => {
       if (wwAudioContext?.state === 'suspended') {
         wwAudioContext.resume().catch(() => {})
       }
+      window.removeEventListener('pointerdown', unlockOnGesture)
+      window.removeEventListener('keydown', unlockOnGesture)
+      window.removeEventListener('touchstart', unlockOnGesture)
     }
-    window.addEventListener('pointerdown', unlockOnGesture, { passive: true })
-    window.addEventListener('keydown', unlockOnGesture, { passive: true })
-    window.addEventListener('touchstart', unlockOnGesture, { passive: true })
+    window.addEventListener('pointerdown', unlockOnGesture, { passive: true, once: true })
+    window.addEventListener('keydown', unlockOnGesture, { passive: true, once: true })
+    window.addEventListener('touchstart', unlockOnGesture, { passive: true, once: true })
   }
 
   // Fetch agent topology from backend
@@ -542,31 +554,56 @@ export const useDebateStore = defineStore('debate', () => {
   }
 
 
+  const MAX_RECONNECT_ATTEMPTS = 8
+  const AUTH_WS_CLOSE_CODES = new Set([1008, 4001, 4003])
+
   let ws: WebSocket | null = null
   let reconnectAttempts = 0
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
   let shouldReconnect = true
+  let shouldResyncOnOpen = false
+
+  async function resyncSessionFromHistory(sessionId: string) {
+    try {
+      const response = await fetch(`/api/debates/${encodeURIComponent(sessionId)}`)
+      if (!response.ok) return
+      const session: DebateSession = await response.json()
+      if (Array.isArray(session.events) && session.events.length > rawEvents.value.length) {
+        loadDebate(session)
+      } else if (session.status && session.status !== 'running' && isDebating.value) {
+        isDebating.value = false
+        resetActiveAgentsToStandby()
+      }
+    } catch {
+      // Best-effort sync after WebSocket reconnection
+    }
+  }
 
   function connect() {
     shouldReconnect = true
     const wsUrl = resolveWsUrl('/ws/debate')
-    
+
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
       return
     }
 
     ws = new WebSocket(wsUrl)
-    
+
     ws.onopen = () => {
       console.log('[WS] Connected to', wsUrl)
       isConnected.value = true
       reconnectAttempts = 0
+      if (shouldResyncOnOpen && currentSessionId.value) {
+        shouldResyncOnOpen = false
+        void resyncSessionFromHistory(currentSessionId.value)
+      } else {
+        shouldResyncOnOpen = false
+      }
     }
-    
+
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
-        // Add timestamp to raw event if not present
         if (!data.timestamp) {
           data.timestamp = new Date().toISOString()
         }
@@ -576,22 +613,35 @@ export const useDebateStore = defineStore('debate', () => {
         console.error('[WS] Failed to parse message', event.data)
       }
     }
-    
-    ws.onclose = () => {
+
+    ws.onclose = (closeEvent?: CloseEvent) => {
       console.log('[WS] Disconnected')
+      const wasDebating = isDebating.value
       isConnected.value = false
-      if (isDebating.value) {
+      if (wasDebating) {
         handleError({
           type: 'error',
           content: 'Conexión interrumpida con el servidor de agentes.'
         })
       }
       ws = null
+
+      const closeCode = closeEvent?.code
+      if (closeCode !== undefined && AUTH_WS_CLOSE_CODES.has(closeCode)) {
+        shouldReconnect = false
+        shouldResyncOnOpen = false
+        return
+      }
+
+      if (shouldReconnect && wasDebating && currentSessionId.value) {
+        shouldResyncOnOpen = true
+      }
+
       if (shouldReconnect) {
         attemptReconnect()
       }
     }
-    
+
     ws.onerror = (error) => {
       console.error('[WS] Error', error)
       if (isDebating.value) {
@@ -605,6 +655,7 @@ export const useDebateStore = defineStore('debate', () => {
 
   function disconnect() {
     shouldReconnect = false
+    shouldResyncOnOpen = false
     if (reconnectTimeout) {
       clearTimeout(reconnectTimeout)
       reconnectTimeout = null
@@ -619,21 +670,58 @@ export const useDebateStore = defineStore('debate', () => {
   }
 
   function attemptReconnect() {
+    if (!shouldReconnect) return
     if (reconnectTimeout) {
       clearTimeout(reconnectTimeout)
+      reconnectTimeout = null
     }
-    
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      shouldReconnect = false
+      console.warn(`[WS] Max reconnection attempts (${MAX_RECONNECT_ATTEMPTS}) reached`)
+      return
+    }
+
     // Exponential backoff (max 10s)
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000)
     console.log(`[WS] Attempting to reconnect in ${delay}ms...`)
-    
+
     reconnectTimeout = setTimeout(() => {
       reconnectAttempts++
       connect()
     }, delay)
   }
 
+  const streamedTokenEstimates: Record<string, { tokens: number; completionTokens: number }> = {}
+  let lastCompletedTurnKey: string | null = null
+
+  function clearStreamedEstimate(role?: string) {
+    if (!role) {
+      for (const k of Object.keys(streamedTokenEstimates)) {
+        delete streamedTokenEstimates[k]
+      }
+      return
+    }
+    delete streamedTokenEstimates[role]
+  }
+
+  function reconcileStreamedEstimate(agent: Agent) {
+    const est = streamedTokenEstimates[agent.role]
+    if (!est) return
+    agent.tokens = Math.max(0, (agent.tokens || 0) - est.tokens)
+    agent.completionTokens = Math.max(0, (agent.completionTokens || 0) - est.completionTokens)
+    sessionTotalTokens.value = Math.max(0, sessionTotalTokens.value - est.tokens)
+    delete streamedTokenEstimates[agent.role]
+  }
+
+  function buildCompletionDedupKey(role: string, event: SupervisorEvent): string {
+    const tok = String(event.metadata?.total_tokens || event.metadata?.tokens || '')
+    const contentLen = event.content ? String(event.content.length) : '0'
+    return `${role}:${tok}:${contentLen}`
+  }
+
   function clearSession() {
+    clearStreamedEstimate()
+    lastCompletedTurnKey = null
     messages.value = []
     rawEvents.value = []
     currentSessionId.value = null
@@ -941,6 +1029,8 @@ export const useDebateStore = defineStore('debate', () => {
       }
     }
 
+    clearStreamedEstimate(agent.role)
+    lastCompletedTurnKey = null
     agent.state = 'ACTIVE'
     agent.turns = (agent.turns || 0) + 1
     agent.startedAt = Date.now()
@@ -1018,10 +1108,20 @@ export const useDebateStore = defineStore('debate', () => {
     if (!isAgentReading(agent.role)) {
       agent.state = 'COMPLETED'
     }
+    const hasAuthoritativeTokens = Boolean(
+      event.metadata?.tokens ||
+      event.metadata?.total_tokens ||
+      event.metadata?.prompt_tokens ||
+      event.metadata?.completion_tokens
+    )
+    if (hasAuthoritativeTokens) {
+      reconcileStreamedEstimate(agent)
+    }
     updateAgentLatency(agent, event)
     const estTokens = updateAgentTokens(agent, event)
     updateCachedTokens(event, estTokens)
     sessionTotalTokens.value += estTokens
+    lastCompletedTurnKey = buildCompletionDedupKey(agent.role, event)
   }
 
   // Streaming TTS & chunk accumulation for real-time speech synthesis
@@ -1032,8 +1132,14 @@ export const useDebateStore = defineStore('debate', () => {
   let hasSpokenInCurrentMessage = false
   const ttsChunkCallbacks: Array<(chunk: string, role?: string) => void> = []
 
-  function onTtsChunkReady(callback: (chunk: string, role?: string) => void) {
+  function onTtsChunkReady(callback: (chunk: string, role?: string) => void): () => void {
     ttsChunkCallbacks.push(callback)
+    return () => {
+      const idx = ttsChunkCallbacks.indexOf(callback)
+      if (idx !== -1) {
+        ttsChunkCallbacks.splice(idx, 1)
+      }
+    }
   }
 
   function emitTtsText(text: string, role?: string) {
@@ -1162,6 +1268,11 @@ export const useDebateStore = defineStore('debate', () => {
       streamingAgent.completionTokens = (streamingAgent.completionTokens || 0) + chunkTokens
       streamingAgent.tokens = (streamingAgent.tokens || 0) + chunkTokens
       sessionTotalTokens.value += chunkTokens
+      const prevEst = streamedTokenEstimates[streamingAgent.role] || { tokens: 0, completionTokens: 0 }
+      streamedTokenEstimates[streamingAgent.role] = {
+        tokens: prevEst.tokens + chunkTokens,
+        completionTokens: prevEst.completionTokens + chunkTokens
+      }
     }
 
     feedTtsStreamingChunk(chunk, agentRole || event.role || undefined)
@@ -1179,12 +1290,34 @@ export const useDebateStore = defineStore('debate', () => {
     const targetAgent = findAgent(doneRole) || (normalizeAgentRole(doneRole) === 'supervisor' ? findAgent('supervisor') : undefined)
     if (!targetAgent) return undefined
 
+    const isDuplicateCompanionDone =
+      event.metadata?.metrics_reported === 'true' ||
+      (lastCompletedTurnKey !== null &&
+        buildCompletionDedupKey(targetAgent.role, event) === lastCompletedTurnKey)
+    lastCompletedTurnKey = null
+
+    if (isDuplicateCompanionDone) {
+      if (!isAgentReading(targetAgent.role)) {
+        targetAgent.state = 'COMPLETED'
+      }
+      return targetAgent
+    }
+
     if (event.metadata) {
+      const hasAuthoritativeTokens = Boolean(
+        event.metadata.tokens ||
+        event.metadata.total_tokens ||
+        event.metadata.prompt_tokens ||
+        event.metadata.completion_tokens
+      )
+      if (hasAuthoritativeTokens) {
+        reconcileStreamedEstimate(targetAgent)
+      }
       updateAgentLatency(targetAgent, event)
       const estTokens = updateAgentTokens(targetAgent, event)
       updateCachedTokens(event, estTokens)
       sessionTotalTokens.value += estTokens
-    } else if (event.content) {
+    } else if (event.content && !streamedTokenEstimates[targetAgent.role]) {
       const words = event.content.trim().split(/\s+/).filter(Boolean).length
       const outTokens = Math.max(12, Math.round(words * 1.35))
       const inTokens = Math.max(25, Math.round(outTokens * 1.4))
@@ -1574,6 +1707,9 @@ export const useDebateStore = defineStore('debate', () => {
     isWakeWordTriggered.value = false
     
     if (wakeWordWs) {
+      wakeWordWs.onclose = null
+      wakeWordWs.onerror = null
+      wakeWordWs.onmessage = null
       wakeWordWs.close()
       wakeWordWs = null
     }
@@ -1599,12 +1735,15 @@ export const useDebateStore = defineStore('debate', () => {
     isLearningSession.value = true
     learningStatusMessage.value = null
     try {
-      const sid = sessionId || currentSessionId.value
+      const sid = (sessionId || currentSessionId.value || '').trim()
+      if (!sid) {
+        throw new Error('No hay sesión activa para guardar en el Vault')
+      }
       const response = await fetch('/api/learning/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          session_id: sid || undefined,
+          session_id: sid,
           content: content || undefined,
         }),
       })
@@ -1613,7 +1752,8 @@ export const useDebateStore = defineStore('debate', () => {
         throw new Error(err.detail || 'Error al persistir el aprendizaje')
       }
       const data = await response.json()
-      const fileName = data.generated_file ? data.generated_file.split('/').pop() : 'nota de arquitectura'
+      const rawFile = data.generated_file || data.file
+      const fileName = rawFile ? String(rawFile).split('/').pop() : 'nota de arquitectura'
       const msg = `✅ Metis ha asimilado y guardado la síntesis en el Vault: ${fileName}`
       learningStatusMessage.value = msg
       return { success: true, message: msg }

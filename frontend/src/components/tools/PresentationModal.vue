@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useModalShortcuts } from '../../composables/useModalShortcuts'
+import { useTimedReset } from '../../composables/useTimedReset'
 import {
   MonitorPlay,
   ChevronLeft,
@@ -43,7 +45,7 @@ const emit = defineEmits<{
 }>()
 
 const currentSlideIndex = ref(1)
-const isCopied = ref(false)
+const { state: isCopied, trigger: triggerCopied, clear: clearCopied } = useTimedReset(false)
 const isFullscreen = ref(false)
 const isExportingPptx = ref(false)
 const isDownloadMenuOpen = ref(false)
@@ -72,6 +74,7 @@ watch(
   (open) => {
     if (open) {
       currentSlideIndex.value = 1
+      clearCopied()
       isCopied.value = false
       isDownloadMenuOpen.value = false
     }
@@ -113,10 +116,7 @@ useTouchSwipe(stageRef, {
 const copyContent = async () => {
   try {
     await navigator.clipboard.writeText(props.content)
-    isCopied.value = true
-    setTimeout(() => {
-      isCopied.value = false
-    }, 2000)
+    triggerCopied(true)
   } catch (err) {
     console.error('Failed to copy presentation markdown:', err)
   }
@@ -201,17 +201,18 @@ const handleKeyDown = (e: KeyboardEvent) => {
       emit('close')
     }
   } else if (e.key.toLowerCase() === 'f') {
+    e.preventDefault()
     toggleFullscreen()
   }
 }
 
+useModalShortcuts(() => props.isOpen, handleKeyDown)
+
 onMounted(() => {
-  window.addEventListener('keydown', handleKeyDown)
   document.addEventListener('click', handleClickOutside)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeyDown)
   document.removeEventListener('click', handleClickOutside)
 })
 </script>
@@ -225,7 +226,6 @@ onUnmounted(() => {
       class="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-3 sm:p-6 md:p-8 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] animate-fade-in border-0 m-0 w-full h-full max-w-none max-h-none text-inherit"
       @click.self="emit('close')"
       @cancel.prevent="emit('close')"
-      @keydown="handleKeyDown"
       aria-labelledby="presentation-modal-title"
       aria-modal="true"
     >

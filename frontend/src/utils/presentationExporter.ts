@@ -209,7 +209,7 @@ export function generateStandalonePresentationHtml(data: PresentationData): stri
 
         // Update dots
         if (dotsContainer) {
-          dotsContainer.innerHTML = '';
+          dotsContainer.replaceChildren();
           for (let i = 1; i <= total; i++) {
             const dot = document.createElement('span');
             dot.className = 'w-2 h-2 rounded-full cursor-pointer transition-all ' +

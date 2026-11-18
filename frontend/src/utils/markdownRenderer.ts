@@ -3,6 +3,8 @@
  * Zero external dependencies.
  */
 
+import { sanitizeHtml, sanitizeHtmlToFragment } from './sanitize'
+
 function escapeHtml(text: string): string {
   return text
     .replaceAll('&', '&amp;')
@@ -226,7 +228,7 @@ export function renderMarkdownToHtml(markdown: string): string {
     finalHtml = finalHtml.replaceAll(`__CODE_BLOCK_${index}__`, block)
   })
 
-  return finalHtml
+  return sanitizeHtml(finalHtml)
 }
 
 function formatInline(text: string): string {
@@ -267,6 +269,120 @@ export function downloadMarkdownFile(content: string, filename?: string): void {
   URL.revokeObjectURL(url)
 }
 
+const PRINT_DOCUMENT_CSS = `
+  @page {
+    margin: 20mm;
+    size: A4;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1a202c;
+    background: #ffffff;
+    line-height: 1.65;
+    padding: 24px;
+    margin: 0;
+    font-size: 13.5px;
+  }
+  .doc-h1 {
+    font-size: 24px;
+    font-weight: 800;
+    color: #0f172a;
+    border-bottom: 2px solid #0f172a;
+    padding-bottom: 10px;
+    margin-top: 0;
+    margin-bottom: 20px;
+  }
+  .doc-h2 {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1e293b;
+    border-bottom: 1px solid #cbd5e1;
+    padding-bottom: 6px;
+    margin-top: 28px;
+    margin-bottom: 12px;
+  }
+  .doc-h3 {
+    font-size: 15px;
+    font-weight: 600;
+    color: #334155;
+    margin-top: 20px;
+    margin-bottom: 8px;
+  }
+  .doc-p {
+    margin-top: 0;
+    margin-bottom: 12px;
+    text-align: justify;
+  }
+  .doc-ul, .doc-ol {
+    margin-top: 4px;
+    margin-bottom: 14px;
+    padding-left: 24px;
+  }
+  li {
+    margin-bottom: 4px;
+  }
+  .doc-code-block {
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    overflow-x: auto;
+    margin: 14px 0;
+    white-space: pre-wrap;
+  }
+  .doc-inline-code {
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    color: #0f172a;
+  }
+  .doc-blockquote {
+    border-left: 3px solid #64748b;
+    margin: 14px 0;
+    padding-left: 14px;
+    color: #475569;
+    font-style: italic;
+  }
+  .doc-table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 16px 0;
+    font-size: 13px;
+  }
+  .doc-table th, .doc-table td {
+    border: 1px solid #cbd5e1;
+    padding: 8px 12px;
+    text-align: left;
+  }
+  .doc-table th {
+    background: #f8fafc;
+    font-weight: 600;
+    color: #0f172a;
+  }
+  .doc-hr {
+    border: 0;
+    border-top: 1px solid #e2e8f0;
+    margin: 24px 0;
+  }
+  .doc-footer {
+    margin-top: 40px;
+    padding-top: 12px;
+    border-top: 1px solid #e2e8f0;
+    font-size: 11px;
+    color: #64748b;
+    display: flex;
+    justify-content: space-between;
+  }
+  @media print {
+    body { padding: 0; }
+  }
+`
+
 /**
  * Generates and triggers clean print-to-PDF with document styles.
  */
@@ -281,136 +397,34 @@ export function exportDocumentToPdf(markdown: string, title?: string): void {
     return
   }
 
-  const htmlDoc = `
-<head>
-  <meta charset="utf-8" />
-  <title>${escapeHtml(docTitle)}</title>
-  <style>
-    @page {
-      margin: 20mm;
-      size: A4;
-    }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      color: #1a202c;
-      background: #ffffff;
-      line-height: 1.65;
-      padding: 24px;
-      margin: 0;
-      font-size: 13.5px;
-    }
-    .doc-h1 {
-      font-size: 24px;
-      font-weight: 800;
-      color: #0f172a;
-      border-bottom: 2px solid #0f172a;
-      padding-bottom: 10px;
-      margin-top: 0;
-      margin-bottom: 20px;
-    }
-    .doc-h2 {
-      font-size: 18px;
-      font-weight: 700;
-      color: #1e293b;
-      border-bottom: 1px solid #cbd5e1;
-      padding-bottom: 6px;
-      margin-top: 28px;
-      margin-bottom: 12px;
-    }
-    .doc-h3 {
-      font-size: 15px;
-      font-weight: 600;
-      color: #334155;
-      margin-top: 20px;
-      margin-bottom: 8px;
-    }
-    .doc-p {
-      margin-top: 0;
-      margin-bottom: 12px;
-      text-align: justify;
-    }
-    .doc-ul, .doc-ol {
-      margin-top: 4px;
-      margin-bottom: 14px;
-      padding-left: 24px;
-    }
-    li {
-      margin-bottom: 4px;
-    }
-    .doc-code-block {
-      background: #f1f5f9;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      padding: 12px 14px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 12px;
-      overflow-x: auto;
-      margin: 14px 0;
-      white-space: pre-wrap;
-    }
-    .doc-inline-code {
-      background: #f1f5f9;
-      border: 1px solid #e2e8f0;
-      padding: 2px 5px;
-      border-radius: 4px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 12px;
-      color: #0f172a;
-    }
-    .doc-blockquote {
-      border-left: 3px solid #64748b;
-      margin: 14px 0;
-      padding-left: 14px;
-      color: #475569;
-      font-style: italic;
-    }
-    .doc-table {
-      border-collapse: collapse;
-      width: 100%;
-      margin: 16px 0;
-      font-size: 13px;
-    }
-    .doc-table th, .doc-table td {
-      border: 1px solid #cbd5e1;
-      padding: 8px 12px;
-      text-align: left;
-    }
-    .doc-table th {
-      background: #f8fafc;
-      font-weight: 600;
-      color: #0f172a;
-    }
-    .doc-hr {
-      border: 0;
-      border-top: 1px solid #e2e8f0;
-      margin: 24px 0;
-    }
-    .doc-footer {
-      margin-top: 40px;
-      padding-top: 12px;
-      border-top: 1px solid #e2e8f0;
-      font-size: 11px;
-      color: #64748b;
-      display: flex;
-      justify-content: space-between;
-    }
-    @media print {
-      body { padding: 0; }
-    }
-  </style>
-</head>
-<body>
-  <main>${htmlContent}</main>
-  <div class="doc-footer">
-    <span>Documentación generada por Atenea AI (Calíope)</span>
-    <span>${new Date().toLocaleDateString('es-ES')}</span>
-  </div>
-</body>
-`
+  const printDoc = printWindow.document
+  if (printDoc?.documentElement && typeof printDoc.createElement === 'function') {
+    const headEl = printDoc.createElement('head')
+    const metaEl = printDoc.createElement('meta')
+    metaEl.setAttribute('charset', 'utf-8')
+    const titleEl = printDoc.createElement('title')
+    titleEl.textContent = docTitle
+    const styleEl = printDoc.createElement('style')
+    styleEl.textContent = PRINT_DOCUMENT_CSS
+    headEl.append(metaEl, titleEl, styleEl)
 
-  if (printWindow.document?.documentElement) {
-    printWindow.document.documentElement.innerHTML = htmlDoc
+    const bodyEl = printDoc.createElement('body')
+    const mainEl = printDoc.createElement('main')
+    const fragment = sanitizeHtmlToFragment(htmlContent)
+    mainEl.appendChild(printDoc.importNode(fragment, true))
+
+    const footerEl = printDoc.createElement('div')
+    footerEl.className = 'doc-footer'
+    const brandSpan = printDoc.createElement('span')
+    brandSpan.textContent = 'Documentación generada por Atenea AI (Calíope)'
+    const dateSpan = printDoc.createElement('span')
+    dateSpan.textContent = new Date().toLocaleDateString('es-ES')
+    footerEl.append(brandSpan, dateSpan)
+
+    bodyEl.append(mainEl, footerEl)
+    printDoc.documentElement.replaceChildren(headEl, bodyEl)
   }
+
   printWindow.focus?.()
   printWindow.print?.()
 }

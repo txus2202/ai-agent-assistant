@@ -171,4 +171,31 @@ describe('DiagramModal.vue', () => {
     expect(global.URL.createObjectURL).toHaveBeenCalled()
     expect(clickSpy).toHaveBeenCalled()
   })
+
+  it('initializes mermaid with strict securityLevel and sanitizes rendered SVG payloads', async () => {
+    const mermaid = (await import('mermaid')).default
+    vi.mocked(mermaid.render).mockResolvedValueOnce({
+      svg: '<svg onload="alert(1)"><g><text>Safe</text></g><script>alert(2)</script><foreignObject><div>evil</div></foreignObject></svg>',
+      diagramType: 'flowchart'
+    })
+
+    const wrapper = mount(DiagramModal, {
+      props: {
+        isOpen: true,
+        code: 'flowchart TD\nA-->B'
+      }
+    })
+    await flushPromises()
+
+    expect(mermaid.initialize).toHaveBeenCalledWith(
+      expect.objectContaining({ securityLevel: 'strict' })
+    )
+    const rendered = wrapper.find('[data-test="rendered-diagram-svg"]')
+    expect(rendered.exists()).toBe(true)
+    const html = rendered.html()
+    expect(html).toContain('Safe')
+    expect(html).not.toContain('<script')
+    expect(html).not.toContain('onload')
+    expect(html.toLowerCase()).not.toContain('foreignobject')
+  })
 })

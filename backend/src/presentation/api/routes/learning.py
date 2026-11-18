@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from src.application.services.learn_from_session import LearnFromSession
 from src.application.services.vault_domain_service import VaultDomainService
@@ -25,6 +25,14 @@ class LearnSessionRequest(BaseModel):
     session_id: str
     content: str | None = None
     target_domain: str | None = None
+
+    @field_validator("session_id")
+    @classmethod
+    def validate_session_id(cls, v: str) -> str:
+        cleaned = v.strip()
+        if not cleaned:
+            raise ValueError("session_id must not be empty")
+        return cleaned
 
 
 class CreateDomainRequest(BaseModel):
@@ -109,9 +117,11 @@ async def learn_session(
     if result.errors:
         raise HTTPException(status_code=400, detail="; ".join(result.errors))
 
+    generated_name = str(result.generated_file.name) if result.generated_file else ""
     return {
         "ok": True,
-        "file": str(result.generated_file.name) if result.generated_file else "",
+        "generated_file": generated_name,
+        "file": generated_name,
         "chunks_ingested": result.ingest_result.chunks_upserted,
     }
 

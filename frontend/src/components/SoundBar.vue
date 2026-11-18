@@ -319,7 +319,7 @@ const drawIdleWaveform = (
 }
 
 const animateWaveform = () => {
-  if (!waveformCanvasRef.value) return
+  if (isComponentUnmounted || !waveformCanvasRef.value) return
   const wCanvas = waveformCanvasRef.value
   if (wCanvas.clientWidth > 0 && wCanvas.width !== wCanvas.clientWidth) {
     wCanvas.width = wCanvas.clientWidth
@@ -337,7 +337,9 @@ const animateWaveform = () => {
     drawIdleWaveform(wCtx, wCanvas.width, wCanvas.height / 2, isLight)
   }
 
-  waveAnimationFrameId = requestAnimationFrame(animateWaveform)
+  if (!isComponentUnmounted) {
+    waveAnimationFrameId = requestAnimationFrame(animateWaveform)
+  }
 }
 
 watch(() => store.isWakeWordTriggered, (triggered) => {

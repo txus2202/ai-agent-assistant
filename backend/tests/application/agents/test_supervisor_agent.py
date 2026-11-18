@@ -1321,6 +1321,93 @@ class TestSupervisorAgentFaultTolerance:
         # PropTwo was called twice (initial + explicit retry)
         assert call_counts["PropTwo"] == 2
 
+    @pytest.mark.anyio
+    async def test_phase_4_emits_message_and_no_token_double_count_in_direct_modes(self, monkeypatch):
+        from src.application.agents import supervisor_agent as _mod
+        from src.application.agents.supervisor_agent import SupervisorAgent
+        from src.domain.agents.debate_topology import DebateTopology
+        from src.application.agents.sub_agent_runner import SubAgentResponse
+
+        test_topology = DebateTopology(
+            project_name="Test",
+            project_description="Test",
+            supervisor="Coordinator",
+            interpreters=(),
+            proposers=(),
+            evaluators=(),
+            implementers=("ImplOne",),
+        )
+
+        monkeypatch.setattr(
+            _mod,
+            "classify_intent",
+            lambda *args, **kwargs: _mod.TriageDecision(mode="adaptive_debate", skip_interpreter=True),
+        )
+
+        async def _mock_run(role, user_request, llm_provider, document_store, model_name, **kwargs):
+            return SubAgentResponse(
+                role=role,
+                content=f"Deliverable from {role}",
+                context_chunks=[],
+                tokens={"input": 30, "output": 20, "total": 50},
+                latency=0.2,
+                model_name="test-model",
+            )
+
+        monkeypatch.setattr(_mod.SubAgentRunner, "run", _mock_run)
+
+        events = await _collect(SupervisorAgent.run(
+            user_request="Implement the feature",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_approve_always,
+            topology=test_topology,
+        ))
+        impl_messages = [e for e in events if e.type == EventType.MESSAGE and e.role == "ImplOne"]
+        assert len(impl_messages) == 1
+        assert "Deliverable from ImplOne" in impl_messages[0].content
+
+        # Direct-chat and single-agent DONE must mark metrics_reported="true" without duplicate tokens
+        monkeypatch.setattr(
+            _mod,
+            "classify_intent",
+            lambda *args, **kwargs: _mod.TriageDecision(mode="direct_chat"),
+        )
+        direct_events = await _collect(SupervisorAgent.run(
+            user_request="Hola",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_approve_always,
+            topology=test_topology,
+        ))
+        comp = next(e for e in direct_events if e.type == EventType.AGENT_COMPLETED)
+        done = next(e for e in direct_events if e.type == EventType.DONE)
+        assert int(comp.metadata["total_tokens"]) > 0
+        assert done.metadata.get("metrics_reported") == "true"
+        assert "total_tokens" not in done.metadata
+        assert "tokens" not in done.metadata
+
+        monkeypatch.setattr(
+            _mod,
+            "classify_intent",
+            lambda *args, **kwargs: _mod.TriageDecision(mode="single_agent", target_agent="ImplOne"),
+        )
+        single_events = await _collect(SupervisorAgent.run(
+            user_request="Haz el código",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_approve_always,
+            topology=test_topology,
+        ))
+        s_comp = next(e for e in single_events if e.type == EventType.AGENT_COMPLETED)
+        s_done = next(e for e in single_events if e.type == EventType.DONE)
+        assert s_comp.role == "ImplOne"
+        assert s_done.metadata.get("metrics_reported") == "true"
+        assert "total_tokens" not in s_done.metadata
+
 
 
 

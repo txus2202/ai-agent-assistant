@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed } from 'vue'
+import { useModalShortcuts } from '../../composables/useModalShortcuts'
+import { useTimedReset } from '../../composables/useTimedReset'
 import { Copy, Check, X, Download, ImageIcon, ZoomIn, ZoomOut, RotateCcw } from '@lucide/vue'
 
 const props = withDefaults(
@@ -24,17 +26,14 @@ const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
-const isCopied = ref(false)
+const { state: isCopied, trigger: triggerCopied } = useTimedReset(false)
 const zoomLevel = ref(1)
 
 const copyImageUrl = async () => {
   if (!props.imageUrl) return
   try {
     await navigator.clipboard.writeText(props.imageUrl)
-    isCopied.value = true
-    setTimeout(() => {
-      isCopied.value = false
-    }, 2000)
+    triggerCopied(true)
   } catch (err) {
     console.error('Failed to copy image URL to clipboard:', err)
   }
@@ -80,13 +79,7 @@ const handleKeyDown = (event: KeyboardEvent) => {
   }
 }
 
-onMounted(() => {
-  window.addEventListener('keydown', handleKeyDown)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeyDown)
-})
+useModalShortcuts(() => props.isOpen, handleKeyDown)
 </script>
 
 <template>
@@ -98,7 +91,6 @@ onUnmounted(() => {
       class="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-4 md:p-8 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] animate-fade-in border-0 m-0 w-full h-full max-w-none max-h-none text-inherit"
       @click.self="emit('close')"
       @cancel.prevent="emit('close')"
-      @keydown="handleKeyDown"
       aria-labelledby="image-modal-title"
       aria-modal="true"
     >

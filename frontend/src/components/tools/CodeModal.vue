@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { useModalShortcuts } from '../../composables/useModalShortcuts'
+import { useTimedReset } from '../../composables/useTimedReset'
 import { Copy, Check, X, Download, Code2, Eye } from '@lucide/vue'
 import { getLanguageExtension } from '../../utils/messageParser'
 import { getMimeTypeForExtension, prepareSandboxedHtml } from '../../utils/mimeHelper'
@@ -28,7 +30,7 @@ const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
-const isCopied = ref(false)
+const { state: isCopied, trigger: triggerCopied } = useTimedReset(false)
 
 const effectiveExtension = computed(() => {
   return props.extension || getLanguageExtension(props.language)
@@ -64,10 +66,7 @@ const copyCode = async () => {
   if (!props.code) return
   try {
     await navigator.clipboard.writeText(props.code)
-    isCopied.value = true
-    setTimeout(() => {
-      isCopied.value = false
-    }, 2000)
+    triggerCopied(true)
   } catch (err) {
     console.error('Failed to copy code to clipboard:', err)
   }
@@ -103,13 +102,7 @@ const handleKeyDown = (event: KeyboardEvent) => {
   }
 }
 
-onMounted(() => {
-  window.addEventListener('keydown', handleKeyDown)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeyDown)
-})
+useModalShortcuts(() => props.isOpen, handleKeyDown)
 </script>
 
 <template>
@@ -121,7 +114,6 @@ onUnmounted(() => {
       class="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-4 md:p-8 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] animate-fade-in border-0 m-0 w-full h-full max-w-none max-h-none text-inherit"
       @click.self="emit('close')"
       @cancel.prevent="emit('close')"
-      @keydown="handleKeyDown"
       aria-labelledby="code-modal-title"
       aria-modal="true"
     >

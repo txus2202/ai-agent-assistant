@@ -219,6 +219,7 @@ class SupervisorAgent:
         chat_history: list[dict[str, Any]] | None = None,
         review_rounds: int | None = None,
         topology: DebateTopology | None = None,
+        cancel_event: asyncio.Event | None = None,
     ) -> AsyncGenerator[SupervisorEvent, None]:
         """
         Run the full debate flow and yield SupervisorEvents asynchronously (ADR-016).
@@ -232,6 +233,7 @@ class SupervisorAgent:
             chat_history=chat_history,
             review_rounds=review_rounds,
             topology=topology,
+            cancel_event=cancel_event,
         )
 
 
@@ -368,7 +370,12 @@ Responde directamente al usuario como {sup_agent_name} en español, manteniendo 
         "tokens": str(in_tkn + out_tkn),
     }
     yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=sup_agent_name, content=resp_text, metadata=meta)
-    yield SupervisorEvent(type=EventType.DONE, role=sup_agent_name, content=resp_text, metadata=meta)
+    yield SupervisorEvent(
+        type=EventType.DONE,
+        role=sup_agent_name,
+        content=resp_text,
+        metadata={"model": sup_model_name, "metrics_reported": "true"},
+    )
 
 
 async def _run_single_agent_mode(
@@ -391,7 +398,10 @@ async def _run_single_agent_mode(
         content = f"Error al generar respuesta en {target_name}: {error}"
     else:
         yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=target_name, content=content, metadata=meta)
-    yield SupervisorEvent(type=EventType.DONE, role=target_name, content=content, metadata=meta)
+    done_meta = {"metrics_reported": "true"}
+    if isinstance(meta, dict) and meta.get("model"):
+        done_meta["model"] = str(meta["model"])
+    yield SupervisorEvent(type=EventType.DONE, role=target_name, content=content, metadata=done_meta)
 
 
 def _resolve_target_agents(agent_names: list[str]) -> list[str]:
@@ -666,11 +676,14 @@ async def _run_adaptive_debate(
     supervisor_provider: Any,
     sup_model_name: str,
     sup_agent_name: str,
+    cancel_event: asyncio.Event | None = None,
 ) -> AsyncGenerator[SupervisorEvent, None]:
     state.formalized = user_request
     stages = _build_planned_stages(triage, active_topology)
 
     for stage in stages:
+        if cancel_event is not None and cancel_event.is_set():
+            return
         async for event in _execute_single_stage(
             stage,
             state,
@@ -684,8 +697,13 @@ async def _run_adaptive_debate(
             sup_agent_name,
         ):
             yield event
+            if cancel_event is not None and cancel_event.is_set():
+                return
         if _should_halt_phases(state):
             return
+
+    if cancel_event is not None and cancel_event.is_set():
+        return
 
     yield await _run_consolidation(
         state, supervisor_provider, sup_model_name, supervisor_name=sup_agent_name, topology=active_topology
@@ -703,6 +721,7 @@ async def _debate_generator(
     chat_history: list[dict[str, Any]] | None = None,
     review_rounds: int | None = None,
     topology: DebateTopology | None = None,
+    cancel_event: asyncio.Event | None = None,
 ) -> AsyncGenerator[SupervisorEvent, None]:
     from src.presentation.api.config import get_settings
     settings = get_settings()
@@ -763,6 +782,7 @@ async def _debate_generator(
         supervisor_provider,
         sup_model_name,
         sup_agent_name,
+        cancel_event=cancel_event,
     ):
         yield event
 
@@ -1271,6 +1291,11 @@ async def _run_phase_4(
             )
         else:
             state.agent_outputs[role] = content
+            yield SupervisorEvent(
+                type=EventType.MESSAGE,
+                role=role,
+                content=content,
+            )
             yield SupervisorEvent(
                 type=EventType.AGENT_COMPLETED,
                 role=role,

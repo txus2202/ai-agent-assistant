@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { useModalShortcuts } from '../composables/useModalShortcuts'
 import {
   X,
   Users,
@@ -86,13 +87,7 @@ const handleKeyDown = (event: KeyboardEvent) => {
   }
 }
 
-onMounted(() => {
-  window.addEventListener('keydown', handleKeyDown)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeyDown)
-})
+useModalShortcuts(() => props.isOpen, handleKeyDown)
 
 const handleCreateUser = async () => {
   localError.value = null
@@ -241,7 +236,6 @@ const formatDate = (isoString: string): string => {
       class="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-4 md:p-6 border-0 m-0 w-full h-full max-w-none max-h-none text-inherit"
       @click.self="emit('close')"
       @cancel.prevent="emit('close')"
-      @keydown="handleKeyDown"
       aria-labelledby="user-modal-title"
       aria-modal="true"
     >

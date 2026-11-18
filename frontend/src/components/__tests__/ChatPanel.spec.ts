@@ -44,6 +44,7 @@ const mockStore = {
   selectedAgents: ['supervisor'] as string[],
   playTtsAudioChunk: vi.fn(),
   stopTts: vi.fn(),
+  onTtsChunkReady: vi.fn(),
   onTtsStop: vi.fn(),
   unlockAudioContext: vi.fn(),
   clearSession: vi.fn(() => {
@@ -1046,6 +1047,44 @@ describe('ChatPanel.vue', () => {
     // Clicking when in lower half scrolls to the top
     await btn.trigger('click')
     expect(scrollToMock).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' })
+  })
+
+  it('unsubscribes TTS callbacks and detaches DOM/window listeners on unmount', () => {
+    const unsubChunk = vi.fn()
+    const unsubStop = vi.fn()
+    const prevChunk = mockStore.onTtsChunkReady
+    const prevStop = mockStore.onTtsStop
+    mockStore.onTtsChunkReady = vi.fn(() => unsubChunk)
+    mockStore.onTtsStop = vi.fn(() => unsubStop)
+
+    const docRemoveSpy = vi.spyOn(document, 'removeEventListener')
+    const winRemoveSpy = vi.spyOn(window, 'removeEventListener')
+
+    try {
+      const wrapper = mount(ChatPanel, {
+        props: {
+          messages: [],
+          isDebating: false
+        }
+      })
+
+      expect(mockStore.onTtsChunkReady).toHaveBeenCalledTimes(1)
+      expect(mockStore.onTtsStop).toHaveBeenCalledTimes(1)
+      expect(unsubChunk).not.toHaveBeenCalled()
+      expect(unsubStop).not.toHaveBeenCalled()
+
+      wrapper.unmount()
+
+      expect(unsubChunk).toHaveBeenCalledTimes(1)
+      expect(unsubStop).toHaveBeenCalledTimes(1)
+      expect(docRemoveSpy).toHaveBeenCalledWith('click', expect.any(Function))
+      expect(winRemoveSpy).toHaveBeenCalledWith('resize', expect.any(Function))
+    } finally {
+      mockStore.onTtsChunkReady = prevChunk
+      mockStore.onTtsStop = prevStop
+      docRemoveSpy.mockRestore()
+      winRemoveSpy.mockRestore()
+    }
   })
 })
 

@@ -122,18 +122,22 @@ def create_app(
     from src.presentation.api.routes import health, config, upload, history, models, audio, observability, learning, images, auth
     from src.presentation.api.ws import debate, wake_word
 
-    # Register routes
-    app.include_router(health.router)
-    app.include_router(auth.router)
-    app.include_router(auth.router, prefix="/api")
-    app.include_router(config.router)
-    app.include_router(upload.router)
-    app.include_router(images.router)
-    app.include_router(history.router)
-    app.include_router(models.router)
-    app.include_router(audio.router)
-    app.include_router(observability.router)
-    app.include_router(learning.router)
+    # Register REST routers uniformly at root (behind Nginx/Vite stripping /api) and /api
+    for rest_router in (
+        health.router,
+        auth.router,
+        config.router,
+        upload.router,
+        images.router,
+        history.router,
+        models.router,
+        audio.router,
+        observability.router,
+        learning.router,
+    ):
+        app.include_router(rest_router)
+        app.include_router(rest_router, prefix="/api", include_in_schema=False)
+
     app.include_router(debate.router)
     app.include_router(wake_word.router)
 

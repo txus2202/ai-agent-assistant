@@ -128,3 +128,45 @@ class TestStartupWithoutKeys:
         async with _make_client() as client:
             response = await client.get("/health")
         assert response.status_code == 200
+
+
+class TestSettingsEnvAlignment:
+    def test_settings_uses_canonical_env_vars_with_legacy_aliases(self, monkeypatch):
+        from src.presentation.api.config import Settings
+
+        monkeypatch.setenv("SQLITE_DB_PATH", "/tmp/canonical.db")
+        monkeypatch.setenv("DB_PATH", "/tmp/legacy.db")
+        monkeypatch.setenv("CHROMA_PERSIST_DIR", "/tmp/canonical_chroma")
+        monkeypatch.setenv("CHROMA_PATH", "/tmp/legacy_chroma")
+        monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "canonical-gcp")
+        monkeypatch.setenv("VERTEX_PROJECT_ID", "legacy-gcp")
+
+        cfg = Settings(_env_file=None)
+        assert str(cfg.sqlite_db_path) == "/tmp/canonical.db"
+        assert str(cfg.chroma_persist_dir) == "/tmp/canonical_chroma"
+        assert cfg.google_cloud_project == "canonical-gcp"
+
+    def test_settings_falls_back_to_legacy_db_and_chroma_path_aliases(self, monkeypatch):
+        from src.presentation.api.config import Settings
+
+        monkeypatch.delenv("SQLITE_DB_PATH", raising=False)
+        monkeypatch.delenv("CHROMA_PERSIST_DIR", raising=False)
+        monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+        monkeypatch.setenv("DB_PATH", "/tmp/legacy_only.db")
+        monkeypatch.setenv("CHROMA_PATH", "/tmp/legacy_only_chroma")
+        monkeypatch.setenv("VERTEX_PROJECT_ID", "legacy-vertex-project")
+
+        cfg = Settings(_env_file=None)
+        assert str(cfg.sqlite_db_path) == "/tmp/legacy_only.db"
+        assert str(cfg.chroma_persist_dir) == "/tmp/legacy_only_chroma"
+        assert cfg.google_cloud_project == "legacy-vertex-project"
+
+    def test_settings_default_model_and_database_url(self, monkeypatch):
+        from src.presentation.api.config import Settings
+
+        monkeypatch.delenv("DEFAULT_MODEL", raising=False)
+        monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@postgres:5432/atenea")
+
+        cfg = Settings(_env_file=None)
+        assert cfg.default_model == "gemini-3.6-flash"
+        assert cfg.database_url == "postgresql://user:pass@postgres:5432/atenea"

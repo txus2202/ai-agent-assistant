@@ -10,7 +10,7 @@ Distance metric:  cosine (score = 1 - cosine_distance ∈ [0, 1]).
 Configuration:
     - ``ephemeral=True``      → in-memory ChromaDB (for tests, fast, no disk I/O).
     - ``persist_directory``   → path to ChromaDB storage directory.
-    - Env var ``CHROMA_PATH`` → overrides default ``~/.ai-agent-assistant/chroma``.
+    - Env var ``CHROMA_PERSIST_DIR`` (or legacy ``CHROMA_PATH``) → overrides default ``~/.ai-agent-assistant/chroma``.
 """
 from __future__ import annotations
 
@@ -34,8 +34,8 @@ class ChromaDBDocumentStore(IDocumentStore):
 
     Args:
         persist_directory: Path to the ChromaDB storage directory.
-                           Falls back to ``CHROMA_PATH`` env var or
-                           ``~/.ai-agent-assistant/chroma``.
+                           Falls back to ``CHROMA_PERSIST_DIR``, legacy ``CHROMA_PATH``,
+                           or ``~/.ai-agent-assistant/chroma``.
         ephemeral:         If ``True``, use an in-memory (ephemeral) client.
                            Intended for tests — data is lost when the object
                            is garbage-collected.
@@ -58,7 +58,12 @@ class ChromaDBDocumentStore(IDocumentStore):
             chroma_port = int(raw_port)
             self._client = chromadb.HttpClient(host=chroma_host, port=chroma_port)
         else:
-            path = persist_directory or os.getenv("CHROMA_PATH", _DEFAULT_CHROMA_PATH)
+            path = (
+                persist_directory
+                or os.getenv("CHROMA_PERSIST_DIR")
+                or os.getenv("CHROMA_PATH")
+                or _DEFAULT_CHROMA_PATH
+            )
             self._client = chromadb.PersistentClient(path=path)
 
         ef = embedding_functions.SentenceTransformerEmbeddingFunction(

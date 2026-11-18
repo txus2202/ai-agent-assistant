@@ -65,8 +65,8 @@ Se recomienda ejecutar los refactors siguiendo estas **6 fases incrementales**, 
 10. ✅ `[x]` `[03][P1]` Limpieza determinista en frontend: desuscripción de callbacks TTS en `onUnmounted`, `wakeWordWs.onclose = null` en `stopAutoListen()`, limpieza de `setTimeout`/RAF y eliminación de listeners de teclado duplicados en modales.
 
 ### Fase 2 — Infraestructura, CI/CD y Operación de Contenedores (Riesgo Bajo-Medio)
-11. `[01][P1]` Unificación de variables entre `.env.example`, `docker-compose.yml` y `Settings`, separación entre puerto host y puerto interno de `chroma-server` (`CHROMA_PORT=8000`) y eliminación de secretos hardcoded en Compose.
-12. `[01][P1]` Refactorización de `backend/Dockerfile` a **multi-stage build** (`builder` + `runtime` slim sin compiladores, sin `chown -R` duplicando `.venv`, y `.dockerignore` actualizado).
+11. ✅ `[x]` `[01][P1]` Unificación de variables entre `.env.example`, `docker-compose.yml` y `Settings`, separación entre puerto host y puerto interno de `chroma-server` (`CHROMA_PORT=8000`) y eliminación de secretos hardcoded en Compose.
+12. ✅ `[x]` `[01][P1]` Refactorización de `backend/Dockerfile` a **multi-stage build** (`builder` + `runtime` slim sin compiladores, sin `chown -R` duplicando `.venv`, y `.dockerignore` actualizado).
 13. `[01][P2]` Persistencia del caché de modelos ML (`atenea_ml_cache:/home/atenea/.cache`), fijación de tags `:latest` en Compose, retirada de `app-net` en `langfuse-web` y retirada de `DockerObservabilityManager` del ciclo `lifespan`/`atexit` de FastAPI.
 14. `[01][P2]` Alineación de `.github/workflows/ci.yml` (`uv`, misma versión Python 3.12+, `ruff`, `mypy`, `npm run lint` no mutante, `npm run build`) y encadenamiento de `docker-publish.yml` con escaneo Trivy.
 15. `[01][P2]` Actualización de `scripts/download_models.sh` (verificación SHA-256), `scripts/ingest_vault.py` y `scripts/start.sh`.

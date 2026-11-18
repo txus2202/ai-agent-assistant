@@ -51,9 +51,9 @@ Durante el plan de refactorización **no deben romperse ni degradarse** las sigu
 Se recomienda ejecutar los refactors siguiendo estas **6 fases incrementales**, validando siempre las suites de tests (`pytest`, `npm run type-check`, `npm run test:unit`) al término de cada fase.
 
 ### Fase 0 — Higiene del repositorio, blindaje de tests y correcciones de riesgo nulo
-1. `[04][P3]` Limpieza de scripts de debug huérfanos (`backend/patch_tests.py`, `backend/test_kokoro_whisper.py`, `frontend/test_history*.js`), artefactos runtime (`:memory:.ses`, `*.db`, `.chroma/`, `*.egg-info/`) y wikilink roto en `MOC_Enterprise_Architecture.md`.
-2. `[02][P1]` Corrección de `test_composition_root.py` (`db_path=` -> `sqlite_db_path=`), actualización de firma `list_models(..., probe: bool = True)` en `tests/doubles.py` y ampliación de `test_decoupling_guard.py` con guardas AST (ejecutar inicialmente como aviso/baseline hasta completar la Fase 4).
-3. `[01][P1]` Actualización de `frontend/.dockerignore` (excluir `.env*`, `e2e/`, reportes) y adición de `healthcheck` HTTP al servicio `frontend` en `docker-compose.yml`.
+1. ✅ `[x]` `[04][P3]` Limpieza de scripts de debug huérfanos (`backend/patch_tests.py`, `backend/test_kokoro_whisper.py`, `frontend/test_history*.js`), artefactos runtime (`:memory:.ses`, `*.db`, `.chroma/`, `*.egg-info/`) y wikilink roto en `MOC_Enterprise_Architecture.md`.
+2. ✅ `[x]` `[02][P1]` Corrección de `test_composition_root.py` (`db_path=` -> `sqlite_db_path=`), actualización de firma `list_models(..., probe: bool = True)` en `tests/doubles.py` y ampliación de `test_decoupling_guard.py` con guardas AST (ejecutando en modo aviso/baseline hasta completar la Fase 4).
+3. ✅ `[x]` `[01][P1]` Actualización de `frontend/.dockerignore` (excluir `.env*`, `e2e/`, reportes) y adición de `healthcheck` HTTP al servicio `frontend` en `docker-compose.yml`.
 
 ### Fase 1 — Seguridad crítica, bugs de contrato activos y fugas de memoria puntuales (Bajo Riesgo)
 4. `[02][P1]` Cierre de **Path Traversal** en `ws/debate.py` (`attachments` / `routes/upload.py` usando `settings.max_learn_file_mb` y `attachment_id` opaco) y protección **SSRF** en `URLExtractor`.

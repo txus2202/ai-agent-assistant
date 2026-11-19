@@ -250,7 +250,7 @@ class TestAsyncEventLoopNonBlocking:
                 errors=[],
             )
 
-        monkeypatch.setattr("src.presentation.api.routes.learning.get_llm_provider", lambda _prov, **_kw: MagicMock())
+        from src.application.services.llm_provider_registry import LLMProviderRegistry
         monkeypatch.setattr(LearnFromSession, "run", staticmethod(_slow_learn_run))
 
         settings = Settings(
@@ -259,7 +259,9 @@ class TestAsyncEventLoopNonBlocking:
             auth_secret_key="test_secret_key_32_bytes_minimum_length",
         )
         fake_store = MagicMock(spec=IDocumentStore)
-        test_app = create_app(settings=settings, document_store=fake_store)
+        fake_registry = LLMProviderRegistry()
+        fake_registry.register("gemini", MagicMock())
+        test_app = create_app(settings=settings, document_store=fake_store, llm_registry=fake_registry)
         test_app.dependency_overrides[get_current_user] = lambda: User(
             id="usr-async", username="tester", password_hash="h", is_admin=False
         )

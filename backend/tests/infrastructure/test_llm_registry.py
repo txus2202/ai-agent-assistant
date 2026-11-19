@@ -1,5 +1,5 @@
 """
-Unit tests for infrastructure LLM provider registry with injected LLMProviderConfig.
+Unit tests for infrastructure LLM adapter factory helpers with injected LLMProviderConfig.
 """
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ from src.infrastructure.llm.anthropic_adapter import AnthropicAdapter
 from src.infrastructure.llm.gemini_adapter import GeminiAdapter
 from src.infrastructure.llm.openai_adapter import OpenAIAdapter
 from src.infrastructure.llm.registry import (
-    ConfiguredLLMProviderFactory,
+    SUPPORTED_LLM_PROVIDERS,
     LLMProviderConfig,
-    get_llm_provider,
+    create_llm_adapter,
     is_provider_configured,
 )
 
@@ -34,7 +34,7 @@ def test_is_provider_configured_uses_injected_config(monkeypatch):
     assert is_provider_configured("unknown", config=cfg) is False
 
 
-def test_get_llm_provider_uses_injected_credentials(monkeypatch):
+def test_create_llm_adapter_uses_injected_credentials(monkeypatch):
     for var in ("GEMINI_API_KEY", "GOOGLE_CLOUD_PROJECT", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
         monkeypatch.delenv(var, raising=False)
 
@@ -58,9 +58,9 @@ def test_get_llm_provider_uses_injected_credentials(monkeypatch):
         google_cloud_location="us-central1",
     )
 
-    get_llm_provider("gemini", config=cfg)
-    get_llm_provider("openai", config=cfg)
-    get_llm_provider("anthropic", config=cfg)
+    create_llm_adapter("gemini", config=cfg)
+    create_llm_adapter("openai", config=cfg)
+    create_llm_adapter("anthropic", config=cfg)
 
     assert calls == [
         ("gemini", {"api_key": "gem-injected", "project": "proj-123", "location": "us-central1"}),
@@ -69,39 +69,22 @@ def test_get_llm_provider_uses_injected_credentials(monkeypatch):
     ]
 
 
-def test_get_llm_provider_raises_on_missing_key_or_unknown_provider(monkeypatch):
+def test_create_llm_adapter_raises_on_missing_key_or_unknown_provider(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     empty_cfg = LLMProviderConfig()
 
     with pytest.raises(ValueError, match="OPENAI_API_KEY"):
-        get_llm_provider("openai", config=empty_cfg)
+        create_llm_adapter("openai", config=empty_cfg)
 
     with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
-        get_llm_provider("anthropic", config=empty_cfg)
+        create_llm_adapter("anthropic", config=empty_cfg)
 
     with pytest.raises(ValueError, match="Unknown LLM provider"):
-        get_llm_provider("bedrock", config=empty_cfg)
+        create_llm_adapter("bedrock", config=empty_cfg)
 
 
-def test_configured_llm_provider_factory_delegates_config(monkeypatch):
-    for var in ("GEMINI_API_KEY", "GOOGLE_CLOUD_PROJECT", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
-        monkeypatch.delenv(var, raising=False)
-
-    sentinel = MagicMock(spec=OpenAIAdapter)
-    captured: list[dict] = []
-
-    def _fake_openai(**kwargs):
-        captured.append(kwargs)
-        return sentinel
-
-    monkeypatch.setattr(registry, "OpenAIAdapter", _fake_openai)
-
-    factory = ConfiguredLLMProviderFactory(
-        LLMProviderConfig(openai_api_key="oai-factory-key")
-    )
-    assert factory.is_configured("openai") is True
-    assert factory.is_configured("anthropic") is False
-    provider = factory("openai")
-    assert provider is sentinel
-    assert captured == [{"api_key": "oai-factory-key"}]
+def test_registry_retires_legacy_global_factory_helpers():
+    assert SUPPORTED_LLM_PROVIDERS == ("gemini", "openai", "anthropic")
+    assert not hasattr(registry, "get_llm_provider")
+    assert not hasattr(registry, "ConfiguredLLMProviderFactory")

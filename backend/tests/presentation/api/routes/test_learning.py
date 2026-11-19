@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 from src.presentation.api.app import create_app
+from src.application.services.llm_provider_registry import LLMProviderRegistry
 from src.application.services.learn_from_session import LearnFromSession
 from src.application.services.learn_from_source import LearnResult
 from src.application.services.ingest_vault import IngestResult
@@ -12,7 +13,9 @@ from src.presentation.api.dependencies.auth import get_current_user
 
 @pytest.fixture
 def client():
-    app = create_app()
+    registry = LLMProviderRegistry()
+    registry.register("gemini", MagicMock())
+    app = create_app(llm_registry=registry)
     app.dependency_overrides[get_current_user] = lambda: User(
         id="usr-test", username="testuser", password_hash="h", is_admin=False
     )
@@ -26,7 +29,6 @@ def test_learning_unauthenticated():
 
 @pytest.fixture(autouse=True)
 def mock_external_services(monkeypatch):
-    monkeypatch.setattr("src.presentation.api.routes.learning.get_llm_provider", lambda _prov, **_kw: MagicMock())
     monkeypatch.setattr("src.presentation.api.dependencies.rag.ChromaDBDocumentStore", lambda *a, **kw: MagicMock())
 
 def test_post_learn_session(client, tmp_path, monkeypatch):

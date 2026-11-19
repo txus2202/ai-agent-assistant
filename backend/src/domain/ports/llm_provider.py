@@ -7,11 +7,10 @@ must implement this contract (ADR-004, ADR-010).
 """
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 
 @dataclass(frozen=True)
@@ -22,7 +21,8 @@ class LLMCompletion:
     usage: dict[str, int] = field(default_factory=dict)
 
 
-class ILLMProvider(ABC):
+@runtime_checkable
+class ILLMProvider(Protocol):
     """
     Port (output) for LLM text completion.
 
@@ -49,7 +49,6 @@ class ILLMProvider(ABC):
         """
         raise NotImplementedError(f"{self.__class__.__name__} does not support image analysis.")
 
-    @abstractmethod
     def complete(self, prompt: str, model_name: str) -> str:
         """
         Send ``prompt`` to the LLM and return its textual response.
@@ -65,6 +64,7 @@ class ILLMProvider(ABC):
         Raises:
             LLMProviderError: On any provider-level failure.
         """
+        ...
 
     def complete_stream(self, prompt: str, model_name: str) -> Iterator[str]:
         """
@@ -89,7 +89,6 @@ class ILLMProvider(ABC):
         usage = self.get_last_usage()
         return LLMCompletion(content=content, usage=dict(usage) if isinstance(usage, dict) else {})
 
-    @abstractmethod
     def list_models(self, probe: bool = True) -> list[dict[str, str]]:
         """
         List all available models for this provider.
@@ -105,6 +104,7 @@ class ILLMProvider(ABC):
         Raises:
             LLMProviderError: On any provider-level failure.
         """
+        ...
 
 
 def invoke_llm_with_usage(

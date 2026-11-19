@@ -1,15 +1,34 @@
 """
-RED Tests: IObservabilityService Port and Value Objects (Feature: feature_observability.md)
+Domain Tests: IObservabilityService Port and Telemetry Value Objects
 """
 from dataclasses import is_dataclass
-import pytest
-from src.domain.ports.observability_port import (
+
+from src.domain.ports.observability_service import (
     IObservabilityService,
-    TraceContext,
     SpanContext,
     SystemMetrics,
-    NoOpObservabilityService,
+    TraceContext,
 )
+
+
+class _DummyObservabilityService:
+    def start_trace(self, name, session_id, user_id=None, input_data=None, tags=None, metadata=None):
+        return TraceContext(trace_id="tr-1", session_id=session_id, name=name)
+
+    def end_trace(self, trace_context, status="SUCCESS", output=None):
+        pass
+
+    def score_trace(self, trace_context, name, value, comment=None):
+        pass
+
+    def start_agent_span(self, trace_context, agent_role, input_prompt, metadata=None, model_name=None):
+        return SpanContext(span_id="sp-1", trace_id=trace_context.trace_id, name="span", agent_role=agent_role)
+
+    def end_agent_span(self, span_context, output, token_counts=None, latency=0.0, status="SUCCESS", model_name=None):
+        pass
+
+    def get_system_metrics(self):
+        return SystemMetrics(cpu_percent=0.0, memory_percent=0.0)
 
 
 def test_trace_context_attributes():
@@ -58,27 +77,12 @@ def test_system_metrics_attributes():
     assert metrics.active_agents_count == 1
 
 
-def test_noop_observability_service_satisfies_protocol():
-    service = NoOpObservabilityService()
+def test_observability_protocol_structural_conformance():
+    service = _DummyObservabilityService()
     assert isinstance(service, IObservabilityService)
 
-    trace = service.start_trace(
-        name="debate",
-        session_id="ses-1",
-        user_id="user-42",
-        input_data="Necesito una landing page",
-        tags=["flow:debate", "agent:fidias"],
-    )
-    assert isinstance(trace, TraceContext)
-    assert trace.user_id == "user-42"
-    assert trace.tags == ["flow:debate", "agent:fidias"]
+    class _IncompleteService:
+        def start_trace(self, name, session_id, user_id=None, input_data=None, tags=None, metadata=None):
+            return TraceContext(trace_id="tr-1", session_id=session_id, name=name)
 
-    service.score_trace(trace, name="hitl_decision", value=1.0, comment="Aprobado por el usuario")
-    service.end_trace(trace, status="SUCCESS", output="Landing page generada")
-
-    span = service.start_agent_span(trace, agent_role="interpreter", input_prompt="hello")
-    assert isinstance(span, SpanContext)
-    service.end_agent_span(span, output="structured requirement", token_counts={"total": 120}, latency=0.45)
-
-    sys_metrics = service.get_system_metrics()
-    assert isinstance(sys_metrics, SystemMetrics)
+    assert not isinstance(_IncompleteService(), IObservabilityService)

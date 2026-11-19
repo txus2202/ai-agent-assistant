@@ -1,5 +1,5 @@
 """
-RED tests for the ILLMProvider domain port and LLMProviderError exception.
+Tests for the ILLMProvider domain port and LLMProviderError exception.
 
 Spec: obsidian_vault/docs/features/feature_llm_provider_port.md
 Phase: 1 | Layer: Domain
@@ -17,7 +17,7 @@ from src.domain.exceptions import LLMProviderError
 class _WorkingAdapter(ILLMProvider):
     """Minimal adapter that satisfies the ILLMProvider contract."""
 
-    def list_models(self) -> list[dict[str, str]]:
+    def list_models(self, probe: bool = True) -> list[dict[str, str]]:
         return [{"id": "test", "name": "Test"}]
 
     def complete(self, prompt: str, model_name: str) -> str:
@@ -27,7 +27,7 @@ class _WorkingAdapter(ILLMProvider):
 class _FailingAdapter(ILLMProvider):
     """Adapter that always raises LLMProviderError."""
 
-    def list_models(self) -> list[dict[str, str]]:
+    def list_models(self, probe: bool = True) -> list[dict[str, str]]:
         return [{"id": "test", "name": "Test"}]
 
     def complete(self, prompt: str, model_name: str) -> str:
@@ -35,12 +35,12 @@ class _FailingAdapter(ILLMProvider):
 
 
 # ---------------------------------------------------------------------------
-# Scenario 1: Port is abstract — cannot be instantiated directly
+# Scenario 1: Protocol cannot be instantiated directly
 # ---------------------------------------------------------------------------
 
 def test_llm_provider_port_is_abstract() -> None:
     with pytest.raises(TypeError):
-        ILLMProvider()  # type: ignore[abstract]
+        ILLMProvider()  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
@@ -51,20 +51,21 @@ def test_working_adapter_returns_non_empty_string() -> None:
     adapter = _WorkingAdapter()
     result = adapter.complete(prompt="What is the answer?", model_name="fake-v1")
 
+    assert isinstance(adapter, ILLMProvider)
     assert isinstance(result, str)
     assert len(result) > 0
 
 
 # ---------------------------------------------------------------------------
-# Scenario 3: Incomplete adapter is rejected at instantiation (ABC)
+# Scenario 3: Incomplete duck adapter fails runtime Protocol check
 # ---------------------------------------------------------------------------
 
-def test_incomplete_adapter_raises_type_error() -> None:
-    class _IncompleteAdapter(ILLMProvider):
-        pass  # does NOT implement complete()
+def test_incomplete_adapter_fails_protocol_check() -> None:
+    class _IncompleteAdapter:
+        def list_models(self, probe: bool = True) -> list[dict[str, str]]:
+            return []  # does NOT implement complete()
 
-    with pytest.raises(TypeError):
-        _IncompleteAdapter()  # type: ignore[abstract]
+    assert not isinstance(_IncompleteAdapter(), ILLMProvider)
 
 
 # ---------------------------------------------------------------------------

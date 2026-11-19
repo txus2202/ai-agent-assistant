@@ -5,7 +5,7 @@ from src.application.services.auth_service import AuthService
 from src.domain.entities.user import User
 from src.domain.ports.agent_config_repository import IAgentConfigRepository
 from src.domain.ports.debate_repository import IDebateRepository
-from src.domain.ports.user_repository_port import IUserRepository
+from src.domain.ports.user_repository import IUserRepository
 from src.infrastructure.persistence.sqlite_agent_config_repository import SqliteAgentConfigRepository
 from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
 from src.infrastructure.persistence.sqlite_user_repository import SQLiteUserRepository

@@ -1,6 +1,6 @@
 import pytest
 import time
-from src.domain.ports.model_cache_port import CachedModelCatalog
+from src.domain.ports.model_cache_repository import CachedModelCatalog
 from src.infrastructure.persistence.sqlite_model_cache_repository import SqliteModelCacheRepository
 
 @pytest.fixture

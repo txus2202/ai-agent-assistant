@@ -18,6 +18,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from src.application.agents.sub_agent_runner import SubAgentResponse, SubAgentRunner
 from src.application.agents.supervisor_agent import SupervisorAgent
+from src.application.services.llm_provider_registry import LLMProviderRegistry
 from src.application.services.learn_from_source import LearnFromSource, SourceType
 from src.domain.agents.sub_agent_profiles import SubAgentProfile
 from src.domain.agents.supervisor_events import HITLResponse, SupervisorEvent, EventType, HITLDecision
@@ -29,10 +30,9 @@ from src.domain.ports.document_parser import IDocumentParser
 from src.domain.ports.document_store import IDocumentStore
 from src.domain.ports.image_generator import IImageGenerator
 from src.domain.ports.llm_provider import ILLMProvider
-from src.domain.ports.observability_port import TraceContext, SpanContext
+from src.domain.ports.observability_service import TraceContext, SpanContext
 from src.domain.ports.source_extractor import ISourceExtractor
 from src.domain.value_objects.debate_record import DebateRecord
-from src.infrastructure.llm.registry import LLMProviderConfig, get_llm_provider
 from src.infrastructure.persistence.sqlite_agent_config_repository import SqliteAgentConfigRepository
 from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
 from src.presentation.api.config import get_settings
@@ -41,7 +41,7 @@ from src.presentation.api.dependencies.agents import (
     get_topology_provider,
 )
 from src.presentation.api.dependencies.learning import get_source_extractors
-from src.presentation.api.dependencies.llm import get_image_generator, get_llm_config
+from src.presentation.api.dependencies.llm import get_image_generator, get_llm_registry
 from src.presentation.api.dependencies.rag import get_document_parser, get_document_store
 from src.presentation.api.routes.observability import get_observability_service
 from src.presentation.api.routes.upload import resolve_user_attachment_path
@@ -185,7 +185,7 @@ class DebateWebSocketHandler:
         image_generator: IImageGenerator | None = None,
         document_parser: IDocumentParser | None = None,
         source_extractors: dict[SourceType, ISourceExtractor] | None = None,
-        llm_config: LLMProviderConfig | None = None,
+        llm_registry: LLMProviderRegistry | None = None,
     ):
         self.websocket = websocket
         self.authenticated_user = authenticated_user
@@ -200,7 +200,7 @@ class DebateWebSocketHandler:
         self.source_extractors = (
             source_extractors if source_extractors is not None else get_source_extractors(websocket)
         )
-        self.llm_config = llm_config or get_llm_config(websocket, self.settings)
+        self.llm_registry = llm_registry or get_llm_registry(websocket, self.settings)
         db_path = str(self.settings.sqlite_db_path)
         from src.infrastructure.persistence.sqlite_agent_config_repository import UserScopedAgentConfigRepository
         base_agent_repo = SqliteAgentConfigRepository(db_path, agent_catalog=self.agent_catalog)
@@ -393,7 +393,7 @@ class DebateWebSocketHandler:
                 user_request=user_request,
                 document_store=doc_store,
                 agent_config_repo=self.agent_config_repo,
-                llm_factory=lambda name: get_llm_provider(name, config=self.llm_config),
+                llm_factory=self.llm_registry.get,
                 hitl_callback=self.hitl_callback,
                 chat_history=chat_history,
                 review_rounds=self.settings.review_rounds,
@@ -573,7 +573,7 @@ class DebateWebSocketHandler:
             config = self.agent_config_repo.find_by_role(learn_role)
         prov_name = config.provider if config else self.settings.default_provider
         mod_name = config.model_name if config else self.settings.default_model
-        return get_llm_provider(prov_name, config=self.llm_config), mod_name
+        return self.llm_registry.get(prov_name), mod_name
 
     async def _handle_learning(
         self,
@@ -702,7 +702,7 @@ class DebateWebSocketHandler:
         default_mod = getattr(profile, "default_model", "") or self.settings.default_model
         prov_name = config.provider if (config and config.provider) else default_prov
         mod_name = config.model_name if (config and config.model_name) else default_mod
-        return get_llm_provider(prov_name, config=self.llm_config), mod_name
+        return self.llm_registry.get(prov_name), mod_name
 
     def _resolve_sub_agent_runtime_sync(
         self, profile: SubAgentProfile, agent_role: str
@@ -965,11 +965,7 @@ class DebateWebSocketHandler:
             return
 
         try:
-            _ = await asyncio.to_thread(
-                get_llm_provider,
-                self.settings.default_provider,
-                config=self.llm_config,
-            )
+            _ = self.llm_registry.get(self.settings.default_provider)
         except Exception as e:
             await self.websocket.send_json({"type": "error", "content": f"Default provider error: {str(e)}"})
             return

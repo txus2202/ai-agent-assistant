@@ -10,7 +10,7 @@ import os
 import re
 import subprocess
 import sys
-from src.domain.ports.observability_port import SystemMetrics
+from src.domain.ports.observability_service import SystemMetrics
 
 logger = logging.getLogger(__name__)
 

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Optional
 from src.domain.entities.user import User
 from src.domain.exceptions import RepositoryError, UserAlreadyExistsError
-from src.domain.ports.user_repository_port import IUserRepository
+from src.domain.ports.user_repository import IUserRepository
 
 _CREATE_PG_USERS_TABLE = """
     CREATE TABLE IF NOT EXISTS users (

@@ -1,9 +1,9 @@
 """
-Infrastructure: LLM Provider Registry
+Infrastructure: LLM Provider Adapter Factory & Configuration
 
-Provides constructor-injected configuration (``LLMProviderConfig``) and factory
-functions to instantiate ``ILLMProvider`` adapters without importing Presentation
-settings.
+Provides constructor-injected configuration (``LLMProviderConfig``) and low-level
+adapter instantiation helpers (``is_provider_configured``, ``create_llm_adapter``)
+consumed by the composition root to populate the single ``LLMProviderRegistry``.
 """
 from __future__ import annotations
 
@@ -14,6 +14,8 @@ from src.domain.ports.llm_provider import ILLMProvider
 from src.infrastructure.llm.anthropic_adapter import AnthropicAdapter
 from src.infrastructure.llm.gemini_adapter import GeminiAdapter
 from src.infrastructure.llm.openai_adapter import OpenAIAdapter
+
+SUPPORTED_LLM_PROVIDERS: tuple[str, ...] = ("gemini", "openai", "anthropic")
 
 
 @dataclass(frozen=True)
@@ -42,22 +44,6 @@ class LLMProviderConfig:
         )
 
 
-class ConfiguredLLMProviderFactory:
-    """Constructor-injected factory encapsulating provider credentials."""
-
-    def __init__(self, config: LLMProviderConfig) -> None:
-        self._config = config
-
-    def is_configured(self, name: str) -> bool:
-        return is_provider_configured(name, config=self._config)
-
-    def get(self, name: str) -> ILLMProvider:
-        return get_llm_provider(name, config=self._config)
-
-    def __call__(self, name: str) -> ILLMProvider:
-        return self.get(name)
-
-
 def is_provider_configured(name: str, config: LLMProviderConfig | None = None) -> bool:
     """Check whether required credentials or env vars are configured for ``name``."""
     cfg = config if config is not None else LLMProviderConfig.from_env()
@@ -76,13 +62,12 @@ def is_provider_configured(name: str, config: LLMProviderConfig | None = None) -
     return False
 
 
-def get_llm_provider(name: str, config: LLMProviderConfig | None = None) -> ILLMProvider:
+def create_llm_adapter(name: str, config: LLMProviderConfig | None = None) -> ILLMProvider:
     """
-    Return a configured ``ILLMProvider`` instance for ``name``.
+    Instantiate an ``ILLMProvider`` adapter for ``name`` using ``config``.
 
-    Args:
-        name: One of 'gemini', 'openai', 'anthropic'.
-        config: Explicit credentials/project config injected from composition root.
+    Intended to be called from the composition root when building ``LLMProviderRegistry``
+    so each configured provider adapter (and its underlying SDK client) is created once.
 
     Raises:
         ValueError: If provider is unknown or required API key is missing.
@@ -91,7 +76,6 @@ def get_llm_provider(name: str, config: LLMProviderConfig | None = None) -> ILLM
     provider_name = name.lower().strip()
 
     if provider_name == "gemini":
-        # Do not fail early; GeminiAdapter supports Vertex AI and Gemini CLI fallback
         return GeminiAdapter(
             api_key=cfg.gemini_api_key,
             project=cfg.google_cloud_project,

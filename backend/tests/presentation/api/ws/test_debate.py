@@ -89,29 +89,29 @@ async def _fake_debate_generator(*args, **kwargs):
 @pytest.fixture
 def ws_client(monkeypatch):
     """Provides a TestClient connected to a fresh app with mocked SupervisorAgent."""
-    # Mock the LLM registry so we don't need real keys
+    from unittest.mock import AsyncMock, MagicMock
+    from src.application.services.auth_service import AuthService
+    from src.application.services.llm_provider_registry import LLMProviderRegistry
+    from src.domain.entities.user import User
     from src.presentation.api.ws import debate
-    monkeypatch.setattr(debate, "get_llm_provider", lambda _prov, **_kw: None)
-    
+
     # Mock the ChromaDB store init to avoid creating directories
     from src.infrastructure.rag.chroma_document_store import ChromaDBDocumentStore
     monkeypatch.setattr(ChromaDBDocumentStore, "__init__", lambda self, *a, **kw: None)
 
     # Mock the debate runner
-    from src.presentation.api.ws import debate
     monkeypatch.setattr(debate.SupervisorAgent, "run", _fake_debate_generator)
-
-    from unittest.mock import AsyncMock, MagicMock
-    from src.application.services.auth_service import AuthService
-    from src.domain.entities.user import User
 
     mock_auth = MagicMock(spec=AuthService)
     mock_auth.is_initialized = AsyncMock(return_value=True)
     test_user = User(id="usr-test-ws", username="architect", password_hash="h", is_admin=True, is_active=True)
     mock_auth.validate_token = AsyncMock(return_value=test_user)
 
+    mock_registry = LLMProviderRegistry()
+    mock_registry.register("gemini", MagicMock())
+
     from src.presentation.api.app import create_app
-    app = create_app(auth_service=mock_auth)
+    app = create_app(auth_service=mock_auth, llm_registry=mock_registry)
     return TestClient(app, cookies={"atenea_session": "mock_valid_ws_token"})
 
 
@@ -200,7 +200,7 @@ class TestDebateWebSocket:
     def test_debate_records_observability_traces(self, ws_client, monkeypatch):
         """Verifies start_trace, spans, and end_trace are emitted to observability service."""
         from unittest.mock import MagicMock
-        from src.domain.ports.observability_port import TraceContext, SpanContext
+        from src.domain.ports.observability_service import TraceContext, SpanContext
         from src.presentation.api.ws import debate
 
         mock_obs = MagicMock()
@@ -647,7 +647,7 @@ def test_multi_agent_sequential_dispatch_in_arrival_order(ws_client, monkeypatch
 def test_debate_observability_enriched_trace_and_hitl_scoring(ws_client, monkeypatch):
     from unittest.mock import MagicMock
     from src.presentation.api.ws import debate
-    from src.domain.ports.observability_port import TraceContext
+    from src.domain.ports.observability_service import TraceContext
 
     mock_obs = MagicMock()
     mock_trace = TraceContext(
@@ -965,10 +965,14 @@ def test_debate_ws_forwards_injected_settings_and_image_generator_to_supervisor(
         captured_kwargs.update(kwargs)
         yield SupervisorEvent(type=EventType.DONE, role="Supervisor", content="ok")
 
+    from src.application.services.llm_provider_registry import LLMProviderRegistry
+
     monkeypatch.delenv("IMAGE_GENERATION_PROVIDER", raising=False)
     monkeypatch.delenv("IMAGE_PROVIDER", raising=False)
     monkeypatch.setattr(debate.SupervisorAgent, "run", _capturing_supervisor_run)
-    monkeypatch.setattr(debate, "get_llm_provider", lambda _prov, **_kw: MagicMock())
+
+    mock_registry = LLMProviderRegistry()
+    mock_registry.register("openai", MagicMock())
 
     mock_auth = MagicMock(spec=AuthService)
     mock_auth.is_initialized = AsyncMock(return_value=True)
@@ -984,7 +988,12 @@ def test_debate_ws_forwards_injected_settings_and_image_generator_to_supervisor(
         image_generation_provider="imagen",
     )
     fake_store = MagicMock()
-    app = create_app(settings=settings, auth_service=mock_auth, document_store=fake_store)
+    app = create_app(
+        settings=settings,
+        auth_service=mock_auth,
+        document_store=fake_store,
+        llm_registry=mock_registry,
+    )
     client = TestClient(app, cookies={"atenea_session": "tok"})
 
     with client.websocket_connect("/ws/debate") as websocket:

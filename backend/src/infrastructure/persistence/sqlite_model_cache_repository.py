@@ -13,7 +13,7 @@ import time
 from typing import Optional
 
 from src.domain.exceptions import RepositoryError
-from src.domain.ports.model_cache_port import CachedModelCatalog, IModelCacheRepository
+from src.domain.ports.model_cache_repository import CachedModelCatalog, IModelCacheRepository
 from src.infrastructure.persistence.sqlite_base import SqliteConnectionManager
 
 _CREATE_TABLE_SQL = """

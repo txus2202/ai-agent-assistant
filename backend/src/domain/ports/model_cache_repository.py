@@ -8,7 +8,7 @@ duplicate probing across cluster replicas (ADR-021, ADR-024).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Protocol
+from typing import Optional, Protocol, runtime_checkable
 
 
 @dataclass(frozen=True)
@@ -20,7 +20,10 @@ class CachedModelCatalog:
     app_version: str
 
 
+@runtime_checkable
 class IModelCacheRepository(Protocol):
+    """Port for distributed provider model catalog caching and probe locking."""
+
     def get(self, provider: str) -> Optional[CachedModelCatalog]:
         """Retrieve the cached model catalog for a provider."""
         ...

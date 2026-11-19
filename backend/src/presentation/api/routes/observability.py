@@ -9,7 +9,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 
 from src.domain.entities.user import User
-from src.domain.ports.observability_port import IObservabilityService
+from src.domain.ports.observability_service import IObservabilityService
 from src.infrastructure.observability.langfuse_adapter import LangfuseObservabilityAdapter
 from src.presentation.api.config import get_settings
 from src.presentation.api.dependencies.auth import get_current_user

@@ -27,6 +27,7 @@ from src.infrastructure.persistence.sqlite_agent_config_repository import Sqlite
 from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
 
 if TYPE_CHECKING:
+    from src.application.services.llm_provider_registry import LLMProviderRegistry
     from src.domain.ports.agent_catalog_repository import (
         IAgentCatalogRepository,
         ITopologyProvider,
@@ -113,7 +114,17 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
         )
     app.state.topology_provider.get_topology()
 
-    # Future: ChromaDB, LLMProviderRegistry init
+    from src.presentation.api.dependencies.llm import (
+        build_llm_provider_config,
+        build_llm_provider_registry,
+    )
+    if getattr(app.state, "llm_config", None) is None:
+        app.state.llm_config = build_llm_provider_config(settings)
+    if getattr(app.state, "llm_registry", None) is None:
+        app.state.llm_registry = build_llm_provider_registry(
+            settings,
+            config=app.state.llm_config,
+        )
     try:
         yield
     finally:
@@ -129,7 +140,8 @@ def create_app(
     document_store: IDocumentStore | None = None,
     agent_catalog: IAgentCatalogRepository | None = None,
     topology_provider: ITopologyProvider | None = None,
-    llm_config: Any = None,
+    llm_config: LLMProviderConfig | None = None,
+    llm_registry: LLMProviderRegistry | None = None,
     image_generator: IImageGenerator | None = None,
     document_parser: IDocumentParser | None = None,
     source_extractors: dict[SourceType, ISourceExtractor] | None = None,
@@ -150,6 +162,7 @@ def create_app(
     from src.presentation.api.dependencies.llm import (
         build_image_generator,
         build_llm_provider_config,
+        build_llm_provider_registry,
     )
     from src.presentation.api.dependencies.rag import build_document_parser
 
@@ -158,12 +171,19 @@ def create_app(
         cfg,
         agent_catalog=resolved_catalog,
     )
+    resolved_llm_config = llm_config if llm_config is not None else build_llm_provider_config(cfg)
+    resolved_llm_registry = (
+        llm_registry
+        if llm_registry is not None
+        else build_llm_provider_registry(cfg, config=resolved_llm_config)
+    )
 
     app.state.settings = cfg
     app.state.document_store = document_store
     app.state.agent_catalog = resolved_catalog
     app.state.topology_provider = resolved_topology_provider
-    app.state.llm_config = llm_config if llm_config is not None else build_llm_provider_config(cfg)
+    app.state.llm_config = resolved_llm_config
+    app.state.llm_registry = resolved_llm_registry
     app.state.image_generator = image_generator if image_generator is not None else build_image_generator(cfg)
     app.state.document_parser = document_parser if document_parser is not None else build_document_parser()
     app.state.source_extractors = (

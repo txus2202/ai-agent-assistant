@@ -6,12 +6,13 @@ from any specific vector database technology (ADR-004, ADR-012).
 """
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from typing import Protocol, runtime_checkable
 
 from src.domain.value_objects.document_chunk import DocumentChunk, SearchFilter
 
 
-class IDocumentStore(ABC):
+@runtime_checkable
+class IDocumentStore(Protocol):
     """
     Port (output) for vector-based document retrieval.
 
@@ -19,14 +20,13 @@ class IDocumentStore(ABC):
     with an existing ``id`` must replace it, not duplicate it.
     """
 
-    @abstractmethod
     def upsert(self, chunks: list[DocumentChunk]) -> None:
         """
         Insert or replace chunks by their ``id``.
         A no-op for an empty list.
         """
+        ...
 
-    @abstractmethod
     def search(
         self,
         query: str,
@@ -46,20 +46,20 @@ class IDocumentStore(ABC):
         Returned chunks must have ``score`` set (float in [0, 1]).
         Returns an empty list when the store is empty.
         """
+        ...
 
-    @abstractmethod
     def delete(self, chunk_ids: list[str]) -> None:
         """Remove chunks by id. Idempotent — no error for unknown ids."""
+        ...
 
-    @abstractmethod
     def delete_by_file_paths(self, file_paths: list[str]) -> None:
         """Remove all chunks originating from the specified relative file paths."""
+        ...
 
-    @abstractmethod
     def get_indexed_file_paths(self) -> set[str]:
         """Return the set of relative file paths currently indexed in the store."""
+        ...
 
-    @abstractmethod
     def count(self) -> int:
         """Return the total number of stored chunks."""
-
+        ...

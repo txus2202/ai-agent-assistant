@@ -13,9 +13,9 @@ from src.domain.exceptions import (
     SelfModificationError,
     WeakPasswordError,
 )
-from src.domain.ports.user_repository_port import IUserRepository
-from src.domain.ports.password_hasher_port import IPasswordHasher
-from src.domain.ports.token_service_port import ITokenService
+from src.domain.ports.user_repository import IUserRepository
+from src.domain.ports.password_hasher import IPasswordHasher
+from src.domain.ports.token_service import ITokenService
 from src.domain.ports.debate_repository import IDebateRepository
 from src.domain.ports.agent_config_repository import IAgentConfigRepository
 

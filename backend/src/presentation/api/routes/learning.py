@@ -5,21 +5,22 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
+from src.application.services.llm_provider_registry import LLMProviderRegistry
 from src.application.services.learn_from_session import LearnFromSession
 from src.application.services.vault_domain_service import VaultDomainService
 from src.domain.entities.user import User
+from src.domain.exceptions import ProviderNotRegisteredError
 from src.domain.ports.agent_config_repository import IAgentConfigRepository
 from src.domain.ports.debate_repository import IDebateRepository
 from src.domain.ports.document_parser import IDocumentParser
 from src.domain.ports.document_store import IDocumentStore
-from src.infrastructure.llm.registry import LLMProviderConfig, get_llm_provider
 from src.presentation.api.config import get_settings, Settings
 from src.presentation.api.dependencies.auth import (
     get_agent_config_repository,
     get_current_user,
     get_debate_repository,
 )
-from src.presentation.api.dependencies.llm import get_llm_config
+from src.presentation.api.dependencies.llm import get_llm_registry
 from src.presentation.api.dependencies.rag import get_document_parser, get_document_store
 
 router = APIRouter(prefix="/learning", tags=["learning"])
@@ -93,7 +94,7 @@ async def learn_session(
     agent_config_repo: IAgentConfigRepository = Depends(get_agent_config_repo),
     doc_store: IDocumentStore = Depends(get_document_store),
     document_parser: IDocumentParser = Depends(get_document_parser),
-    llm_config: LLMProviderConfig = Depends(get_llm_config),
+    llm_registry: LLMProviderRegistry = Depends(get_llm_registry),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     chat_history = await asyncio.to_thread(_extract_chat_history, repo, payload.session_id, current_user.id)
@@ -101,7 +102,10 @@ async def learn_session(
         _resolve_learning_config, agent_config_repo, settings, current_user.id
     )
 
-    llm = await asyncio.to_thread(get_llm_provider, prov_name, config=llm_config)
+    try:
+        llm = llm_registry.get(prov_name)
+    except ProviderNotRegisteredError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     vault_root = Path(settings.vault_root)
 
     result = await asyncio.to_thread(

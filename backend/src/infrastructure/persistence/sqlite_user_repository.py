@@ -4,7 +4,7 @@ import sqlite3
 from typing import Optional
 from src.domain.entities.user import User
 from src.domain.exceptions import RepositoryError, UserAlreadyExistsError
-from src.domain.ports.user_repository_port import IUserRepository
+from src.domain.ports.user_repository import IUserRepository
 from src.infrastructure.persistence.sqlite_base import SqliteConnectionManager
 
 _CREATE_USERS_TABLE = """

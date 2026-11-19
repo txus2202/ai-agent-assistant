@@ -8,13 +8,13 @@ import logging
 import uuid
 from typing import Any
 
-from src.domain.ports.observability_port import (
+from src.domain.ports.observability_service import (
     IObservabilityService,
     TraceContext,
     SpanContext,
     SystemMetrics,
-    NoOpObservabilityService,
 )
+from src.infrastructure.observability.noop_observability import NoOpObservabilityService
 from src.infrastructure.observability.system_metrics_collector import SystemMetricsCollector
 
 logger = logging.getLogger(__name__)

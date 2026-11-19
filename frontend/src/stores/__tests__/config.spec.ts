@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useConfigStore } from '../config'
+import { configService } from '../../services/configService'
+import { HttpError } from '../../services/httpClient'
 
 describe('useConfigStore', () => {
   beforeEach(() => {
@@ -9,6 +11,7 @@ describe('useConfigStore', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.useRealTimers()
   })
 
   it('initializes with default state', () => {
@@ -17,42 +20,34 @@ describe('useConfigStore', () => {
     expect(store.isLoading).toBe(false)
   })
 
-  it('handles loadAgentsConfig by fetching from API', async () => {
+  it('handles loadAgentsConfig by delegating to configService', async () => {
     const mockData = [
-      { id: 'nl_interpreter', name: 'Nl Interpreter', provider: 'gemini', model_name: 'gemini-3.6-flash' }
+      { id: 'nl_interpreter', name: 'Nl Interpreter', provider: 'gemini', model_name: 'gemini-3.6-flash' },
     ]
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(mockData)
-    })
+    const loadSpy = vi.spyOn(configService, 'loadAgentsConfig').mockResolvedValue(mockData)
 
     const store = useConfigStore()
     await store.loadAgentsConfig()
 
     expect(store.agentsConfig).toHaveLength(1)
     expect(store.agentsConfig[0]!.provider).toBe('gemini')
-    expect(global.fetch).toHaveBeenCalledWith('/api/config/agents')
+    expect(loadSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('handles updateAgentConfig by making a PUT request and updating local state', async () => {
+  it('handles updateAgentConfig by delegating to configService and updating local state', async () => {
     const store = useConfigStore()
     store.agentsConfig = [
-      { id: 'nl_interpreter', name: 'Nl Interpreter', provider: 'gemini', model_name: 'gemini-3.6-flash' }
+      { id: 'nl_interpreter', name: 'Nl Interpreter', provider: 'gemini', model_name: 'gemini-3.6-flash' },
     ]
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ ok: true })
-    })
+    const updateSpy = vi.spyOn(configService, 'updateAgentConfig').mockResolvedValue({ ok: true })
 
     await store.updateAgentConfig('nl_interpreter', 'openai', 'gpt-4o')
 
-    expect(global.fetch).toHaveBeenCalledWith('/api/config/agents/nl_interpreter', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'openai', model_name: 'gpt-4o' })
+    expect(updateSpy).toHaveBeenCalledWith('nl_interpreter', {
+      provider: 'openai',
+      model_name: 'gpt-4o',
     })
-
     expect(store.agentsConfig[0]!.provider).toBe('openai')
     expect(store.agentsConfig[0]!.model_name).toBe('gpt-4o')
   })
@@ -67,39 +62,30 @@ describe('useConfigStore', () => {
         model_name: 'gemini-2.5-flash',
         rag_top_k: 5,
         rag_min_score: 0.3,
-      }
+      },
     ]
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ ok: true })
-    })
+    const updateSpy = vi.spyOn(configService, 'updateAgentConfig').mockResolvedValue({ ok: true })
 
     await store.updateAgentConfig('caliope', 'gemini', 'gemini-2.5-flash', 0, 0.45)
 
-    expect(global.fetch).toHaveBeenCalledWith('/api/config/agents/caliope', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider: 'gemini',
-        model_name: 'gemini-2.5-flash',
-        rag_top_k: 0,
-        rag_min_score: 0.45,
-      })
+    expect(updateSpy).toHaveBeenCalledWith('caliope', {
+      provider: 'gemini',
+      model_name: 'gemini-2.5-flash',
+      rag_top_k: 0,
+      rag_min_score: 0.45,
     })
-
     expect(store.agentsConfig[0]!.rag_top_k).toBe(0)
     expect(store.agentsConfig[0]!.rag_min_score).toBe(0.45)
   })
 
-  it('handles loadProviders by fetching and filtering providers with models', async () => {
+  it('handles loadProviders by using configService providers catalog', async () => {
     const mockProviders = [
       { id: 'gemini', name: 'Gemini', models: [{ id: 'gemini-1.5-flash', name: 'Gemini Flash' }] },
-      { id: 'empty_provider', name: 'Empty', models: [] }
     ]
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(mockProviders)
+    vi.spyOn(configService, 'loadProviders').mockResolvedValue({
+      providers: mockProviders,
+      isProbing: false,
     })
 
     const store = useConfigStore()
@@ -109,32 +95,29 @@ describe('useConfigStore', () => {
     expect(store.providers[0]!.id).toBe('gemini')
   })
 
-  it('schedules a silent re-fetch when x-models-probing header is 1', async () => {
+  it('schedules a silent re-fetch when isProbing is true', async () => {
     vi.useFakeTimers()
     const mockProviders = [
-      { id: 'gemini', name: 'Gemini', models: [{ id: 'gemini-1.5-flash', name: 'Gemini Flash' }] }
+      { id: 'gemini', name: 'Gemini', models: [{ id: 'gemini-1.5-flash', name: 'Gemini Flash' }] },
     ]
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      headers: { get: (name: string) => (name.toLowerCase() === 'x-models-probing' ? '1' : null) },
-      json: () => Promise.resolve(mockProviders)
-    })
+    const loadProvidersSpy = vi
+      .spyOn(configService, 'loadProviders')
+      .mockResolvedValueOnce({ providers: mockProviders, isProbing: true })
+      .mockResolvedValueOnce({ providers: mockProviders, isProbing: false })
 
     const store = useConfigStore()
     await store.loadProviders()
 
-    expect(global.fetch).toHaveBeenCalledTimes(1)
+    expect(loadProvidersSpy).toHaveBeenCalledTimes(1)
 
-    // Advance timers by 3500ms
     await vi.advanceTimersByTimeAsync(3500)
 
-    expect(global.fetch).toHaveBeenCalledTimes(2)
-    vi.useRealTimers()
+    expect(loadProvidersSpy).toHaveBeenCalledTimes(2)
   })
 
-  it('handles loadProviders fetch error without throwing', async () => {
+  it('handles loadProviders service error without throwing', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    global.fetch = vi.fn().mockRejectedValue(new Error('Network error'))
+    vi.spyOn(configService, 'loadProviders').mockRejectedValue(new Error('Network error'))
     const store = useConfigStore()
 
     await store.loadProviders()
@@ -143,7 +126,7 @@ describe('useConfigStore', () => {
 
   it('handles loadAgentsConfig error gracefully and resets isLoading', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    global.fetch = vi.fn().mockRejectedValue(new Error('API failure'))
+    vi.spyOn(configService, 'loadAgentsConfig').mockRejectedValue(new Error('API failure'))
     const store = useConfigStore()
 
     await store.loadAgentsConfig()
@@ -152,16 +135,14 @@ describe('useConfigStore', () => {
     expect(store.agentsConfig).toEqual([])
   })
 
-  it('does not update local state when updateAgentConfig receives non-ok response', async () => {
+  it('does not update local state when updateAgentConfig fails with HttpError', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     const store = useConfigStore()
     store.agentsConfig = [
-      { id: 'supervisor', name: 'Supervisor', provider: 'gemini', model_name: 'gemini-1.5-pro' }
+      { id: 'supervisor', name: 'Supervisor', provider: 'gemini', model_name: 'gemini-1.5-pro' },
     ]
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500
-    })
+    vi.spyOn(configService, 'updateAgentConfig').mockRejectedValue(new HttpError('Server error', 500))
 
     await store.updateAgentConfig('supervisor', 'openai', 'gpt-4o')
 
@@ -173,10 +154,10 @@ describe('useConfigStore', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const store = useConfigStore()
     store.agentsConfig = [
-      { id: 'supervisor', name: 'Supervisor', provider: 'gemini', model_name: 'gemini-1.5-pro' }
+      { id: 'supervisor', name: 'Supervisor', provider: 'gemini', model_name: 'gemini-1.5-pro' },
     ]
 
-    global.fetch = vi.fn().mockRejectedValue(new Error('Network offline'))
+    vi.spyOn(configService, 'updateAgentConfig').mockRejectedValue(new Error('Network offline'))
 
     await store.updateAgentConfig('supervisor', 'openai', 'gpt-4o')
 

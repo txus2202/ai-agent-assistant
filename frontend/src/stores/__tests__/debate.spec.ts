@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useDebateStore, normalizeAgentRole, cleanAgentMessageContent, resolveWsUrl } from '../debate'
+import { configService } from '../../services/configService'
+import { debateApiService } from '../../services/debateApiService'
+import { HttpError } from '../../services/httpClient'
 
 interface MockWebSocketInstance {
   readyState: number
@@ -108,11 +111,11 @@ describe('useDebateStore', () => {
     expect(store.isAgentsLoaded).toBe(false)
   })
 
-  it('handles loadAgents by setting agents from fetch', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve([{ id: 'nl_interpreter', name: 'Nl Interpreter' }])
-    })
+  it('handles loadAgents by setting agents from configService', async () => {
+    vi.spyOn(configService, 'loadAgentsConfig').mockResolvedValue([
+      { id: 'nl_interpreter', name: 'Nl Interpreter', provider: 'gemini', model_name: 'gemini-2.5-flash' }
+    ])
+    vi.spyOn(configService, 'getTopology').mockRejectedValue(new Error('skip'))
 
     const store = useDebateStore()
     await store.loadAgents()
@@ -241,16 +244,13 @@ describe('useDebateStore', () => {
 
   it('handles uploadFile and prefers opaque attachment_id when provided', async () => {
     const store = useDebateStore()
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ ok: true, attachment_id: 'abc123_test.pdf', path: '/tmp/abc123_test.pdf' })
-    })
+    const uploadSpy = vi.spyOn(debateApiService, 'uploadFile').mockResolvedValue('abc123_test.pdf')
 
     const file = new File([''], 'test.pdf')
     const refId = await store.uploadFile(file)
 
     expect(refId).toBe('abc123_test.pdf')
-    expect(global.fetch).toHaveBeenCalled()
+    expect(uploadSpy).toHaveBeenCalledWith(file)
   })
 
   it('resolveWsUrl derives ws/wss from window.location or respects VITE_WS_URL', () => {
@@ -672,7 +672,7 @@ describe('useDebateStore', () => {
 
   it('handles loadAgents error when backend API fails by clearing agents and resetting isAgentsLoaded', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    global.fetch = vi.fn().mockRejectedValue(new Error('Network error'))
+    vi.spyOn(configService, 'loadAgentsConfig').mockRejectedValue(new Error('Network error'))
 
     const store = useDebateStore()
     await store.loadAgents()
@@ -682,12 +682,17 @@ describe('useDebateStore', () => {
   })
 
   it('handles loadAgents successfully mapping description and color_hex from API', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve([
-        { id: 'nl_interpreter', name: 'NL Interpreter', description: 'Formaliza intención', color_hex: '#00e5ff' }
-      ])
-    })
+    vi.spyOn(configService, 'loadAgentsConfig').mockResolvedValue([
+      {
+        id: 'nl_interpreter',
+        name: 'NL Interpreter',
+        description: 'Formaliza intención',
+        color_hex: '#00e5ff',
+        provider: 'gemini',
+        model_name: 'gemini-2.5-flash'
+      }
+    ])
+    vi.spyOn(configService, 'getTopology').mockRejectedValue(new Error('skip'))
 
     const store = useDebateStore()
     await store.loadAgents()
@@ -853,17 +858,14 @@ describe('useDebateStore', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {})
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({
-        id: 'sess-resync',
-        status: 'completed',
-        user_request: 'Arquitectura',
-        events: [
-          { type: 'user_message', content: 'Arquitectura' },
-          { type: 'done', role: 'supervisor', content: 'Dictamen recuperado tras reconexión.' }
-        ]
-      })
+    const getSessionSpy = vi.spyOn(debateApiService, 'getDebateSession').mockResolvedValue({
+      id: 'sess-resync',
+      status: 'completed',
+      user_request: 'Arquitectura',
+      events: [
+        { type: 'user_message', content: 'Arquitectura' },
+        { type: 'done', role: 'supervisor', content: 'Dictamen recuperado tras reconexión.' }
+      ]
     })
 
     const store = useDebateStore()
@@ -883,7 +885,7 @@ describe('useDebateStore', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    expect(global.fetch).toHaveBeenCalledWith('/api/debates/sess-resync')
+    expect(getSessionSpy).toHaveBeenCalledWith('sess-resync')
     expect(store.messages.some(m => m.content.includes('Dictamen recuperado'))).toBe(true)
     expect(store.isDebating).toBe(false)
   })
@@ -1308,18 +1310,11 @@ describe('useDebateStore', () => {
       implementers: ['Aracne', 'Hefesto']
     }
 
-    const originalFetch = global.fetch
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: vi.fn().mockResolvedValue(mockTopology)
-    } as unknown as Response)
+    const topoSpy = vi.spyOn(configService, 'getTopology').mockResolvedValue(mockTopology)
 
-    try {
-      await store.fetchTopology()
-      expect(store.topology).toEqual(mockTopology)
-    } finally {
-      global.fetch = originalFetch
-    }
+    await store.fetchTopology()
+    expect(topoSpy).toHaveBeenCalledTimes(1)
+    expect(store.topology).toEqual(mockTopology)
   })
 
   it('increments Atenea turns at debate start without fabricating triage tokens and preserves backend telemetry on cancellation', () => {
@@ -1588,14 +1583,9 @@ describe('learnSession action', () => {
   })
 
   it('successfully learns session and sets learningStatusMessage', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    const learnSpy = vi.spyOn(debateApiService, 'learnSession').mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({
-        files_processed: 1,
-        chunks_upserted: 3,
-        generated_file: '/vault/learned/architecture_solution.md',
-        errors: []
-      })
+      generated_file: '/vault/learned/architecture_solution.md'
     })
 
     const store = useDebateStore()
@@ -1607,17 +1597,13 @@ describe('learnSession action', () => {
     expect(result.message).toContain('architecture_solution.md')
     expect(store.isLearningSession).toBe(false)
     expect(store.learningStatusMessage).toContain('architecture_solution.md')
-    expect(global.fetch).toHaveBeenCalledWith('/api/learning/session', expect.objectContaining({
-      method: 'POST',
-      body: JSON.stringify({ session_id: 'test-session-123' })
-    }))
+    expect(learnSpy).toHaveBeenCalledWith({ session_id: 'test-session-123', content: undefined })
   })
 
   it('handles error in learnSession gracefully', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      json: () => Promise.resolve({ detail: 'No conversation events found' })
-    })
+    vi.spyOn(debateApiService, 'learnSession').mockRejectedValue(
+      new HttpError('No conversation events found', 400, 'No conversation events found')
+    )
 
     const store = useDebateStore()
     const result = await store.learnSession('empty-session')
@@ -1629,15 +1615,16 @@ describe('learnSession action', () => {
   })
 
   it('supports canonical backend file field and rejects missing session_id before calling API', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    const learnSpy = vi.spyOn(debateApiService, 'learnSession').mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ ok: true, file: '2026-11-18_note.md', chunks_ingested: 2 })
+      file: '2026-11-18_note.md',
+      chunks_ingested: 2
     })
     const store = useDebateStore()
 
     const noSid = await store.learnSession()
     expect(noSid.success).toBe(false)
-    expect(global.fetch).not.toHaveBeenCalled()
+    expect(learnSpy).not.toHaveBeenCalled()
 
     const okRes = await store.learnSession('sid-1')
     expect(okRes.success).toBe(true)

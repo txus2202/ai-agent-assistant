@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAuthStore } from '../auth'
+import { authService } from '../../services/authService'
+import { HttpError } from '../../services/httpClient'
 
 describe('useAuthStore', () => {
   beforeEach(() => {
@@ -23,7 +25,10 @@ describe('useAuthStore', () => {
   })
 
   it('checks auth when backend is unavailable or throws network error', async () => {
-    global.fetch = vi.fn().mockRejectedValue(new Error('Network error: Connection refused'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(authService, 'getStatus').mockRejectedValue(
+      new Error('Network error: Connection refused'),
+    )
 
     const store = useAuthStore()
     await store.checkAuth()
@@ -35,11 +40,9 @@ describe('useAuthStore', () => {
   })
 
   it('checks auth when backend responds with 502/503 server error', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 502,
-      json: () => Promise.resolve({ error: 'Bad Gateway' }),
-    })
+    vi.spyOn(authService, 'getStatus').mockRejectedValue(
+      new HttpError('Bad Gateway', 502),
+    )
 
     const store = useAuthStore()
     await store.checkAuth()
@@ -51,15 +54,7 @@ describe('useAuthStore', () => {
   })
 
   it('checks auth when system is not initialized', async () => {
-    global.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url === '/api/auth/status') {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ initialized: false })
-        })
-      }
-      return Promise.reject(new Error('Unexpected fetch url'))
-    })
+    vi.spyOn(authService, 'getStatus').mockResolvedValue({ initialized: false })
 
     const store = useAuthStore()
     await store.checkAuth()
@@ -75,17 +70,12 @@ describe('useAuthStore', () => {
       username: 'admin',
       is_admin: true,
       is_active: true,
-      created_at: '2026-11-09T00:00:00'
+      created_at: '2026-11-09T00:00:00',
     }
-
-    global.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url === '/api/auth/status') {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ initialized: true, authenticated: true, user: mockUser })
-        })
-      }
-      return Promise.reject(new Error('Unexpected fetch url'))
+    vi.spyOn(authService, 'getStatus').mockResolvedValue({
+      initialized: true,
+      authenticated: true,
+      user: mockUser,
     })
 
     const store = useAuthStore()
@@ -98,14 +88,10 @@ describe('useAuthStore', () => {
   })
 
   it('checks auth when system is initialized but user session is expired / not logged in', async () => {
-    global.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url === '/api/auth/status') {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ initialized: true, authenticated: false, user: null })
-        })
-      }
-      return Promise.reject(new Error('Unexpected fetch url'))
+    vi.spyOn(authService, 'getStatus').mockResolvedValue({
+      initialized: true,
+      authenticated: false,
+      user: null,
     })
 
     const store = useAuthStore()
@@ -122,17 +108,17 @@ describe('useAuthStore', () => {
       username: 'architect',
       is_admin: false,
       is_active: true,
-      created_at: '2026-11-09T00:00:00'
+      created_at: '2026-11-09T00:00:00',
     }
-
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ token: 'jwt-token', user: mockUser })
+    const loginSpy = vi.spyOn(authService, 'login').mockResolvedValue({
+      token: 'jwt-token',
+      user: mockUser,
     })
 
     const store = useAuthStore()
     const result = await store.login('architect', 'secret123')
 
+    expect(loginSpy).toHaveBeenCalledWith('architect', 'secret123')
     expect(result).toBe(true)
     expect(store.user).toEqual(mockUser)
     expect(store.isAuthenticated).toBe(true)
@@ -141,11 +127,9 @@ describe('useAuthStore', () => {
   })
 
   it('handles failed login', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 401,
-      json: () => Promise.resolve({ detail: 'Credenciales inválidas' })
-    })
+    vi.spyOn(authService, 'login').mockRejectedValue(
+      new HttpError('Credenciales inválidas', 401, 'Credenciales inválidas'),
+    )
 
     const store = useAuthStore()
     const result = await store.login('wrong', 'wrongpass')
@@ -162,17 +146,17 @@ describe('useAuthStore', () => {
       username: 'root',
       is_admin: true,
       is_active: true,
-      created_at: '2026-11-09T00:00:00'
+      created_at: '2026-11-09T00:00:00',
     }
-
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ token: 'admin-jwt', user: mockAdmin })
+    const setupSpy = vi.spyOn(authService, 'setupInitialAdmin').mockResolvedValue({
+      token: 'admin-jwt',
+      user: mockAdmin,
     })
 
     const store = useAuthStore()
     const result = await store.setupInitialAdmin('root', 'strongPassword123')
 
+    expect(setupSpy).toHaveBeenCalledWith('root', 'strongPassword123', undefined)
     expect(result).toBe(true)
     expect(store.isInitialized).toBe(true)
     expect(store.user).toEqual(mockAdmin)
@@ -187,17 +171,17 @@ describe('useAuthStore', () => {
       username: 'admin',
       is_admin: true,
       is_active: true,
-      created_at: '2026-11-09T00:00:00'
+      created_at: '2026-11-09T00:00:00',
     }
     store.users = [store.user]
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ message: 'Logged out successfully' })
+    const logoutSpy = vi.spyOn(authService, 'logout').mockResolvedValue({
+      message: 'Logged out successfully',
     })
 
     await store.logout()
 
+    expect(logoutSpy).toHaveBeenCalledTimes(1)
     expect(store.user).toBeNull()
     expect(store.users).toEqual([])
     expect(store.isAuthenticated).toBe(false)
@@ -206,13 +190,9 @@ describe('useAuthStore', () => {
   it('fetches users list successfully for admin', async () => {
     const mockUsers = [
       { id: 'usr-1', username: 'admin', is_admin: true, is_active: true, created_at: '2026-11-09T00:00:00' },
-      { id: 'usr-2', username: 'operator', is_admin: false, is_active: true, created_at: '2026-11-10T00:00:00' }
+      { id: 'usr-2', username: 'operator', is_admin: false, is_active: true, created_at: '2026-11-10T00:00:00' },
     ]
-
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(mockUsers)
-    })
+    vi.spyOn(authService, 'fetchUsers').mockResolvedValue(mockUsers)
 
     const store = useAuthStore()
     const users = await store.fetchUsers()
@@ -223,11 +203,9 @@ describe('useAuthStore', () => {
   })
 
   it('handles fetch users failure', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 403,
-      json: () => Promise.resolve({ detail: 'Acceso denegado' })
-    })
+    vi.spyOn(authService, 'fetchUsers').mockRejectedValue(
+      new HttpError('Acceso denegado', 403, 'Acceso denegado'),
+    )
 
     const store = useAuthStore()
     const users = await store.fetchUsers()
@@ -243,28 +221,27 @@ describe('useAuthStore', () => {
       username: 'new_operator',
       is_admin: false,
       is_active: true,
-      created_at: '2026-11-10T12:00:00'
+      created_at: '2026-11-10T12:00:00',
     }
-
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(newUser)
-    })
+    const createSpy = vi.spyOn(authService, 'createUser').mockResolvedValue(newUser)
 
     const store = useAuthStore()
     const created = await store.createUser('new_operator', 'securePass123', false)
 
+    expect(createSpy).toHaveBeenCalledWith({
+      username: 'new_operator',
+      password: 'securePass123',
+      is_admin: false,
+    })
     expect(created).toEqual(newUser)
     expect(store.users).toContainEqual(newUser)
     expect(store.errorMessage).toBeNull()
   })
 
   it('handles create user error (e.g. user already exists)', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 409,
-      json: () => Promise.resolve({ detail: 'User already exists' })
-    })
+    vi.spyOn(authService, 'createUser').mockRejectedValue(
+      new HttpError('User already exists', 409, 'User already exists'),
+    )
 
     const store = useAuthStore()
     const created = await store.createUser('existing_user', 'securePass123')
@@ -279,13 +256,11 @@ describe('useAuthStore', () => {
     const updatedUser = { id: 'usr-1', username: 'bob', is_admin: true, is_active: false, created_at: '2026-11-10T12:00:00' }
     store.users = [originalUser]
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(updatedUser),
-    })
+    const updateSpy = vi.spyOn(authService, 'updateUser').mockResolvedValue(updatedUser)
 
     const res = await store.updateUser('usr-1', { is_admin: true, is_active: false })
 
+    expect(updateSpy).toHaveBeenCalledWith('usr-1', { is_admin: true, is_active: false })
     expect(res).toEqual(updatedUser)
     expect(store.users[0]).toEqual(updatedUser)
   })
@@ -295,13 +270,14 @@ describe('useAuthStore', () => {
     const user = { id: 'usr-2', username: 'charlie', is_admin: false, is_active: true, created_at: '2026-11-10T12:00:00' }
     store.users = [user]
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ message: 'User successfully deactivated (soft delete)', strategy: 'soft' }),
+    const delSpy = vi.spyOn(authService, 'deleteUser').mockResolvedValue({
+      message: 'User successfully deactivated (soft delete)',
+      strategy: 'soft',
     })
 
     const result = await store.deleteUser('usr-2')
 
+    expect(delSpy).toHaveBeenCalledWith('usr-2')
     expect(result.success).toBe(true)
     expect(result.strategy).toBe('soft')
     expect(store.users[0]?.is_active).toBe(false)
@@ -312,9 +288,9 @@ describe('useAuthStore', () => {
     const user = { id: 'usr-3', username: 'dave', is_admin: false, is_active: true, created_at: '2026-11-10T12:00:00' }
     store.users = [user]
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ message: 'User permanently deleted (hard delete)', strategy: 'hard' }),
+    vi.spyOn(authService, 'deleteUser').mockResolvedValue({
+      message: 'User permanently deleted (hard delete)',
+      strategy: 'hard',
     })
 
     const result = await store.deleteUser('usr-3')
@@ -324,4 +300,3 @@ describe('useAuthStore', () => {
     expect(store.users).toEqual([])
   })
 })
-

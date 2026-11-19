@@ -85,7 +85,7 @@ Se recomienda ejecutar los refactors siguiendo estas **6 fases incrementales**, 
 24. ✅ `[x]` `[02][P1]` Inversión de dependencias desde `application/` e `infrastructure/` (`supervisor_agent.py`, `sub_agent_runner.py`, `ingest_vault.py`, `learn_from_source.py`, `registry.py`, `image_generation/service.py`) introduciendo puertos en `domain/ports/`.
 25. ✅ `[x]` `[02][P1]` Consolidación de un único `LLMProviderRegistry` en el composition root, estandarización de `domain/ports/*` (`Protocol` vs `ABC`) y traslado de `NoOpObservabilityService` a `infrastructure/observability/`.
 26. ✅ `[x]` `[02][P2]` Descomposición de God Modules (`supervisor_agent.py`, `ws/debate.py`), simplificación de `_apply_filter`, `threading.Lock` en modelos de audio y sustitución de `except Exception: pass` por logging explícito. *(Al finalizar los puntos 23-26, activar en verde estricto las guardas AST de `test_decoupling_guard.py`)*.
-27. `[03][P1]` Creación de la capa `frontend/src/services/` (`httpClient.ts`, servicios de API y WebSockets) y eliminación del monkey-patch global de `window.fetch` en `main.ts`.
+27. ✅ `[x]` `[03][P1]` Creación de la capa `frontend/src/services/` (`httpClient.ts`, servicios de API y WebSockets) y eliminación del monkey-patch global de `window.fetch` en `main.ts`.
 28. `[03][P1]` Descomposición de `ChatPanel.vue` (1959 L), `stores/debate.ts` (1693 L) y modales pesados en composables de audio/wake-word y subcomponentes presentacionales cohesionados.
 
 ### Fase 5 — Escalado Horizontal Stateless Multi-Réplica y Estándares Enterprise (Riesgo Alto)

@@ -1,10 +1,18 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { configService, type DebateTopology } from '../services/configService'
+import { debateApiService } from '../services/debateApiService'
+import { createDebateWsClient } from '../services/debateWsClient'
+import { createWakeWordWsClient } from '../services/wakeWordWsClient'
+import { HttpError, formatHttpErrorDetail } from '../services/httpClient'
 import {
   stripAgentHeaderPrefixes,
   getToolSpokenFallback,
   findSentenceSplitIndex
 } from '../utils/ttsFilter'
+
+export { resolveWsUrl } from '../services/wsClient'
+export type { DebateTopology } from '../services/configService'
 
 export type AgentState = 'STANDBY' | 'ACTIVE' | 'COMPLETED' | 'ERROR'
 export type HitlDecisionType = 'approve' | 'refine' | 'divert' | 'finish' | 'consolidate' | 'retry' | 'reject'
@@ -67,35 +75,6 @@ export interface DebateSession {
   [key: string]: unknown
 }
 
-export interface DebateTopology {
-  project_name?: string
-  project_description?: string
-  supervisor: string
-  interpreters: string[]
-  proposers: string[]
-  reviewers: string[]
-  evaluators: string[]
-  implementers: string[]
-}
-
-// Resolves WebSocket URL dynamically to support local Vite /ws proxy, Nginx HTTPS/WSS, and Tailscale
-export function resolveWsUrl(path: string): string {
-  const configured = import.meta.env.VITE_WS_URL?.trim()
-  if (configured) {
-    try {
-      const parsed = new URL(configured)
-      return `${parsed.origin}${path}`
-    } catch {
-      return configured.replace(/\/ws\/debate\/?$/, '') + path
-    }
-  }
-  if (typeof window !== 'undefined' && window.location?.host) {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${protocol}//${window.location.host}${path}`
-  }
-  return `ws://localhost:8000${path}`
-}
-
 // Builds a valid 0.1s silent 8-bit mono WAV (Safari rejects malformed/tiny headers)
 function buildSilentWavUrl(): string {
   const samples = 800
@@ -111,20 +90,7 @@ function buildSilentWavUrl(): string {
 }
 
 export async function uploadFile(file: File): Promise<string> {
-  const formData = new FormData()
-  formData.append('file', file)
-
-  const response = await fetch('/api/upload', {
-    method: 'POST',
-    body: formData
-  })
-
-  if (!response.ok) {
-    throw new Error('Upload failed')
-  }
-
-  const data = await response.json()
-  return data.attachment_id || data.path
+  return debateApiService.uploadFile(file)
 }
 
 export function normalizeAgentRole(r?: string | null): string {
@@ -303,7 +269,7 @@ export const useDebateStore = defineStore('debate', () => {
   const isLearningSession = ref(false)
   const learningStatusMessage = ref<string | null>(null)
 
-  let wakeWordWs: WebSocket | null = null
+  const wakeWordWsClient = createWakeWordWsClient()
   let wwAudioContext: AudioContext | null = null
   let wwMicrophone: MediaStreamAudioSourceNode | null = null
   let wwProcessor: AudioWorkletNode | null = null
@@ -312,11 +278,9 @@ export const useDebateStore = defineStore('debate', () => {
   function resetWakeWordSession() {
     isWakeWordTriggered.value = false
     isRecording.value = false
-    if (wakeWordWs?.readyState === WebSocket.OPEN) {
-      try {
-        wakeWordWs.send(JSON.stringify({ type: 'RESET' }))
-      } catch {}
-    }
+    try {
+      wakeWordWsClient.sendReset()
+    } catch {}
     if (wwAudioContext?.state === 'suspended') {
       wwAudioContext.resume().catch(() => {})
     }
@@ -492,20 +456,7 @@ export const useDebateStore = defineStore('debate', () => {
   // Fetch agent topology from backend
   async function loadAgents() {
     try {
-      const response = await fetch('/api/config/agents')
-      if (!response.ok) throw new Error('Failed to fetch agents config')
-      
-      const data: Array<{
-        id: string
-        name: string
-        description?: string
-        color_hex?: string
-        uses_rag?: boolean
-        supports_hitl?: boolean
-        can_ingest_documents?: boolean
-        topology_roles?: string[]
-        tools?: string[]
-      }> = await response.json()
+      const data = await configService.loadAgentsConfig()
       agents.value = data.map(agent => ({
         role: agent.id,
         name: agent.name,
@@ -533,13 +484,7 @@ export const useDebateStore = defineStore('debate', () => {
 
   async function fetchTopology() {
     try {
-      const endpoint = typeof window !== 'undefined' && window.location?.origin
-        ? `${window.location.origin}/api/config/topology`
-        : '/api/config/topology'
-      const response = await fetch(endpoint)
-      if (response.ok) {
-        topology.value = await response.json()
-      }
+      topology.value = await configService.getTopology()
     } catch {
       // Ignore network errors or unmocked URLs in testing environments
     }
@@ -549,7 +494,7 @@ export const useDebateStore = defineStore('debate', () => {
   const MAX_RECONNECT_ATTEMPTS = 8
   const AUTH_WS_CLOSE_CODES = new Set([1008, 4001, 4003])
 
-  let ws: WebSocket | null = null
+  const debateWsClient = createDebateWsClient()
   let reconnectAttempts = 0
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
   let shouldReconnect = true
@@ -557,9 +502,7 @@ export const useDebateStore = defineStore('debate', () => {
 
   async function resyncSessionFromHistory(sessionId: string) {
     try {
-      const response = await fetch(`/api/debates/${encodeURIComponent(sessionId)}`)
-      if (!response.ok) return
-      const session: DebateSession = await response.json()
+      const session = await debateApiService.getDebateSession(sessionId) as DebateSession
       if (Array.isArray(session.events) && session.events.length > rawEvents.value.length) {
         loadDebate(session)
       } else if (session.status && session.status !== 'running' && isDebating.value) {
@@ -573,76 +516,70 @@ export const useDebateStore = defineStore('debate', () => {
 
   function connect() {
     shouldReconnect = true
-    const wsUrl = resolveWsUrl('/ws/debate')
-
-    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    if (debateWsClient.isOpenOrConnecting()) {
       return
     }
 
-    ws = new WebSocket(wsUrl)
-
-    ws.onopen = () => {
-      console.log('[WS] Connected to', wsUrl)
-      isConnected.value = true
-      reconnectAttempts = 0
-      if (shouldResyncOnOpen && currentSessionId.value) {
-        shouldResyncOnOpen = false
-        void resyncSessionFromHistory(currentSessionId.value)
-      } else {
-        shouldResyncOnOpen = false
-      }
-    }
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        if (!data.timestamp) {
-          data.timestamp = new Date().toISOString()
+    const wsUrl = debateWsClient.connect({
+      onOpen: () => {
+        console.log('[WS] Connected to', wsUrl)
+        isConnected.value = true
+        reconnectAttempts = 0
+        if (shouldResyncOnOpen && currentSessionId.value) {
+          shouldResyncOnOpen = false
+          void resyncSessionFromHistory(currentSessionId.value)
+        } else {
+          shouldResyncOnOpen = false
         }
-        rawEvents.value.push(data.id ? data : { ...data, id: nextStableId('evt') })
-        handleSupervisorEvent(data)
-      } catch {
-        console.error('[WS] Failed to parse message', event.data)
-      }
-    }
+      },
+      onMessage: (rawData) => {
+        try {
+          const data = JSON.parse(rawData)
+          if (!data.timestamp) {
+            data.timestamp = new Date().toISOString()
+          }
+          rawEvents.value.push(data.id ? data : { ...data, id: nextStableId('evt') })
+          handleSupervisorEvent(data)
+        } catch {
+          console.error('[WS] Failed to parse message', rawData)
+        }
+      },
+      onClose: (closeEvent?: CloseEvent) => {
+        console.log('[WS] Disconnected')
+        const wasDebating = isDebating.value
+        isConnected.value = false
+        if (wasDebating) {
+          handleError({
+            type: 'error',
+            content: 'Conexión interrumpida con el servidor de agentes.'
+          })
+        }
 
-    ws.onclose = (closeEvent?: CloseEvent) => {
-      console.log('[WS] Disconnected')
-      const wasDebating = isDebating.value
-      isConnected.value = false
-      if (wasDebating) {
-        handleError({
-          type: 'error',
-          content: 'Conexión interrumpida con el servidor de agentes.'
-        })
-      }
-      ws = null
+        const closeCode = closeEvent?.code
+        if (closeCode !== undefined && AUTH_WS_CLOSE_CODES.has(closeCode)) {
+          shouldReconnect = false
+          shouldResyncOnOpen = false
+          return
+        }
 
-      const closeCode = closeEvent?.code
-      if (closeCode !== undefined && AUTH_WS_CLOSE_CODES.has(closeCode)) {
-        shouldReconnect = false
-        shouldResyncOnOpen = false
-        return
-      }
+        if (shouldReconnect && wasDebating && currentSessionId.value) {
+          shouldResyncOnOpen = true
+        }
 
-      if (shouldReconnect && wasDebating && currentSessionId.value) {
-        shouldResyncOnOpen = true
+        if (shouldReconnect) {
+          attemptReconnect()
+        }
+      },
+      onError: (error) => {
+        console.error('[WS] Error', error)
+        if (isDebating.value) {
+          handleError({
+            type: 'error',
+            content: 'Error de comunicación WebSocket con el servidor.'
+          })
+        }
       }
-
-      if (shouldReconnect) {
-        attemptReconnect()
-      }
-    }
-
-    ws.onerror = (error) => {
-      console.error('[WS] Error', error)
-      if (isDebating.value) {
-        handleError({
-          type: 'error',
-          content: 'Error de comunicación WebSocket con el servidor.'
-        })
-      }
-    }
+    })
   }
 
   function disconnect() {
@@ -653,11 +590,7 @@ export const useDebateStore = defineStore('debate', () => {
       reconnectTimeout = null
     }
     reconnectAttempts = 0
-    if (ws) {
-      ws.onclose = null
-      ws.close()
-      ws = null
-    }
+    debateWsClient.disconnect()
     isConnected.value = false
   }
 
@@ -783,7 +716,7 @@ export const useDebateStore = defineStore('debate', () => {
   ) {
     stopTts() // Interrupt any ongoing TTS
 
-    if (!isConnected.value || !ws) {
+    if (!isConnected.value || !debateWsClient.hasSocket()) {
       messages.value.push({
         id: nextStableId('msg'),
         role: 'assistant',
@@ -868,7 +801,7 @@ export const useDebateStore = defineStore('debate', () => {
     if (Array.isArray(targetAgent)) {
       payload.target_agents = targetAgentsList
     }
-    ws.send(JSON.stringify(payload))
+    debateWsClient.sendJson(payload)
   }
 
   function cancelDebate() {
@@ -890,11 +823,9 @@ export const useDebateStore = defineStore('debate', () => {
     hitlCheckpoint.value = null
     hitlTargetAgents.value = []
 
-    if (ws) {
+    if (debateWsClient.hasSocket()) {
       try {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'cancel' }))
-        }
+        debateWsClient.sendJson({ type: 'cancel' })
       } catch (e) {
         console.warn('Failed to send cancel over WebSocket:', e)
       }
@@ -1509,22 +1440,20 @@ export const useDebateStore = defineStore('debate', () => {
       })
     }
 
-    if (ws?.readyState === WebSocket.OPEN) {
-      const payload: {
-        type: string
-        decision: HitlDecisionType
-        feedback: string
-        target_agents?: string[]
-      } = {
-        type: 'hitl_response',
-        decision,
-        feedback: feedback || ''
-      }
-      if (effectiveTargets?.length) {
-        payload.target_agents = effectiveTargets
-      }
-      ws.send(JSON.stringify(payload))
+    const payload: {
+      type: string
+      decision: HitlDecisionType
+      feedback: string
+      target_agents?: string[]
+    } = {
+      type: 'hitl_response',
+      decision,
+      feedback: feedback || ''
     }
+    if (effectiveTargets?.length) {
+      payload.target_agents = effectiveTargets
+    }
+    debateWsClient.sendJson(payload)
   }
 
   // WebSocket connection is initiated explicitly after user authentication in App.vue
@@ -1536,91 +1465,110 @@ export const useDebateStore = defineStore('debate', () => {
 
     // Create AudioContext immediately on user click to avoid browser suspension
     wwAudioContext = new AudioContext({ sampleRate: 16000 })
-    
-    const wsUrl = resolveWsUrl('/ws/audio/wake-word')
-    
-    wakeWordWs = new WebSocket(wsUrl)
-    wakeWordWs.binaryType = 'arraybuffer'
 
-    wakeWordWs.onopen = async () => {
-      console.log('[WW] Connected to wake-word stream')
-      try {
-        wwStream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        
-        // Resume if suspended
-        if (wwAudioContext?.state === 'suspended') {
-          await wwAudioContext.resume()
-        }
-        wwMicrophone = wwAudioContext!.createMediaStreamSource(wwStream)
-        
-        // Use an AudioWorklet (inline module) to get raw PCM in 4096-sample chunks
-        const workletCode = `
-          class PcmCaptureProcessor extends AudioWorkletProcessor {
-            constructor() {
-              super()
-              this.buffer = new Float32Array(4096)
-              this.offset = 0
-            }
-            process(inputs) {
-              const input = inputs[0] && inputs[0][0]
-              if (!input) return true
-              for (let i = 0; i < input.length; i++) {
-                this.buffer[this.offset++] = input[i]
-                if (this.offset === this.buffer.length) {
-                  this.port.postMessage(this.buffer.slice())
-                  this.offset = 0
-                }
-              }
-              return true
-            }
-          }
-          registerProcessor('pcm-capture-processor', PcmCaptureProcessor)
-        `
-        const workletUrl = URL.createObjectURL(
-          new Blob([workletCode], { type: 'application/javascript' }),
-        )
+    wakeWordWsClient.connect({
+      onOpen: async () => {
+        console.log('[WW] Connected to wake-word stream')
         try {
-          await wwAudioContext!.audioWorklet.addModule(workletUrl)
-        } finally {
-          URL.revokeObjectURL(workletUrl)
-        }
+          wwStream = await navigator.mediaDevices.getUserMedia({ audio: true })
 
-        wwProcessor = new AudioWorkletNode(wwAudioContext!, 'pcm-capture-processor')
-        wwMicrophone.connect(wwProcessor)
-
-        // Connect through a zero-gain node to destination to keep the AudioWorklet clock running continuously
-        try {
-          const silentGain = wwAudioContext!.createGain()
-          silentGain.gain.value = 0
-          wwProcessor.connect(silentGain)
-          silentGain.connect(wwAudioContext!.destination)
-        } catch {}
-
-        wwProcessor.port.onmessage = (e: MessageEvent<Float32Array>) => {
-          if (wakeWordWs?.readyState !== WebSocket.OPEN) return
-          
-          // Do not listen for wake word if we are currently recording
-          if (isRecording.value) return
-
-          // Auto-resume AudioContext if suspended
+          // Resume if suspended
           if (wwAudioContext?.state === 'suspended') {
-            wwAudioContext.resume().catch(() => {})
+            await wwAudioContext.resume()
+          }
+          wwMicrophone = wwAudioContext!.createMediaStreamSource(wwStream)
+
+          // Use an AudioWorklet (inline module) to get raw PCM in 4096-sample chunks
+          const workletCode = `
+            class PcmCaptureProcessor extends AudioWorkletProcessor {
+              constructor() {
+                super()
+                this.buffer = new Float32Array(4096)
+                this.offset = 0
+              }
+              process(inputs) {
+                const input = inputs[0] && inputs[0][0]
+                if (!input) return true
+                for (let i = 0; i < input.length; i++) {
+                  this.buffer[this.offset++] = input[i]
+                  if (this.offset === this.buffer.length) {
+                    this.port.postMessage(this.buffer.slice())
+                    this.offset = 0
+                  }
+                }
+                return true
+              }
+            }
+            registerProcessor('pcm-capture-processor', PcmCaptureProcessor)
+          `
+          const workletUrl = URL.createObjectURL(
+            new Blob([workletCode], { type: 'application/javascript' }),
+          )
+          try {
+            await wwAudioContext!.audioWorklet.addModule(workletUrl)
+          } finally {
+            URL.revokeObjectURL(workletUrl)
           }
 
-          const inputData = e.data
-          // Convert Float32 to Int16
-          const pcm16 = new Int16Array(inputData.length)
-          for (let i = 0; i < inputData.length; i++) {
-            const s = Math.max(-1, Math.min(1, inputData[i] || 0))
-            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
+          wwProcessor = new AudioWorkletNode(wwAudioContext!, 'pcm-capture-processor')
+          wwMicrophone.connect(wwProcessor)
+
+          // Connect through a zero-gain node to destination to keep the AudioWorklet clock running continuously
+          try {
+            const silentGain = wwAudioContext!.createGain()
+            silentGain.gain.value = 0
+            wwProcessor.connect(silentGain)
+            silentGain.connect(wwAudioContext!.destination)
+          } catch {}
+
+          wwProcessor.port.onmessage = (e: MessageEvent<Float32Array>) => {
+            if (!wakeWordWsClient.isOpen()) return
+
+            // Do not listen for wake word if we are currently recording
+            if (isRecording.value) return
+
+            // Auto-resume AudioContext if suspended
+            if (wwAudioContext?.state === 'suspended') {
+              wwAudioContext.resume().catch(() => {})
+            }
+
+            const inputData = e.data
+            // Convert Float32 to Int16
+            const pcm16 = new Int16Array(inputData.length)
+            for (let i = 0; i < inputData.length; i++) {
+              const s = Math.max(-1, Math.min(1, inputData[i] || 0))
+              pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
+            }
+            wakeWordWsClient.sendAudio(pcm16.buffer)
           }
-          wakeWordWs.send(pcm16.buffer)
+        } catch (e) {
+          console.error('[WW] Error accessing microphone for auto-listen', e)
+          stopAutoListen()
         }
-      } catch (e) {
-        console.error('[WW] Error accessing microphone for auto-listen', e)
+      },
+      onMessage: (rawData) => {
+        try {
+          const data = JSON.parse(rawData)
+          if (data.type === 'SILENCE_VOICE_COMMAND') {
+            console.log('[WW] Silence voice command received')
+            stopTts()
+            return
+          }
+          if (data.type === 'HITL_VOICE_COMMAND') {
+            console.log('[WW] HITL Voice command received:', data.command)
+            handleHitlVoiceCommand(data.command)
+            return
+          }
+          if (data.type === 'WAKE_WORD_DETECTED') {
+            handleWakeWordDetected(data)
+          }
+        } catch {}
+      },
+      onClose: () => {
+        console.log('[WW] Disconnected from wake-word stream')
         stopAutoListen()
-      }
-    }
+      },
+    })
 
     function handleHitlVoiceCommand(command: string) {
       if (!isHitlRequired.value) return
@@ -1668,43 +1616,13 @@ export const useDebateStore = defineStore('debate', () => {
         isWakeWordTriggered.value = false
       }, 1000)
     }
-
-    wakeWordWs.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        if (data.type === 'SILENCE_VOICE_COMMAND') {
-          console.log('[WW] Silence voice command received')
-          stopTts()
-          return
-        }
-        if (data.type === 'HITL_VOICE_COMMAND') {
-          console.log('[WW] HITL Voice command received:', data.command)
-          handleHitlVoiceCommand(data.command)
-          return
-        }
-        if (data.type === 'WAKE_WORD_DETECTED') {
-          handleWakeWordDetected(data)
-        }
-      } catch {}
-    }
-
-    wakeWordWs.onclose = () => {
-      console.log('[WW] Disconnected from wake-word stream')
-      stopAutoListen()
-    }
   }
 
   function stopAutoListen() {
     isAutoListenEnabled.value = false
     isWakeWordTriggered.value = false
-    
-    if (wakeWordWs) {
-      wakeWordWs.onclose = null
-      wakeWordWs.onerror = null
-      wakeWordWs.onmessage = null
-      wakeWordWs.close()
-      wakeWordWs = null
-    }
+
+    wakeWordWsClient.close()
     if (wwProcessor) {
       wwProcessor.disconnect()
       wwProcessor = null
@@ -1731,26 +1649,22 @@ export const useDebateStore = defineStore('debate', () => {
       if (!sid) {
         throw new Error('No hay sesión activa para guardar en el Vault')
       }
-      const response = await fetch('/api/learning/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: sid,
-          content: content || undefined,
-        }),
+      const data = await debateApiService.learnSession({
+        session_id: sid,
+        content: content || undefined,
       })
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}))
-        throw new Error(err.detail || 'Error al persistir el aprendizaje')
-      }
-      const data = await response.json()
       const rawFile = data.generated_file || data.file
       const fileName = rawFile ? String(rawFile).split('/').pop() : 'nota de arquitectura'
       const msg = `✅ Metis ha asimilado y guardado la síntesis en el Vault: ${fileName}`
       learningStatusMessage.value = msg
       return { success: true, message: msg }
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : 'Error inesperado al aprender la sesión'
+      const errMsg =
+        err instanceof HttpError
+          ? formatHttpErrorDetail(err.detail, 'Error al persistir el aprendizaje')
+          : err instanceof Error
+            ? err.message
+            : 'Error inesperado al aprender la sesión'
       learningStatusMessage.value = `❌ Error: ${errMsg}`
       return { success: false, message: errMsg }
     } finally {
@@ -1820,6 +1734,6 @@ export const useDebateStore = defineStore('debate', () => {
     onTtsChunkReady,
     onTtsStop,
     cleanAgentMessageContent,
-    get ws() { return ws } // Getter for testing purposes
+    get ws() { return debateWsClient.rawSocket } // Getter for testing purposes
   }
 })

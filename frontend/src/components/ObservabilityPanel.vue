@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { Activity, Terminal, Check, Database, ExternalLink } from '@lucide/vue'
 import { useDebateStore, type Agent } from '../stores/debate'
+import { observabilityService } from '../services/observabilityService'
 import EventStream from './EventStream.vue'
 
 const props = withDefaults(defineProps<{
@@ -35,26 +36,23 @@ const configuredDashboardUrl = ref<string>(
 
 async function fetchStats() {
   try {
-    const res = await fetch('/api/observability/stats')
-    if (res.ok) {
-      const data = await res.json()
-      if (typeof data.cpu_percent === 'number' && data.cpu_percent >= 0) {
-        cpuPercent.value = data.cpu_percent
-        cpuHistory.value = [...cpuHistory.value.slice(1), data.cpu_percent]
-      }
-      if (typeof data.memory_percent === 'number' && data.memory_percent >= 0) {
-        memoryPercent.value = data.memory_percent
-        memoryHistory.value = [...memoryHistory.value.slice(1), data.memory_percent]
-      }
-      if (data.cluster_status) {
-        clusterHealth.value = data.cluster_status
-      }
-      if (typeof data.langfuse_metrics_enabled === 'boolean') {
-        isLangfuseEnabled.value = data.langfuse_metrics_enabled
-      }
-      if (typeof data.langfuse_dashboard_url === 'string' && data.langfuse_dashboard_url) {
-        configuredDashboardUrl.value = data.langfuse_dashboard_url
-      }
+    const data = await observabilityService.getStats()
+    if (typeof data.cpu_percent === 'number' && data.cpu_percent >= 0) {
+      cpuPercent.value = data.cpu_percent
+      cpuHistory.value = [...cpuHistory.value.slice(1), data.cpu_percent]
+    }
+    if (typeof data.memory_percent === 'number' && data.memory_percent >= 0) {
+      memoryPercent.value = data.memory_percent
+      memoryHistory.value = [...memoryHistory.value.slice(1), data.memory_percent]
+    }
+    if (data.cluster_status) {
+      clusterHealth.value = data.cluster_status
+    }
+    if (typeof data.langfuse_metrics_enabled === 'boolean') {
+      isLangfuseEnabled.value = data.langfuse_metrics_enabled
+    }
+    if (typeof data.langfuse_dashboard_url === 'string' && data.langfuse_dashboard_url) {
+      configuredDashboardUrl.value = data.langfuse_dashboard_url
     }
   } catch {
     // Graceful fallback to local history

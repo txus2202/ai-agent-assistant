@@ -1,31 +1,12 @@
 import { defineStore } from 'pinia'
+import {
+  configService,
+  type AgentConfig,
+  type ProviderConfig,
+  type UpdateAgentConfigPayload,
+} from '../services/configService'
 
-export interface AgentConfig {
-  id: string
-  name: string
-  description?: string
-  color_hex?: string
-  provider: string
-  model_name: string
-  rag_top_k?: number
-  rag_min_score?: number
-  uses_rag?: boolean
-  supports_hitl?: boolean
-  can_ingest_documents?: boolean
-  topology_roles?: string[]
-  tools?: string[]
-}
-
-export interface ModelConfig {
-  id: string
-  name: string
-}
-
-export interface ProviderConfig {
-  id: string
-  name: string
-  models: ModelConfig[]
-}
+export type { AgentConfig, ModelConfig, ProviderConfig } from '../services/configService'
 
 interface ConfigState {
   agentsConfig: AgentConfig[]
@@ -39,22 +20,18 @@ export const useConfigStore = defineStore('config', {
     providers: [],
     isLoading: false,
   }),
-  
+
   actions: {
     async loadProviders() {
       try {
-        const response = await fetch('/api/models')
-        if (response.ok) {
-          const isProbing = response.headers?.get?.('x-models-probing') === '1'
-          const data = await response.json()
-          this.providers = data.filter((p: ProviderConfig) => p.models && p.models.length > 0)
+        const { providers, isProbing } = await configService.loadProviders()
+        this.providers = providers
 
-          if (isProbing) {
-            // Silently refresh model list once background probing completes
-            setTimeout(() => {
-              void this.loadProviders()
-            }, 3500)
-          }
+        if (isProbing) {
+          // Silently refresh model list once background probing completes
+          setTimeout(() => {
+            void this.loadProviders()
+          }, 3500)
         }
       } catch (error) {
         console.error('Failed to load providers:', error)
@@ -64,17 +41,14 @@ export const useConfigStore = defineStore('config', {
     async loadAgentsConfig() {
       this.isLoading = true
       try {
-        const response = await fetch('/api/config/agents')
-        if (response.ok) {
-          this.agentsConfig = await response.json()
-        }
+        this.agentsConfig = await configService.loadAgentsConfig()
       } catch (error) {
         console.error('Failed to load agents config:', error)
       } finally {
         this.isLoading = false
       }
     },
-    
+
     async updateAgentConfig(
       role: string,
       provider: string,
@@ -83,7 +57,7 @@ export const useConfigStore = defineStore('config', {
       ragMinScore?: number,
     ) {
       try {
-        const payload: Record<string, unknown> = { provider, model_name: modelName }
+        const payload: UpdateAgentConfigPayload = { provider, model_name: modelName }
         if (ragTopK !== undefined) {
           payload.rag_top_k = ragTopK
         }
@@ -91,30 +65,22 @@ export const useConfigStore = defineStore('config', {
           payload.rag_min_score = ragMinScore
         }
 
-        const response = await fetch(`/api/config/agents/${role}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload),
-        })
-        
-        if (response.ok) {
-          const index = this.agentsConfig.findIndex(a => a.id === role)
-          if (index !== -1) {
-            this.agentsConfig[index]!.provider = provider
-            this.agentsConfig[index]!.model_name = modelName
-            if (ragTopK !== undefined) {
-              this.agentsConfig[index]!.rag_top_k = ragTopK
-            }
-            if (ragMinScore !== undefined) {
-              this.agentsConfig[index]!.rag_min_score = ragMinScore
-            }
+        await configService.updateAgentConfig(role, payload)
+
+        const index = this.agentsConfig.findIndex((a) => a.id === role)
+        if (index !== -1) {
+          this.agentsConfig[index]!.provider = provider
+          this.agentsConfig[index]!.model_name = modelName
+          if (ragTopK !== undefined) {
+            this.agentsConfig[index]!.rag_top_k = ragTopK
+          }
+          if (ragMinScore !== undefined) {
+            this.agentsConfig[index]!.rag_min_score = ragMinScore
           }
         }
       } catch (error) {
         console.error(`Failed to update agent config for ${role}:`, error)
       }
-    }
-  }
+    },
+  },
 })

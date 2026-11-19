@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
+import { audioService } from '../services/audioService'
+import { debateApiService, type VaultDomainItem } from '../services/debateApiService'
 import { 
   SendHorizontal, 
   Paperclip, 
@@ -378,24 +380,14 @@ const selectedAgents = computed<string[]>({
   }
 })
 
-interface VaultDomainItem {
-  id: string
-  name: string
-  description?: string
-  path?: string
-}
-
 const availableDomains = ref<VaultDomainItem[]>([])
 const selectedDomain = ref<string>('')
 
 const loadDomains = async () => {
   try {
-    const res = await fetch('/api/learning/domains')
-    if (res.ok) {
-      const data = await res.json()
-      if (Array.isArray(data)) {
-        availableDomains.value = data
-      }
+    const data = await debateApiService.listLearningDomains()
+    if (Array.isArray(data)) {
+      availableDomains.value = data
     }
   } catch {
     // Keep empty list when domains endpoint is unavailable
@@ -673,15 +665,12 @@ const prefetchTtsQueue = async () => {
 
   try {
     prefetchAbortController = new AbortController()
-    const response = await fetch('/api/audio/synthesize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: item.text, add_silence: false }),
-      signal: prefetchAbortController.signal
-    })
-
-    if (isTtsSessionActive(currentSession) && response.ok) {
-      const audioBuffer = await response.arrayBuffer()
+    const audioBuffer = await audioService.synthesizeSpeech(
+      item.text,
+      false,
+      prefetchAbortController.signal,
+    )
+    if (isTtsSessionActive(currentSession)) {
       handlePrefetchAudioResult(audioBuffer, item, currentSession)
     }
   } catch (e: unknown) {

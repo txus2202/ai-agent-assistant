@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDebateStore, type SupervisorEvent, type DebateSession } from '../stores/debate'
+import { historyService, type PaginatedDebatesResponse } from '../services/historyService'
 import { ArrowLeft, Trash2, Search, ArrowRight, Clock } from '@lucide/vue'
 
 interface DebateSummaryItem extends DebateSession {
@@ -16,14 +17,6 @@ interface DebateSummaryItem extends DebateSession {
   conclusion?: string
   agents?: string[]
   events?: SupervisorEvent[]
-}
-
-interface PaginatedDebatesResponse {
-  total: number
-  total_all?: number
-  limit: number
-  offset: number
-  items: DebateSummaryItem[]
 }
 
 const router = useRouter()
@@ -45,19 +38,6 @@ const isServerPaginated = ref(true)
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let activeFetchSeq = 0
 
-const buildDebatesUrl = (offsetValue: number): string => {
-  const params = new URLSearchParams({
-    limit: String(pageSize),
-    offset: String(offsetValue),
-    filter: activeFilter.value
-  })
-  const query = searchQuery.value.trim()
-  if (query) {
-    params.set('search', query)
-  }
-  return `/api/debates?${params.toString()}`
-}
-
 const fetchDebates = async (reset = true) => {
   const requestSeq = ++activeFetchSeq
   const targetOffset = reset ? 0 : nextOffset.value
@@ -68,10 +48,12 @@ const fetchDebates = async (reset = true) => {
   }
 
   try {
-    const response = await fetch(buildDebatesUrl(targetOffset))
-    if (!response.ok || requestSeq !== activeFetchSeq) return
-
-    const payload: unknown = await response.json()
+    const payload: unknown = await historyService.listDebates({
+      limit: pageSize,
+      offset: targetOffset,
+      filter: activeFilter.value,
+      search: searchQuery.value,
+    })
     if (requestSeq !== activeFetchSeq) return
 
     if (Array.isArray(payload)) {
@@ -86,7 +68,7 @@ const fetchDebates = async (reset = true) => {
 
     if (payload && typeof payload === 'object') {
       const page = payload as PaginatedDebatesResponse
-      const incoming = Array.isArray(page.items) ? page.items : []
+      const incoming = (Array.isArray(page.items) ? page.items : []) as DebateSummaryItem[]
       isServerPaginated.value = true
       if (reset) {
         debates.value = incoming
@@ -115,13 +97,11 @@ const deleteDebate = async (id: string, event: Event) => {
   if (!confirm('Are you sure you want to delete this session?')) return
 
   try {
-    const response = await fetch(`/api/debates/${encodeURIComponent(id)}`, { method: 'DELETE' })
-    if (response.ok) {
-      debates.value = debates.value.filter(d => d.id !== id)
-      totalCount.value = Math.max(0, totalCount.value - 1)
-      totalAllCount.value = Math.max(0, totalAllCount.value - 1)
-      nextOffset.value = Math.max(0, nextOffset.value - 1)
-    }
+    await historyService.deleteDebate(id)
+    debates.value = debates.value.filter(d => d.id !== id)
+    totalCount.value = Math.max(0, totalCount.value - 1)
+    totalAllCount.value = Math.max(0, totalAllCount.value - 1)
+    nextOffset.value = Math.max(0, nextOffset.value - 1)
   } catch (error) {
     console.error('Failed to delete debate:', error)
   }
@@ -347,9 +327,7 @@ const restoreDebate = async (debate: DebateSummaryItem) => {
   if (needsDetailFetch) {
     loadingDetailId.value = debate.id
     try {
-      const response = await fetch(`/api/debates/${encodeURIComponent(debate.id)}`)
-      if (!response.ok) return
-      const detail: unknown = await response.json()
+      const detail: unknown = await historyService.getDebate(debate.id)
       if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
         fullSession = detail as DebateSession
       }

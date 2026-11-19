@@ -3,6 +3,8 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ChevronDown } from '@lucide/vue'
 import { useDebateStore } from '../stores/debate'
 import { useTouchSwipe } from '../utils/touchSwipe'
+import { audioService } from '../services/audioService'
+import { HttpError } from '../services/httpClient'
 
 const props = withDefaults(defineProps<{
   activeAgentColor?: string
@@ -163,26 +165,18 @@ const toggleRecording = async () => {
 }
 
 const uploadAudioForTranscription = async (blob: Blob) => {
-  const formData = new FormData()
-  formData.append('file', blob, 'recording.webm')
-
   try {
-    const response = await fetch('/api/audio/transcribe', {
-      method: 'POST',
-      body: formData
-    })
-
-    if (response.ok) {
-      const data = await response.json()
-      if (data.text) {
-        store.draftMessage += (store.draftMessage ? ' ' : '') + data.text
-        emit('submit-draft')
-      }
-    } else {
-      console.error("Transcription failed")
+    const data = await audioService.transcribeAudio(blob)
+    if (data.text) {
+      store.draftMessage += (store.draftMessage ? ' ' : '') + data.text
+      emit('submit-draft')
     }
   } catch (e) {
-    console.error("Transcription error:", e)
+    if (e instanceof HttpError) {
+      console.error("Transcription failed")
+    } else {
+      console.error("Transcription error:", e)
+    }
   }
 }
 

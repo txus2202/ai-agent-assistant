@@ -12,16 +12,36 @@ from pathlib import Path
 
 import pytest
 
-from src.domain.agents.sub_agent_profiles import reset_default_profiles
+from src.domain.agents.debate_topology import DebateTopology
+from src.infrastructure.config.yaml_agent_catalog import YamlAgentCatalogRepository
+from src.infrastructure.config.yaml_topology_provider import (
+    YamlTopologyProvider,
+    load_topology,
+)
 
 COUNCIL_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "council"
 
 
 @pytest.fixture(autouse=True)
-def generic_council(monkeypatch):
+def generic_council_env(monkeypatch):
     monkeypatch.setenv("AGENTS_FILE", str(COUNCIL_DIR / "agents.yaml"))
     monkeypatch.setenv("TOPOLOGY_FILE", str(COUNCIL_DIR / "topology.yaml"))
-    reset_default_profiles()
     yield
-    monkeypatch.undo()
-    reset_default_profiles()
+
+
+@pytest.fixture
+def generic_catalog(generic_council_env) -> YamlAgentCatalogRepository:
+    return YamlAgentCatalogRepository(COUNCIL_DIR / "agents.yaml")
+
+
+@pytest.fixture
+def generic_topology_provider(generic_catalog: YamlAgentCatalogRepository) -> YamlTopologyProvider:
+    return YamlTopologyProvider(
+        agent_catalog=generic_catalog,
+        topology_path=COUNCIL_DIR / "topology.yaml",
+    )
+
+
+@pytest.fixture
+def generic_topology(generic_catalog: YamlAgentCatalogRepository) -> DebateTopology:
+    return load_topology(COUNCIL_DIR / "topology.yaml", agent_catalog=generic_catalog)

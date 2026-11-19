@@ -18,11 +18,13 @@ from __future__ import annotations
 import asyncio
 import re
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 from src.application.services.query_vault import QueryVault
-from src.domain.agents.sub_agent_profiles import SubAgentProfile, format_team_roster, get_profile
+from src.domain.agents.sub_agent_profiles import SubAgentProfile, format_team_roster
+from src.domain.ports.agent_catalog_repository import IAgentCatalogRepository
 from src.domain.ports.document_store import IDocumentStore
 from src.domain.ports.llm_provider import ILLMProvider, invoke_llm_with_usage
 from src.domain.value_objects.document_chunk import DocumentChunk
@@ -138,10 +140,11 @@ class SubAgentRunner:
         context_block: str,
         chat_history: list[dict[str, Any]] | None,
         image_provider: str | None,
+        team_profiles: Sequence[SubAgentProfile] = (),
     ) -> str:
         parts: list[str] = [profile.system_prompt]
         if profile.is_supervisor:
-            roster_context = format_team_roster(exclude_id=profile.id)
+            roster_context = format_team_roster(team_profiles, exclude_id=profile.id)
             if roster_context:
                 parts.append(roster_context)
         if context_block:
@@ -223,6 +226,7 @@ class SubAgentRunner:
         chat_history: list[dict[str, Any]] | None = None,
         rag_top_k: int | None = None,
         rag_min_score: float | None = None,
+        agent_catalog: IAgentCatalogRepository | None = None,
     ) -> SubAgentResponse:
         """
         Run a sub-agent for the given role (async, ADR-016).
@@ -230,7 +234,9 @@ class SubAgentRunner:
         The ILLMProvider.complete() is synchronous; it is offloaded to a
         thread pool via asyncio.to_thread() to avoid blocking the event loop.
         """
-        profile = get_profile(role)
+        if agent_catalog is None:
+            raise ValueError("agent_catalog must be provided to SubAgentRunner.run()")
+        profile = agent_catalog.get_profile(role)
         context_chunks, context_block = await asyncio.to_thread(
             cls._retrieve_rag_context,
             profile,
@@ -240,7 +246,15 @@ class SubAgentRunner:
             rag_min_score=rag_min_score,
         )
         image_provider = ImageGenerationService.get_provider_name()
-        prompt = cls._build_prompt(profile, user_request, context_block, chat_history, image_provider)
+        team_profiles = agent_catalog.get_all_profiles() if profile.is_supervisor else ()
+        prompt = cls._build_prompt(
+            profile,
+            user_request,
+            context_block,
+            chat_history,
+            image_provider,
+            team_profiles=team_profiles,
+        )
 
         start_time = time.perf_counter()
         content, raw_usage = await asyncio.to_thread(

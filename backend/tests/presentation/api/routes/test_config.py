@@ -134,8 +134,12 @@ def test_put_agent_config_validates_rag_bounds(client, invalid_payload):
     response = client.put("/config/agents/senior_architect", json=invalid_payload)
     assert response.status_code == 422
 
-def test_agent_config_defaults_from_profile_or_empty(client):
-    from src.domain.agents.sub_agent_profiles import SubAgentProfile, register_profile, unregister_profile
+def test_agent_config_defaults_from_profile_or_empty(test_user):
+    from src.domain.agents.sub_agent_profiles import SubAgentProfile
+
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: test_user
+    local_client = TestClient(app)
 
     # Agent with defaults in profile
     custom_profile = SubAgentProfile(
@@ -155,20 +159,20 @@ def test_agent_config_defaults_from_profile_or_empty(client):
         color_hex="#654321",
         system_prompt="Test prompt",
     )
-    register_profile(custom_profile)
-    register_profile(empty_profile)
+    app.state.agent_catalog.register_profile(custom_profile)
+    app.state.agent_catalog.register_profile(empty_profile)
 
     try:
-        cfg_custom = client.get("/config/agents/test_custom_agent").json()
+        cfg_custom = local_client.get("/config/agents/test_custom_agent").json()
         assert cfg_custom["provider"] == "gemini"
         assert cfg_custom["model_name"] == "gemini-3.8-flash"
 
-        cfg_empty = client.get("/config/agents/test_empty_agent").json()
+        cfg_empty = local_client.get("/config/agents/test_empty_agent").json()
         assert cfg_empty["provider"] == ""
         assert cfg_empty["model_name"] == ""
     finally:
-        unregister_profile("test_custom_agent")
-        unregister_profile("test_empty_agent")
+        app.state.agent_catalog.unregister_profile("test_custom_agent")
+        app.state.agent_catalog.unregister_profile("test_empty_agent")
 
 
 def test_put_agent_config_invalid_role(client):
@@ -180,7 +184,7 @@ def test_put_agent_config_invalid_role(client):
     assert response.status_code == 404
 
 def test_get_topology(client):
-    from src.domain.agents.debate_topology import load_topology
+    from src.infrastructure.config.yaml_topology_provider import load_topology
     top = load_topology()
     response = client.get("/config/topology")
     assert response.status_code == 200

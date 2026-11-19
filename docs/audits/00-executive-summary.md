@@ -81,7 +81,7 @@ Se recomienda ejecutar los refactors siguiendo estas **6 fases incrementales**, 
 22. ✅ `[x]` `[04][P2]` Paginación y proyección ligera en `GET /debates` (`DebateSummaryDTO`).
 
 ### Fase 4 — Refactor Estructural: Hexagonal Estricta y Desacoplamiento Frontend (Riesgo Medio-Alto)
-23. `[02][P1]` Purificación de `domain/`: extraer YAML, `os`, rutas y estado global mutable fuera de `sub_agent_profiles.py`, `debate_topology.py` y `task.py` hacia repositorios en `infrastructure/`.
+23. ✅ `[x]` `[02][P1]` Purificación de `domain/`: extraer YAML, `os`, rutas y estado global mutable fuera de `sub_agent_profiles.py`, `debate_topology.py` y `task.py` hacia repositorios en `infrastructure/`.
 24. `[02][P1]` Inversión de dependencias desde `application/` e `infrastructure/` (`supervisor_agent.py`, `sub_agent_runner.py`, `ingest_vault.py`, `learn_from_source.py`, `registry.py`, `image_generation/service.py`) introduciendo puertos en `domain/ports/`.
 25. `[02][P1]` Consolidación de un único `LLMProviderRegistry` en el composition root, estandarización de `domain/ports/*` (`Protocol` vs `ABC`) y traslado de `NoOpObservabilityService` a `infrastructure/observability/`.
 26. `[02][P2]` Descomposición de God Modules (`supervisor_agent.py`, `ws/debate.py`), simplificación de `_apply_filter`, `threading.Lock` en modelos de audio y sustitución de `except Exception: pass` por logging explícito. *(Al finalizar los puntos 23-26, activar en verde estricto las guardas AST de `test_decoupling_guard.py`)*.

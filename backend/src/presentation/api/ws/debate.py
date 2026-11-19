@@ -19,8 +19,12 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from src.application.agents.sub_agent_runner import SubAgentResponse, SubAgentRunner
 from src.application.agents.supervisor_agent import SupervisorAgent
 from src.application.services.learn_from_source import LearnFromSource, SourceType
-from src.domain.agents.sub_agent_profiles import SubAgentProfile, get_profile
+from src.domain.agents.sub_agent_profiles import SubAgentProfile
 from src.domain.agents.supervisor_events import HITLResponse, SupervisorEvent, EventType, HITLDecision
+from src.domain.ports.agent_catalog_repository import (
+    IAgentCatalogRepository,
+    ITopologyProvider,
+)
 from src.domain.ports.document_store import IDocumentStore
 from src.domain.ports.llm_provider import ILLMProvider
 from src.domain.ports.observability_port import TraceContext, SpanContext
@@ -29,6 +33,10 @@ from src.infrastructure.llm.registry import get_llm_provider
 from src.infrastructure.persistence.sqlite_agent_config_repository import SqliteAgentConfigRepository
 from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
 from src.presentation.api.config import get_settings
+from src.presentation.api.dependencies.agents import (
+    get_agent_catalog,
+    get_topology_provider,
+)
 from src.presentation.api.dependencies.rag import get_document_store
 from src.presentation.api.routes.observability import get_observability_service
 from src.presentation.api.routes.upload import resolve_user_attachment_path
@@ -167,15 +175,19 @@ class DebateWebSocketHandler:
         authenticated_user: Any = None,
         auth_service: Any = None,
         document_store: IDocumentStore | None = None,
+        agent_catalog: IAgentCatalogRepository | None = None,
+        topology_provider: ITopologyProvider | None = None,
     ):
         self.websocket = websocket
         self.authenticated_user = authenticated_user
         self.auth_service = auth_service
         self.settings = get_settings()
         self._cancel_event = asyncio.Event()
+        self.agent_catalog = agent_catalog or get_agent_catalog(websocket, self.settings)
+        self.topology_provider = topology_provider or get_topology_provider(websocket, self.settings)
         db_path = str(self.settings.sqlite_db_path)
         from src.infrastructure.persistence.sqlite_agent_config_repository import UserScopedAgentConfigRepository
-        base_agent_repo = SqliteAgentConfigRepository(db_path)
+        base_agent_repo = SqliteAgentConfigRepository(db_path, agent_catalog=self.agent_catalog)
         user_id_scope = self.authenticated_user.id if self.authenticated_user else None
         self.agent_config_repo = UserScopedAgentConfigRepository(base_agent_repo, user_id=user_id_scope)
         self.debate_repo = SqliteDebateRepository(db_path)
@@ -237,7 +249,7 @@ class DebateWebSocketHandler:
         config = self.agent_config_repo.find_by_role(role_val)
         default_mod = ""
         try:
-            profile = get_profile(role_val)
+            profile = self.agent_catalog.get_profile(role_val)
             default_mod = getattr(profile, "default_model", "")
         except KeyError:
             pass
@@ -369,6 +381,8 @@ class DebateWebSocketHandler:
                 hitl_callback=self.hitl_callback,
                 chat_history=chat_history,
                 cancel_event=self._cancel_event,
+                agent_catalog=self.agent_catalog,
+                topology_provider=self.topology_provider,
             ):
                 if self._cancel_event.is_set():
                     raise DebateCancelledError("Debate cancelled by user")
@@ -721,7 +735,7 @@ class DebateWebSocketHandler:
     ) -> str | None:
         agent_role = target_agent
         try:
-            profile = get_profile(target_agent)
+            profile = self.agent_catalog.get_profile(target_agent)
             agent_role = profile.display_name
             await self.send_event(SupervisorEvent(
                 type=EventType.AGENT_STARTED, role=agent_role, content=""
@@ -739,6 +753,7 @@ class DebateWebSocketHandler:
                 llm_provider=llm_prov,
                 document_store=doc_store,
                 model_name=mod_name,
+                agent_catalog=self.agent_catalog,
                 **runner_kwargs,
             )
 
@@ -754,11 +769,10 @@ class DebateWebSocketHandler:
             await self._handle_sub_agent_exception(agent_role, e)
             return None
 
-    @staticmethod
-    def _build_trace_tags(target_agent: str, attachments: list[Any] | None = None) -> list[str]:
+    def _build_trace_tags(self, target_agent: str, attachments: list[Any] | None = None) -> list[str]:
         tags = [f"agent:{target_agent}"]
         try:
-            profile = get_profile(target_agent)
+            profile = self.agent_catalog.get_profile(target_agent)
             flow_tag = "flow:supervisor_debate" if profile.is_supervisor else "flow:sub_agent"
             tags.append(flow_tag)
             if profile.supports_hitl:
@@ -855,7 +869,7 @@ class DebateWebSocketHandler:
         target_domain: str | None = None,
     ) -> bool:
         try:
-            target_profile = get_profile(target_agent)
+            target_profile = self.agent_catalog.get_profile(target_agent)
         except KeyError:
             await asyncio.to_thread(self._update_debate_status_sync, "aborted")
             await self.websocket.send_json({"type": "error", "content": f"Unknown agent role: {target_agent}"})
@@ -880,10 +894,9 @@ class DebateWebSocketHandler:
         target_agent = raw_start.get("target_agent", "supervisor")
         return [target_agent] if isinstance(target_agent, str) else list(target_agent)
 
-    @staticmethod
-    def _resolve_agent_display_name(agent_id: str) -> str:
+    def _resolve_agent_display_name(self, agent_id: str) -> str:
         try:
-            return get_profile(agent_id).display_name
+            return self.agent_catalog.get_profile(agent_id).display_name
         except Exception:
             return agent_id
 

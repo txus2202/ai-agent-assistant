@@ -4,6 +4,7 @@ import json
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from src.infrastructure.audio.wake_word_service import WakeWordService
+from src.presentation.api.dependencies.agents import build_agent_catalog_repository
 
 from typing import Any, Mapping
 
@@ -13,7 +14,7 @@ router = APIRouter(prefix="/ws/audio", tags=["Audio"])
 
 # Initialize the wake word service globally so it's loaded once.
 # The WakeWordService uses Vosk locally.
-wake_word_service = WakeWordService()
+wake_word_service = WakeWordService(agent_catalog=build_agent_catalog_repository())
 
 
 

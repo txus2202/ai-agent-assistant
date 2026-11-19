@@ -57,6 +57,17 @@ def test_should_fail_when_prompt_exceeds_max_length(agent_id: uuid.UUID) -> None
         Task(prompt=long_prompt, agent_id=agent_id)
 
 
+def test_should_enforce_injected_max_length_without_env_lookup(agent_id: uuid.UUID) -> None:
+    short_task = Task(prompt="12345", agent_id=agent_id, max_length=5)
+    assert short_task.prompt == "12345"
+
+    with pytest.raises(ValueError, match="maximum length of 5"):
+        Task(prompt="123456", agent_id=agent_id, max_length=5)
+
+    with pytest.raises(ValueError, match="positive integer"):
+        Task(prompt="valid", agent_id=agent_id, max_length=0)
+
+
 # ---------------------------------------------------------------------------
 # Scenario 4: Valid transition PENDING → RUNNING
 # ---------------------------------------------------------------------------

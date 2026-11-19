@@ -2,13 +2,14 @@ import asyncio
 import io
 import os
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Optional
 
 from faster_whisper import WhisperModel
 import soundfile as sf
 import numpy as np
 import av
 from kokoro_onnx import Kokoro
+from src.domain.ports.agent_catalog_repository import IAgentCatalogRepository
 from src.domain.ports.audio_service import IAudioService
 from src.infrastructure.audio.phonetic_normalizer import SpanishTechPhoneticNormalizer
 
@@ -38,6 +39,7 @@ class LocalAudioService(IAudioService):
         whisper_beam_size: int = 5,
         whisper_threads: int = 4,
         kokoro_omp_num_threads: int | None = None,
+        agent_catalog: Optional[IAgentCatalogRepository] = None,
     ):
         self.whisper_model_size = whisper_model_size
         self.kokoro_model_path = kokoro_model_path
@@ -47,6 +49,7 @@ class LocalAudioService(IAudioService):
         self.whisper_beam_size = whisper_beam_size
         self.whisper_threads = whisper_threads
         self.kokoro_omp_num_threads = kokoro_omp_num_threads
+        self._agent_catalog = agent_catalog
         self.whisper_initial_prompt = whisper_initial_prompt or (
             "Conversación técnica en castellano sobre desarrollo de software, arquitectura de sistemas e infraestructura. "
             "Uso frecuente de términos técnicos, herramientas, patrones y nombres en inglés: "
@@ -115,9 +118,10 @@ class LocalAudioService(IAudioService):
 
     def _build_initial_prompt(self) -> str:
         prompt = self.whisper_initial_prompt
+        if self._agent_catalog is None:
+            return prompt
         try:
-            from src.domain.agents.sub_agent_profiles import get_all_profiles
-            names = [p.display_name for p in get_all_profiles() if p.display_name]
+            names = [p.display_name for p in self._agent_catalog.get_all_profiles() if p.display_name]
             if names:
                 prompt = f"{prompt.rstrip('.')} Nombres de agentes: {', '.join(names)}."
         except Exception:

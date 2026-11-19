@@ -13,6 +13,7 @@ from src.infrastructure.persistence.postgres_user_repository import PostgreSQLUs
 from src.infrastructure.security.argon2_hasher import Argon2idPasswordHasher
 from src.infrastructure.security.jwt_token_service import JwtTokenService
 from src.presentation.api.config import Settings, get_settings
+from src.presentation.api.dependencies.agents import build_agent_catalog_repository
 
 from starlette.requests import HTTPConnection
 
@@ -28,7 +29,10 @@ def get_debate_repository(settings: Settings = Depends(get_settings)) -> IDebate
 
 def get_agent_config_repository(settings: Settings = Depends(get_settings)) -> IAgentConfigRepository:
     """Centralized dependency provider for IAgentConfigRepository."""
-    return SqliteAgentConfigRepository(db_path=str(settings.sqlite_db_path))
+    return SqliteAgentConfigRepository(
+        db_path=str(settings.sqlite_db_path),
+        agent_catalog=build_agent_catalog_repository(settings),
+    )
 
 
 def get_auth_service(connection: HTTPConnection) -> AuthService:

@@ -4,6 +4,10 @@ from unittest.mock import MagicMock
 import pytest
 from starlette.requests import HTTPConnection
 
+from src.domain.ports.agent_catalog_repository import (
+    IAgentCatalogRepository,
+    ITopologyProvider,
+)
 from src.domain.ports.agent_config_repository import IAgentConfigRepository
 from src.domain.ports.debate_repository import IDebateRepository
 from src.domain.ports.document_store import IDocumentStore
@@ -167,3 +171,22 @@ def test_create_app_accepts_preconfigured_document_store(tmp_path):
     custom_store = MagicMock(spec=IDocumentStore)
     app = create_app(settings=settings, document_store=custom_store)
     assert app.state.document_store is custom_store
+
+
+def test_composition_root_wires_agent_catalog_topology_and_task_limit(monkeypatch, tmp_path):
+    settings = _make_sqlite_settings(tmp_path)
+    app = create_app(settings=settings)
+
+    assert isinstance(app.state.agent_catalog, IAgentCatalogRepository)
+    assert isinstance(app.state.topology_provider, ITopologyProvider)
+    assert app.state.topology_provider.get_topology().supervisor
+
+    agent_cfg_repo = get_agent_config_repository(settings)
+    assert getattr(agent_cfg_repo, "_agent_catalog", None) is not None
+
+    monkeypatch.setenv("TASK_PROMPT_MAX_LENGTH", "2048")
+    custom_settings = Settings(
+        sqlite_db_path=tmp_path / "sqlite2.db",
+        auth_secret_key="test_secret_key_32_bytes_minimum_length",
+    )
+    assert custom_settings.task_prompt_max_length == 2048

@@ -4,9 +4,11 @@ import logging
 import re
 import unicodedata
 from dataclasses import dataclass
+from typing import Optional
 from vosk import Model, KaldiRecognizer  # type: ignore[import-untyped]
 
-from src.domain.agents.sub_agent_profiles import get_all_profiles
+from src.domain.ports.agent_catalog_repository import IAgentCatalogRepository
+from src.infrastructure.config.yaml_agent_catalog import YamlAgentCatalogRepository
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +73,16 @@ class WakeWordService:
     }
 
 
-    def __init__(self):
+    def __init__(self, agent_catalog: Optional[IAgentCatalogRepository] = None):
         """
-        Initialize the WakeWord service using Vosk and dynamic agent profiles.
+        Initialize the WakeWord service using Vosk and an injected agent catalog.
         """
         self.is_initialized = False
         self.model = None
         self.recognizer = None
+        self._agent_catalog: IAgentCatalogRepository = (
+            agent_catalog if agent_catalog is not None else YamlAgentCatalogRepository()
+        )
         self._agent_triggers: dict[str, tuple[str, str]] = self._build_agent_triggers()
 
     @staticmethod
@@ -88,11 +93,11 @@ class WakeWordService:
 
     def _build_agent_triggers(self) -> dict[str, tuple[str, str]]:
         """
-        Dynamically extracts all agent wake words and aliases from SubAgentProfile registry.
+        Dynamically extracts all agent wake words and aliases from the catalog port.
         Maps trigger keyword -> (agent_role_value, display_name).
         """
         triggers: dict[str, tuple[str, str]] = {}
-        profiles = get_all_profiles()
+        profiles = self._agent_catalog.get_all_profiles()
 
         for profile in profiles:
             display_name = profile.display_name

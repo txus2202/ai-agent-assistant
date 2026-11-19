@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     # Learning Agent file size limit (MB)
     max_learn_file_mb: int = 50
 
+    # Domain Agent Catalog, Topology & Task limits
+    agents_file: str | None = None
+    topology_file: str | None = None
+    task_prompt_max_length: int = 10_000
+
     # Image Generation (Fidias - "imagen" | "")
     image_generation_provider: str = ""
 

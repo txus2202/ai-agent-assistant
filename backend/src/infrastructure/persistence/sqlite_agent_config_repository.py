@@ -2,6 +2,7 @@ import sqlite3
 from typing import List, Optional
 
 from src.domain.exceptions import RepositoryError
+from src.domain.ports.agent_catalog_repository import IAgentCatalogRepository
 from src.domain.ports.agent_config_repository import IAgentConfigRepository
 from src.domain.value_objects.agent_config import AgentConfig
 from src.infrastructure.persistence.sqlite_base import SqliteConnectionManager
@@ -30,8 +31,13 @@ _UPSERT_AGENT_CONFIG = """
 
 
 class SqliteAgentConfigRepository(IAgentConfigRepository, SqliteConnectionManager):
-    def __init__(self, db_path: str) -> None:
+    def __init__(
+        self,
+        db_path: str,
+        agent_catalog: Optional[IAgentCatalogRepository] = None,
+    ) -> None:
         SqliteConnectionManager.__init__(self, db_path)
+        self._agent_catalog = agent_catalog
         self._init_schema()
 
     def save(self, config: AgentConfig) -> None:
@@ -66,16 +72,16 @@ class SqliteAgentConfigRepository(IAgentConfigRepository, SqliteConnectionManage
 
         return self._row_to_config(row) if row else None
 
-    @staticmethod
-    def _candidate_roles(role: str) -> List[str]:
+    def _candidate_roles(self, role: str) -> List[str]:
         candidates = [role]
+        if self._agent_catalog is None:
+            return candidates
         try:
-            from src.domain.agents.sub_agent_profiles import get_profile
-            profile = get_profile(role)
+            profile = self._agent_catalog.get_profile(role)
             for alt in (profile.display_name, profile.id):
                 if alt not in candidates:
                     candidates.append(alt)
-        except Exception:
+        except KeyError:
             pass
         return candidates
 

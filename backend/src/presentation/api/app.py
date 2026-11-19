@@ -27,6 +27,10 @@ from src.infrastructure.persistence.sqlite_agent_config_repository import Sqlite
 from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
 
 if TYPE_CHECKING:
+    from src.domain.ports.agent_catalog_repository import (
+        IAgentCatalogRepository,
+        ITopologyProvider,
+    )
     from src.domain.ports.document_store import IDocumentStore
 
 logger = logging.getLogger(__name__)
@@ -91,6 +95,20 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
     if db_url and db_url.startswith(("postgres://", "postgresql://")):
         await _init_postgres_pool(app, db_url)
     
+    # Warm and validate agent catalog + debate topology in composition root
+    from src.presentation.api.dependencies.agents import (
+        build_agent_catalog_repository,
+        build_topology_provider,
+    )
+    if getattr(app.state, "agent_catalog", None) is None:
+        app.state.agent_catalog = build_agent_catalog_repository(settings)
+    if getattr(app.state, "topology_provider", None) is None:
+        app.state.topology_provider = build_topology_provider(
+            settings,
+            agent_catalog=app.state.agent_catalog,
+        )
+    app.state.topology_provider.get_topology()
+
     # Future: ChromaDB, LLMProviderRegistry init
     try:
         yield
@@ -105,6 +123,8 @@ def create_app(
     settings: Settings | None = None,
     auth_service: Any = None,
     document_store: IDocumentStore | None = None,
+    agent_catalog: IAgentCatalogRepository | None = None,
+    topology_provider: ITopologyProvider | None = None,
 ) -> FastAPI:
     cfg = settings or get_settings()
 
@@ -114,8 +134,21 @@ def create_app(
         version=cfg.api_version,
         lifespan=lifespan,
     )
+    from src.presentation.api.dependencies.agents import (
+        build_agent_catalog_repository,
+        build_topology_provider,
+    )
+
+    resolved_catalog = agent_catalog or build_agent_catalog_repository(cfg)
+    resolved_topology_provider = topology_provider or build_topology_provider(
+        cfg,
+        agent_catalog=resolved_catalog,
+    )
+
     app.state.settings = cfg
     app.state.document_store = document_store
+    app.state.agent_catalog = resolved_catalog
+    app.state.topology_provider = resolved_topology_provider
     if auth_service is not None:
         app.state.auth_service = auth_service
 

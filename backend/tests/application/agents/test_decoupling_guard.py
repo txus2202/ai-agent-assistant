@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from src.domain.agents.sub_agent_profiles import load_profiles_from_file
+from src.infrastructure.config.yaml_agent_catalog import load_profiles_from_file
 
 BACKEND = Path(__file__).resolve().parents[3]
 SRC = BACKEND / "src"
@@ -78,11 +78,6 @@ LAYER_FORBIDDEN_IMPORTS: dict[str, frozenset[str]] = {
 # Any new violation outside this baseline fails immediately; baseline entries
 # emit a warning unless STRICT_ARCH_GUARD=1 is set.
 KNOWN_DEPENDENCY_BASELINE: frozenset[tuple[str, str]] = frozenset({
-    ("domain/agents/debate_topology.py", "yaml"),
-    ("domain/agents/debate_topology.py", "os"),
-    ("domain/agents/sub_agent_profiles.py", "os"),
-    ("domain/agents/sub_agent_profiles.py", "yaml"),
-    ("domain/entities/task.py", "os"),
     ("application/agents/sub_agent_runner.py", "src.infrastructure.image_generation.service"),
     ("application/agents/supervisor_agent.py", "src.presentation.api.config"),
     ("application/services/ingest_vault.py", "src.infrastructure.rag.obsidian_parser"),
@@ -153,7 +148,17 @@ def test_profiles_module_contains_no_concrete_agents_or_builtin_supervisor():
     catalog_names = [p.display_name for p in load_profiles_from_file(ROOT / "agents.yaml")]
     for name in catalog_names:
         assert name not in source, f"sub_agent_profiles.py is coupled to agent '{name}'"
-    for ident in ("_SENIOR_ARCHITECT", "_THE_JUDGE", "_DEVOPS_SECOPS", "_DIAGRAMMER", "AgentRole"):
+    for ident in (
+        "_SENIOR_ARCHITECT",
+        "_THE_JUDGE",
+        "_DEVOPS_SECOPS",
+        "_DIAGRAMMER",
+        "_REGISTRY_MAP",
+        "_ALL_PROFILES",
+        "fidias",
+        "fídias",
+        "AgentRole",
+    ):
         assert ident not in source
 
 
@@ -165,6 +170,11 @@ def test_supervisor_agent_prompts_are_domain_neutral():
 
 def test_clean_architecture_dependency_rule_ast():
     actual = _collect_layer_dependency_violations()
+    domain_violations = sorted(v for v in actual if v[0].startswith("domain/"))
+    assert not domain_violations, (
+        "Domain layer must have zero external/OS/YAML/layer violations:\n"
+        + "\n".join(f"  - {path} imports '{mod}'" for path, mod in domain_violations)
+    )
     unexpected = sorted(actual - KNOWN_DEPENDENCY_BASELINE)
     assert not unexpected, (
         "New Clean Architecture dependency rule violations detected:\n"

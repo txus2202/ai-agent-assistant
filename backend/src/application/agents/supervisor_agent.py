@@ -40,18 +40,15 @@ from typing import Any
 from collections.abc import AsyncGenerator, Awaitable, Callable
 
 from src.application.agents.sub_agent_runner import SubAgentRunner
-from src.domain.agents.debate_topology import DebateTopology, load_topology
-from src.domain.agents.sub_agent_profiles import (
-    format_team_roster,
-    get_all_profiles,
-    get_profile,
-)
+from src.domain.agents.debate_topology import DebateTopology
+from src.domain.agents.sub_agent_profiles import format_team_roster
 from src.domain.agents.supervisor_events import (
     EventType,
     HITLDecision,
     HITLResponse,
     SupervisorEvent,
 )
+from src.domain.ports.agent_catalog_repository import IAgentCatalogRepository, ITopologyProvider
 from src.domain.ports.document_store import IDocumentStore
 from src.domain.ports.llm_provider import ILLMProvider, invoke_llm_with_usage
 
@@ -117,7 +114,11 @@ def classify_intent(
     model_name: str,
     supervisor_name: str,
     interpreter_name: str,
+    agent_catalog: IAgentCatalogRepository | None = None,
 ) -> TriageDecision:
+    if agent_catalog is None:
+        raise ValueError("agent_catalog must be provided to classify_intent()")
+
     req_clean = user_request.strip().lower()
 
     # Fast heuristics for direct greetings or direct questions to the supervisor
@@ -140,7 +141,7 @@ def classify_intent(
 
     # Single-agent targets: every registered agent except the supervisor and the interpreter
     specialists = [
-        p for p in get_all_profiles()
+        p for p in agent_catalog.get_all_profiles()
         if not p.is_supervisor and p.display_name.lower() != interpreter_name.lower() and p.id != interpreter_name
     ]
     specialists_lines = "\n".join(
@@ -182,7 +183,7 @@ Petición del usuario:
             target_agent = None
             if target_str:
                 try:
-                    p = get_profile(target_str)
+                    p = agent_catalog.get_profile(target_str)
                     target_agent = p.display_name
                 except KeyError:
                     target_agent = str(target_str)
@@ -220,6 +221,8 @@ class SupervisorAgent:
         review_rounds: int | None = None,
         topology: DebateTopology | None = None,
         cancel_event: asyncio.Event | None = None,
+        agent_catalog: IAgentCatalogRepository | None = None,
+        topology_provider: ITopologyProvider | None = None,
     ) -> AsyncGenerator[SupervisorEvent, None]:
         """
         Run the full debate flow and yield SupervisorEvents asynchronously (ADR-016).
@@ -234,6 +237,8 @@ class SupervisorAgent:
             review_rounds=review_rounds,
             topology=topology,
             cancel_event=cancel_event,
+            agent_catalog=agent_catalog,
+            topology_provider=topology_provider,
         )
 
 
@@ -328,6 +333,7 @@ async def _run_direct_chat_mode(
     supervisor_provider: Any,
     sup_agent_name: str,
     sup_model_name: str,
+    agent_catalog: IAgentCatalogRepository,
 ) -> AsyncGenerator[SupervisorEvent, None]:
     yield SupervisorEvent(type=EventType.AGENT_STARTED, role=sup_agent_name, content="")
 
@@ -337,7 +343,10 @@ async def _run_direct_chat_mode(
             hist_lines.append(f"- {m.get('role', 'user')}: {m.get('content', '')}")
     hist_str = "\n".join(hist_lines)
 
-    roster_context = format_team_roster(exclude_id=supervisor_profile.id)
+    roster_context = format_team_roster(
+        agent_catalog.get_all_profiles(),
+        exclude_id=supervisor_profile.id,
+    )
 
     direct_prompt = f"""# INSTRUCCIÓN DE SISTEMA
 {supervisor_profile.system_prompt}
@@ -383,10 +392,11 @@ async def _run_single_agent_mode(
     user_request: str,
     run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
     state: DebateState,
+    agent_catalog: IAgentCatalogRepository,
 ) -> AsyncGenerator[SupervisorEvent, None]:
-    target_name = get_profile(target_agent).display_name
+    target_name = agent_catalog.get_profile(target_agent).display_name
     yield SupervisorEvent(type=EventType.AGENT_STARTED, role=target_name, content="")
-    _, content, error = await _execute_role_safely(target_name, user_request, run_role)
+    _, content, error = await _execute_role_safely(target_name, user_request, run_role, agent_catalog=agent_catalog)
     meta = state.agent_metadata.get(target_name, {})
     if error:
         yield SupervisorEvent(
@@ -404,11 +414,14 @@ async def _run_single_agent_mode(
     yield SupervisorEvent(type=EventType.DONE, role=target_name, content=content, metadata=done_meta)
 
 
-def _resolve_target_agents(agent_names: list[str]) -> list[str]:
+def _resolve_target_agents(
+    agent_names: list[str],
+    agent_catalog: IAgentCatalogRepository,
+) -> list[str]:
     resolved = []
     for a in agent_names:
         try:
-            p = get_profile(a)
+            p = agent_catalog.get_profile(a)
             resolved.append(p.display_name)
         except KeyError:
             resolved.append(a)
@@ -421,11 +434,14 @@ async def _execute_target_agents(
     refinement: str,
     run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
     state: DebateState,
+    agent_catalog: IAgentCatalogRepository | None = None,
 ) -> AsyncGenerator[SupervisorEvent, None]:
     for a in agent_names:
         yield SupervisorEvent(type=EventType.AGENT_STARTED, role=a, content="")
     req = base_req + (f"\n\n## User Refinement\n{refinement}" if refinement else "")
-    results = await asyncio.gather(*(_execute_role_safely(a, req, run_role) for a in agent_names))
+    results = await asyncio.gather(
+        *(_execute_role_safely(a, req, run_role, agent_catalog=agent_catalog) for a in agent_names)
+    )
     for a, content, error in results:
         if error:
             state.agent_outputs[a] = f"[Fallo en {a}: {error}]"
@@ -452,11 +468,19 @@ async def _maybe_divert_to_targets(
     sup_model_name: str,
     sup_agent_name: str,
     active_topology: DebateTopology,
+    agent_catalog: IAgentCatalogRepository,
 ) -> AsyncGenerator[SupervisorEvent, None]:
-    target_agents = _resolve_target_agents(state.target_agents)
+    target_agents = _resolve_target_agents(state.target_agents, agent_catalog)
     if not target_agents:
         return
-    async for event in _execute_target_agents(target_agents, state.formalized, state.refinement, run_role, state):
+    async for event in _execute_target_agents(
+        target_agents,
+        state.formalized,
+        state.refinement,
+        run_role,
+        state,
+        agent_catalog=agent_catalog,
+    ):
         yield event
     yield await _run_consolidation(
         state,
@@ -474,9 +498,10 @@ def _build_role_runner(
     settings: Any,
     chat_history: list[dict[str, Any]] | None,
     state: DebateState,
+    agent_catalog: IAgentCatalogRepository,
 ) -> Callable[[str, str], Awaitable[tuple[str, str]]]:
     async def run_role(r: str, req: str) -> tuple[str, str]:
-        profile = get_profile(r)
+        profile = agent_catalog.get_profile(r)
         agent_name = profile.display_name
 
         def _resolve_role_sync() -> tuple[Any, str, str, ILLMProvider]:
@@ -499,6 +524,7 @@ def _build_role_runner(
             llm_provider=llm_provider,
             document_store=document_store,
             model_name=model_name,
+            agent_catalog=agent_catalog,
             **runner_kwargs,
         )
         meta = {
@@ -523,6 +549,7 @@ async def _execute_role_safely(
     role: str,
     req: str,
     run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
+    agent_catalog: IAgentCatalogRepository | None = None,
 ) -> tuple[str, str, str | None]:
     """Executes run_role, catching exceptions to allow graceful degradation."""
     try:
@@ -530,8 +557,8 @@ async def _execute_role_safely(
         return agent_name, content, None
     except Exception as exc:
         try:
-            profile = get_profile(role)
-            agent_name = profile.display_name
+            profile = agent_catalog.get_profile(role) if agent_catalog is not None else None
+            agent_name = profile.display_name if profile is not None else str(role)
         except Exception:
             agent_name = str(role)
         return agent_name, "", str(exc)
@@ -546,28 +573,42 @@ async def _run_phase_with_divert(
     sup_model_name: str,
     sup_agent_name: str,
     active_topology: DebateTopology,
+    agent_catalog: IAgentCatalogRepository,
 ) -> AsyncGenerator[SupervisorEvent, None]:
     async for event in phase_gen:
         yield event
     if state.target_agents:
         async for event in _maybe_divert_to_targets(
-            state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology
+            state,
+            run_role,
+            supervisor_provider,
+            sup_model_name,
+            sup_agent_name,
+            active_topology,
+            agent_catalog,
         ):
             yield event
 
 
 async def _execute_phase_step(
     phase_gen: AsyncGenerator[SupervisorEvent, None],
-
     state: DebateState,
     run_role: Callable[[str, str], Awaitable[tuple[str, str]]],
     supervisor_provider: Any,
     sup_model_name: str,
     sup_agent_name: str,
     active_topology: DebateTopology,
+    agent_catalog: IAgentCatalogRepository,
 ) -> AsyncGenerator[SupervisorEvent, None]:
     async for event in _run_phase_with_divert(
-        phase_gen, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology
+        phase_gen,
+        state,
+        run_role,
+        supervisor_provider,
+        sup_model_name,
+        sup_agent_name,
+        active_topology,
+        agent_catalog,
     ):
         yield event
     if state.finish_early and not state.target_agents:
@@ -651,6 +692,7 @@ async def _execute_single_stage(
     supervisor_provider: Any,
     sup_model_name: str,
     sup_agent_name: str,
+    agent_catalog: IAgentCatalogRepository,
 ) -> AsyncGenerator[SupervisorEvent, None]:
     if stage == "implementers":
         async for event in _execute_implementers_stage(state, run_role, active_topology.implementers):
@@ -662,7 +704,14 @@ async def _execute_single_stage(
     )
     if phase_stream:
         async for event in _execute_phase_step(
-            phase_stream, state, run_role, supervisor_provider, sup_model_name, sup_agent_name, active_topology
+            phase_stream,
+            state,
+            run_role,
+            supervisor_provider,
+            sup_model_name,
+            sup_agent_name,
+            active_topology,
+            agent_catalog,
         ):
             yield event
 
@@ -678,6 +727,7 @@ async def _run_adaptive_debate(
     supervisor_provider: Any,
     sup_model_name: str,
     sup_agent_name: str,
+    agent_catalog: IAgentCatalogRepository,
     cancel_event: asyncio.Event | None = None,
 ) -> AsyncGenerator[SupervisorEvent, None]:
     state.formalized = user_request
@@ -697,6 +747,7 @@ async def _run_adaptive_debate(
             supervisor_provider,
             sup_model_name,
             sup_agent_name,
+            agent_catalog,
         ):
             yield event
             if cancel_event is not None and cancel_event.is_set():
@@ -724,15 +775,23 @@ async def _debate_generator(
     review_rounds: int | None = None,
     topology: DebateTopology | None = None,
     cancel_event: asyncio.Event | None = None,
+    agent_catalog: IAgentCatalogRepository | None = None,
+    topology_provider: ITopologyProvider | None = None,
 ) -> AsyncGenerator[SupervisorEvent, None]:
+    if agent_catalog is None:
+        raise ValueError("agent_catalog must be provided to SupervisorAgent.run()")
+
     from src.presentation.api.config import get_settings
     settings = get_settings()
 
-    active_topology = topology or load_topology()
+    active_topology = topology or (topology_provider.get_topology() if topology_provider else None)
+    if active_topology is None:
+        raise ValueError("Either topology or topology_provider must be provided to SupervisorAgent.run()")
+
     effective_review_rounds = _determine_review_rounds(review_rounds, settings)
     state = DebateState()
 
-    supervisor_profile = get_profile(active_topology.supervisor)
+    supervisor_profile = agent_catalog.get_profile(active_topology.supervisor)
     sup_agent_name = supervisor_profile.display_name
     sup_provider_name, sup_model_name = await asyncio.to_thread(
         _resolve_supervisor_config, agent_config_repo, supervisor_profile, settings
@@ -740,14 +799,14 @@ async def _debate_generator(
     supervisor_provider = await asyncio.to_thread(llm_factory, sup_provider_name)
 
     run_role = _build_role_runner(
-        agent_config_repo, document_store, llm_factory, settings, chat_history, state
+        agent_config_repo, document_store, llm_factory, settings, chat_history, state, agent_catalog
     )
 
     # 1. Triage Intent Classification
     interpreter_name = ""
     if active_topology.interpreters:
         try:
-            interpreter_profile = get_profile(active_topology.interpreters[0])
+            interpreter_profile = agent_catalog.get_profile(active_topology.interpreters[0])
             interpreter_name = interpreter_profile.display_name
         except KeyError:
             interpreter_name = active_topology.interpreters[0]
@@ -759,19 +818,32 @@ async def _debate_generator(
         sup_model_name,
         supervisor_name=sup_agent_name,
         interpreter_name=interpreter_name,
+        agent_catalog=agent_catalog,
     )
 
     # 2. Direct Chat Mode (Supervisor responds without council)
     if triage.mode == "direct_chat":
         async for event in _run_direct_chat_mode(
-            user_request, chat_history, supervisor_profile, supervisor_provider, sup_agent_name, sup_model_name
+            user_request,
+            chat_history,
+            supervisor_profile,
+            supervisor_provider,
+            sup_agent_name,
+            sup_model_name,
+            agent_catalog,
         ):
             yield event
         return
 
     # 3. Single Agent Mode (direct delegation to specialist)
     if triage.mode == "single_agent" and triage.target_agent:
-        async for event in _run_single_agent_mode(triage.target_agent, user_request, run_role, state):
+        async for event in _run_single_agent_mode(
+            triage.target_agent,
+            user_request,
+            run_role,
+            state,
+            agent_catalog,
+        ):
             yield event
         return
 
@@ -787,6 +859,7 @@ async def _debate_generator(
         supervisor_provider,
         sup_model_name,
         sup_agent_name,
+        agent_catalog,
         cancel_event=cancel_event,
     ):
         yield event

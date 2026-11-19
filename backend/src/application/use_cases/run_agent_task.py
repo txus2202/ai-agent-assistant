@@ -58,9 +58,11 @@ class RunAgentTask:
         self,
         agent_repository: IAgentRepository,
         llm_providers: dict[str, ILLMProvider],
+        prompt_max_length: int = Task.DEFAULT_PROMPT_MAX_LENGTH,
     ) -> None:
         self._repo = agent_repository
         self._providers = llm_providers
+        self._prompt_max_length = prompt_max_length
 
     def execute(self, input_data: RunAgentTaskInput) -> RunAgentTaskOutput:
         """
@@ -96,7 +98,11 @@ class RunAgentTask:
             )
 
         # 4. Create and start task
-        task = Task(prompt=input_data.prompt, agent_id=agent.id)
+        task = Task(
+            prompt=input_data.prompt,
+            agent_id=agent.id,
+            max_length=self._prompt_max_length,
+        )
         task.mark_as_running()
 
         # 5. Execute LLM call — graceful degradation on failure

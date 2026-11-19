@@ -26,7 +26,6 @@ COUNCIL_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "council"
 def generic_council_env(monkeypatch):
     monkeypatch.setenv("AGENTS_FILE", str(COUNCIL_DIR / "agents.yaml"))
     monkeypatch.setenv("TOPOLOGY_FILE", str(COUNCIL_DIR / "topology.yaml"))
-    yield
 
 
 @pytest.fixture

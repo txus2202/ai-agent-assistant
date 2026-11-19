@@ -44,12 +44,14 @@ def _chunk(chunk_id: str, content: str, metadata: dict | None = None) -> Documen
 class TestSubAgentRunner:
     @pytest.mark.anyio
     async def test_requires_injected_agent_catalog(self):
+        llm = FakeLLM()
+        store = InMemoryDocumentStore()
         with pytest.raises(ValueError, match="agent_catalog"):
             await SubAgentRunner.run(
                 role="Interpreter",
                 user_request="hello",
-                llm_provider=FakeLLM(),
-                document_store=InMemoryDocumentStore(),
+                llm_provider=llm,
+                document_store=store,
                 model_name="gemini-3.6-flash",
             )
 

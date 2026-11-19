@@ -130,10 +130,14 @@ def test_wal_mode_enabled_and_connection_closed_on_exception(tmp_path, monkeypat
 
     mgr = SqliteConnectionManager(db_path)
     monkeypatch.setattr(sqlite_base_mod.sqlite3, "connect", _tracking_connect)
-    with pytest.raises(RuntimeError, match="boom"):
+
+    def _raise_inside_connection() -> None:
         with mgr.connection() as conn:
             conn.execute("SELECT 1")
             raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        _raise_inside_connection()
 
     assert closed_flags == [True]
 

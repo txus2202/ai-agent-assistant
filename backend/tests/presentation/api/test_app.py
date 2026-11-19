@@ -284,4 +284,5 @@ class TestAsyncEventLoopNonBlocking:
         assert health_resp.status_code == 200
         assert health_elapsed < 0.1
         assert learn_resp.status_code == 200
-        assert worker_tid and worker_tid[0] != main_tid
+        assert worker_tid
+        assert worker_tid[0] != main_tid

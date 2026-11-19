@@ -139,6 +139,17 @@ jobs:
         with:
           fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
 
+      - name: Set up Node.js for TypeScript analysis
+        uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: "./frontend/package-lock.json"
+
+      - name: Install frontend dependencies for TypeScript config resolution
+        working-directory: ./frontend
+        run: npm ci --ignore-scripts
+
       - name: Download backend coverage
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -160,6 +171,7 @@ jobs:
           args: >
             -Dsonar.projectKey=txus2202_ai-agent-assistant
             -Dsonar.organization=txus2202
+            -Dsonar.python.version=3.12
             -Dsonar.python.coverage.reportPaths=backend/coverage.xml
             -Dsonar.javascript.lcov.reportPaths=frontend/coverage/lcov.info
             -Dsonar.sources=backend/src,frontend/src

@@ -32,28 +32,26 @@ export class DebateWsClient {
 
   connect(handlers: DebateWsHandlers): string {
     const wsUrl = resolveWsUrl('/ws/debate')
-    if (this.isOpenOrConnecting()) {
-      return wsUrl
-    }
+    if (!this.isOpenOrConnecting()) {
+      const socket = new WebSocket(wsUrl)
+      this.socket = socket
 
-    const socket = new WebSocket(wsUrl)
-    this.socket = socket
+      socket.onopen = () => {
+        handlers.onOpen()
+      }
 
-    socket.onopen = () => {
-      handlers.onOpen()
-    }
+      socket.onmessage = (event: MessageEvent<string>) => {
+        handlers.onMessage(String(event.data))
+      }
 
-    socket.onmessage = (event: MessageEvent<string>) => {
-      handlers.onMessage(String(event.data))
-    }
+      socket.onclose = (event: CloseEvent) => {
+        this.socket = null
+        handlers.onClose(event)
+      }
 
-    socket.onclose = (event: CloseEvent) => {
-      this.socket = null
-      handlers.onClose(event)
-    }
-
-    socket.onerror = (event: Event) => {
-      handlers.onError(event)
+      socket.onerror = (event: Event) => {
+        handlers.onError(event)
+      }
     }
 
     return wsUrl

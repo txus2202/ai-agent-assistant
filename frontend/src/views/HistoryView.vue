@@ -38,6 +38,34 @@ const isServerPaginated = ref(true)
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let activeFetchSeq = 0
 
+const applyLegacyDebates = (items: DebateSummaryItem[]) => {
+  isServerPaginated.value = false
+  debates.value = items
+  totalCount.value = items.length
+  totalAllCount.value = items.length
+  nextOffset.value = items.length
+}
+
+const applyPaginatedDebates = (
+  page: PaginatedDebatesResponse,
+  reset: boolean,
+  targetOffset: number
+) => {
+  const incoming = (Array.isArray(page.items) ? page.items : []) as DebateSummaryItem[]
+  isServerPaginated.value = true
+  if (reset) {
+    debates.value = incoming
+    nextOffset.value = incoming.length
+  } else {
+    const existingIds = new Set(debates.value.map(d => d.id))
+    const uniqueIncoming = incoming.filter(item => !existingIds.has(item.id))
+    debates.value = [...debates.value, ...uniqueIncoming]
+    nextOffset.value = targetOffset + incoming.length
+  }
+  totalCount.value = typeof page.total === 'number' ? page.total : debates.value.length
+  totalAllCount.value = typeof page.total_all === 'number' ? page.total_all : totalCount.value
+}
+
 const fetchDebates = async (reset = true) => {
   const requestSeq = ++activeFetchSeq
   const targetOffset = reset ? 0 : nextOffset.value
@@ -57,30 +85,12 @@ const fetchDebates = async (reset = true) => {
     if (requestSeq !== activeFetchSeq) return
 
     if (Array.isArray(payload)) {
-      isServerPaginated.value = false
-      const items = payload as DebateSummaryItem[]
-      debates.value = items
-      totalCount.value = items.length
-      totalAllCount.value = items.length
-      nextOffset.value = items.length
+      applyLegacyDebates(payload as DebateSummaryItem[])
       return
     }
 
     if (payload && typeof payload === 'object') {
-      const page = payload as PaginatedDebatesResponse
-      const incoming = (Array.isArray(page.items) ? page.items : []) as DebateSummaryItem[]
-      isServerPaginated.value = true
-      if (reset) {
-        debates.value = incoming
-        nextOffset.value = incoming.length
-      } else {
-        const existingIds = new Set(debates.value.map(d => d.id))
-        const uniqueIncoming = incoming.filter(item => !existingIds.has(item.id))
-        debates.value = [...debates.value, ...uniqueIncoming]
-        nextOffset.value = targetOffset + incoming.length
-      }
-      totalCount.value = typeof page.total === 'number' ? page.total : debates.value.length
-      totalAllCount.value = typeof page.total_all === 'number' ? page.total_all : totalCount.value
+      applyPaginatedDebates(payload as PaginatedDebatesResponse, reset, targetOffset)
     }
   } catch (error) {
     console.error('Failed to fetch debates:', error)
@@ -130,36 +140,37 @@ const getDebateEventCount = (debate: DebateSummaryItem): number => {
   return Array.isArray(debate.events) ? debate.events.length : 0
 }
 
+const METRIC_EVENT_TYPES = new Set(['done', 'agent_completed', 'synthesis', 'conclusion', 'final_response'])
+
+const isDuplicateDoneMetricEvent = (ev: SupervisorEvent, prev: SupervisorEvent | undefined): boolean => {
+  if (ev.metadata?.metrics_reported === 'true') return true
+  if (prev?.type !== 'agent_completed' || prev.role !== ev.role) return false
+  const evTokens = ev.metadata?.total_tokens ?? ev.metadata?.tokens
+  const prevTokens = prev.metadata?.total_tokens ?? prev.metadata?.tokens
+  return evTokens !== undefined && evTokens === prevTokens
+}
+
+const estimateMetricEventTokens = (ev: SupervisorEvent): number => {
+  const rawTokens = ev.metadata?.total_tokens ?? ev.metadata?.tokens
+  if (rawTokens) {
+    return Number.parseInt(String(rawTokens), 10) || 0
+  }
+  if (ev.content && typeof ev.content === 'string') {
+    const words = ev.content.trim().split(/\s+/).filter(Boolean).length
+    return Math.max(12, Math.round(words * 1.35))
+  }
+  return 0
+}
+
 const getDebateTokens = (debate: DebateSummaryItem): number => {
   if (typeof debate.total_tokens === 'number') return debate.total_tokens
-  if (!debate.events || !Array.isArray(debate.events)) return 0
-  const metricEventTypes = new Set(['done', 'agent_completed', 'synthesis', 'conclusion', 'final_response'])
+  if (!Array.isArray(debate.events)) return 0
   let total = 0
   for (let idx = 0; idx < debate.events.length; idx++) {
     const ev = debate.events[idx]
-    if (!ev || !ev.type || !metricEventTypes.has(ev.type)) continue
-    if (ev.type === 'done') {
-      if (ev.metadata?.metrics_reported === 'true') continue
-      const prev = idx > 0 ? debate.events[idx - 1] : undefined
-      const evTokens = ev.metadata?.total_tokens ?? ev.metadata?.tokens
-      const prevTokens = prev?.metadata?.total_tokens ?? prev?.metadata?.tokens
-      if (
-        prev?.type === 'agent_completed' &&
-        prev.role === ev.role &&
-        evTokens !== undefined &&
-        evTokens === prevTokens
-      ) {
-        continue
-      }
-    }
-
-    const rawTokens = ev.metadata?.total_tokens ?? ev.metadata?.tokens
-    if (rawTokens) {
-      total += Number.parseInt(String(rawTokens), 10) || 0
-    } else if (ev.content && typeof ev.content === 'string') {
-      const words = ev.content.trim().split(/\s+/).filter(Boolean).length
-      total += Math.max(12, Math.round(words * 1.35))
-    }
+    if (!ev?.type || !METRIC_EVENT_TYPES.has(ev.type)) continue
+    if (ev.type === 'done' && isDuplicateDoneMetricEvent(ev, debate.events[idx - 1])) continue
+    total += estimateMetricEventTokens(ev)
   }
   return total
 }

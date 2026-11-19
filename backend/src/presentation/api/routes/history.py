@@ -34,7 +34,7 @@ def get_debate_repo(settings: Settings = Depends(get_settings)) -> IDebateReposi
     return get_debate_repository(settings)
 
 
-@router.get("", response_model=PaginatedDebatesResponse)
+@router.get("")
 def get_all_debates(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),

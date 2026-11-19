@@ -164,16 +164,18 @@ class VaultDomainService:
         name: str,
         description: str,
     ) -> None:
-        home_real = os.path.realpath(os.path.join(str(vault_real), "HOME.md"))
-        if not home_real.startswith(vault_prefix):
+        home_path = (vault_real / "HOME.md").resolve()
+        if not home_path.is_relative_to(vault_real) or not str(home_path).startswith(vault_prefix):
             raise ValueError("Invalid home path.")
-        home_path = Path(home_real)
         if not home_path.exists():
             return
-        home_text = home_path.read_text(encoding="utf-8")
+        with home_path.open("r", encoding="utf-8") as fh:
+            home_text = fh.read()
         link_entry = f"\n* [[{clean_id}/{moc_stem}|📁 {clean_id} — {name}]]: {description or name}"
         if f"[[{clean_id}/" not in home_text:
-            home_path.write_text(home_text.strip() + "\n" + link_entry + "\n", encoding="utf-8")
+            updated_text = f"{home_text.strip()}\n{link_entry}\n"
+            with home_path.open("w", encoding="utf-8") as fh:
+                fh.write(updated_text)
 
     @classmethod
     def create_domain(

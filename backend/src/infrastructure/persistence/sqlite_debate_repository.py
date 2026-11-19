@@ -45,6 +45,7 @@ _EVENT_QUERY_CHUNK_SIZE = 500
 _METRIC_EVENT_TYPES = frozenset({"done", "agent_completed", "synthesis", "conclusion", "final_response"})
 _CONCLUSION_EVENT_TYPES = frozenset({"done", "agent_completed", "message", "synthesis", "conclusion", "final_response"})
 _HEADING_PREFIX_RE = re.compile(r"^#+\s*")
+_INSERT_DEBATE_EVENT_SQL = "INSERT INTO debate_events (debate_id, seq, event_json, created_at) VALUES (?, ?, ?, ?)"
 
 
 class SqliteDebateRepository(IDebateRepository, SqliteConnectionManager):
@@ -71,7 +72,7 @@ class SqliteDebateRepository(IDebateRepository, SqliteConnectionManager):
                 )
                 if initial_events:
                     conn.executemany(
-                        "INSERT INTO debate_events (debate_id, seq, event_json, created_at) VALUES (?, ?, ?, ?)",
+                        _INSERT_DEBATE_EVENT_SQL,
                         [
                             (debate.id, idx, json.dumps(ev), created_iso)
                             for idx, ev in enumerate(initial_events)
@@ -106,7 +107,7 @@ class SqliteDebateRepository(IDebateRepository, SqliteConnectionManager):
                     next_seq = int(seq_row["next_seq"]) if seq_row else 0
 
                 conn.execute(
-                    "INSERT INTO debate_events (debate_id, seq, event_json, created_at) VALUES (?, ?, ?, ?)",
+                    _INSERT_DEBATE_EVENT_SQL,
                     (debate_id, next_seq, event_json, now_iso),
                 )
         except sqlite3.Error as exc:
@@ -313,7 +314,7 @@ class SqliteDebateRepository(IDebateRepository, SqliteConnectionManager):
 
         if isinstance(parsed, list) and parsed:
             conn.executemany(
-                "INSERT INTO debate_events (debate_id, seq, event_json, created_at) VALUES (?, ?, ?, ?)",
+                _INSERT_DEBATE_EVENT_SQL,
                 [
                     (debate_id, next_seq + offset, json.dumps(ev), created_at)
                     for offset, ev in enumerate(parsed)
@@ -458,68 +459,108 @@ class SqliteDebateRepository(IDebateRepository, SqliteConnectionManager):
         record.events = cls._parse_events_for_row(row, event_jsons)
         return record
 
+    @staticmethod
+    def _is_hitl_event(ev: dict[str, Any]) -> bool:
+        ev_type = ev.get("type")
+        return isinstance(ev_type, str) and "hitl" in ev_type.lower()
+
+    @staticmethod
+    def _extract_start_prompt(ev: dict[str, Any]) -> str:
+        if ev.get("type") != "start":
+            return ""
+        req = ev.get("user_request")
+        return req if isinstance(req, str) else ""
+
+    @staticmethod
+    def _record_agent_role(ev: dict[str, Any], agents: list[str], seen_agents: set[str]) -> None:
+        role = ev.get("role")
+        if isinstance(role, str) and role and role != "supervisor" and role not in seen_agents:
+            seen_agents.add(role)
+            agents.append(role)
+
     @classmethod
-    def _row_to_summary(cls, row: sqlite3.Row, event_jsons: list[str] | None = None) -> DebateSummary:
-        data = dict(row)
-        events = cls._parse_events_for_row(row, event_jsons)
-        prompt = data["user_request"] or ""
+    def _should_skip_done_event(cls, ev: dict[str, Any], events: list[dict[str, Any]], idx: int) -> bool:
+        raw_metadata = ev.get("metadata")
+        metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
+        if str(metadata.get("metrics_reported", "")).lower() == "true":
+            return True
+        if idx == 0:
+            return False
+        prev = events[idx - 1]
+        ev_tok = cls._extract_raw_tokens(ev)
+        return (
+            prev.get("type") == "agent_completed"
+            and prev.get("role") == ev.get("role")
+            and ev_tok is not None
+            and ev_tok == cls._extract_raw_tokens(prev)
+        )
+
+    @classmethod
+    def _estimate_event_tokens(cls, ev: dict[str, Any]) -> int:
+        explicit_tokens = cls._extract_raw_tokens(ev)
+        if explicit_tokens is not None and explicit_tokens > 0:
+            return explicit_tokens
+        content = ev.get("content")
+        if isinstance(content, str) and content.strip():
+            words = len(content.strip().split())
+            return max(12, round(words * 1.35))
+        return 0
+
+    @classmethod
+    def _event_tokens_if_counted(cls, ev: dict[str, Any], events: list[dict[str, Any]], idx: int) -> int:
+        ev_type = ev.get("type")
+        if not isinstance(ev_type, str) or ev_type not in _METRIC_EVENT_TYPES:
+            return 0
+        if ev_type == "done" and cls._should_skip_done_event(ev, events, idx):
+            return 0
+        return cls._estimate_event_tokens(ev)
+
+    @classmethod
+    def _collect_event_metrics(
+        cls,
+        events: list[dict[str, Any]],
+        initial_prompt: str,
+    ) -> tuple[str, int, bool, list[str]]:
+        prompt = initial_prompt
         total_tokens = 0
         has_hitl = False
         agents: list[str] = []
         seen_agents: set[str] = set()
 
         for idx, ev in enumerate(events):
-            ev_type = ev.get("type")
-            if isinstance(ev_type, str) and "hitl" in ev_type.lower():
+            if cls._is_hitl_event(ev):
                 has_hitl = True
+            if not prompt:
+                prompt = cls._extract_start_prompt(ev)
+            cls._record_agent_role(ev, agents, seen_agents)
+            total_tokens += cls._event_tokens_if_counted(ev, events, idx)
 
-            if not prompt and ev_type == "start":
-                req = ev.get("user_request")
-                if isinstance(req, str) and req:
-                    prompt = req
+        return prompt, total_tokens, has_hitl, agents
 
-            role = ev.get("role")
-            if isinstance(role, str) and role and role != "supervisor" and role not in seen_agents:
-                seen_agents.add(role)
-                agents.append(role)
-
-            if not isinstance(ev_type, str) or ev_type not in _METRIC_EVENT_TYPES:
-                continue
-
-            if ev_type == "done":
-                raw_metadata = ev.get("metadata")
-                metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
-                if str(metadata.get("metrics_reported", "")).lower() == "true":
-                    continue
-                if idx > 0:
-                    prev = events[idx - 1]
-                    ev_tok = cls._extract_raw_tokens(ev)
-                    prev_tok = cls._extract_raw_tokens(prev)
-                    if (
-                        prev.get("type") == "agent_completed"
-                        and prev.get("role") == ev.get("role")
-                        and ev_tok is not None
-                        and ev_tok == prev_tok
-                    ):
-                        continue
-
-            explicit_tokens = cls._extract_raw_tokens(ev)
-            if explicit_tokens is not None and explicit_tokens > 0:
-                total_tokens += explicit_tokens
-            else:
-                content = ev.get("content")
-                if isinstance(content, str) and content.strip():
-                    words = len(content.strip().split())
-                    total_tokens += max(12, round(words * 1.35))
-
-        conclusion = ""
+    @staticmethod
+    def _extract_conclusion(events: list[dict[str, Any]]) -> str:
         for ev in reversed(events):
             ev_type = ev.get("type")
             content = ev.get("content")
-            if isinstance(ev_type, str) and ev_type in _CONCLUSION_EVENT_TYPES and isinstance(content, str) and content.strip():
+            if (
+                isinstance(ev_type, str)
+                and ev_type in _CONCLUSION_EVENT_TYPES
+                and isinstance(content, str)
+                and content.strip()
+            ):
                 cleaned = _HEADING_PREFIX_RE.sub("", content.strip())
-                conclusion = f"{cleaned[:160]}..." if cleaned else ""
-                break
+                return f"{cleaned[:160]}..." if cleaned else ""
+        return ""
+
+    @classmethod
+    def _row_to_summary(cls, row: sqlite3.Row, event_jsons: list[str] | None = None) -> DebateSummary:
+        data = dict(row)
+        events = cls._parse_events_for_row(row, event_jsons)
+        prompt, total_tokens, has_hitl, agents = cls._collect_event_metrics(
+            events,
+            data["user_request"] or "",
+        )
+        conclusion = cls._extract_conclusion(events)
 
         return DebateSummary(
             id=data["id"],

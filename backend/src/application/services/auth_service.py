@@ -1,4 +1,5 @@
 import asyncio
+import base64
 from datetime import datetime, timezone
 import logging
 import uuid
@@ -312,7 +313,15 @@ class AuthService:
         )
         return new_token, updated
 
+    @staticmethod
+    def _sanitize_for_log(value: str) -> str:
+        cleaned = value.replace("\r", "").replace("\n", "")
+        if cleaned.replace("-", "").replace("_", "").isalnum():
+            return cleaned
+        return f"b64:{base64.b64encode(cleaned.encode('utf-8')).decode('ascii')}"
+
     def _purge_user_resources(self, user_id: str) -> None:
+        safe_user_id = self._sanitize_for_log(user_id)
         for repo in (self._debate_repo, self._agent_config_repo):
             if repo:
                 try:
@@ -320,7 +329,7 @@ class AuthService:
                 except Exception:
                     logger.warning(
                         "Failed to purge user %s resources from %s",
-                        user_id,
+                        safe_user_id,
                         type(repo).__name__,
                         exc_info=True,
                     )

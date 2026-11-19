@@ -18,6 +18,7 @@ Cohesive collaborators extracted per SRP:
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any
@@ -53,6 +54,7 @@ from src.domain.ports.image_generator import IImageGenerator
 from src.domain.ports.llm_provider import ILLMProvider
 
 __all__ = [
+    "DebateRunOptions",
     "DebateState",
     "SupervisorAgent",
     "TriageDecision",
@@ -64,6 +66,18 @@ __all__ = [
     "_run_phase_4",
     "classify_intent",
 ]
+
+_DEFAULT_PROVIDER = "gemini"
+_DEFAULT_MODEL = "gemini-3.6-flash"
+
+
+@dataclass(frozen=True, slots=True)
+class DebateRunOptions:
+    """Optional runtime overrides for ``SupervisorAgent.run``."""
+
+    default_provider: str = _DEFAULT_PROVIDER
+    default_model: str = _DEFAULT_MODEL
+    image_generator: IImageGenerator | None = None
 
 
 class SupervisorAgent:
@@ -82,10 +96,7 @@ class SupervisorAgent:
         cancel_event: asyncio.Event | None = None,
         agent_catalog: IAgentCatalogRepository | None = None,
         topology_provider: ITopologyProvider | None = None,
-        *,
-        default_provider: str = "gemini",
-        default_model: str = "gemini-3.6-flash",
-        image_generator: IImageGenerator | None = None,
+        options: DebateRunOptions | None = None,
     ) -> AsyncGenerator[SupervisorEvent, None]:
         """Run the full debate flow and yield SupervisorEvents asynchronously (ADR-016)."""
         return _debate_generator(
@@ -100,9 +111,7 @@ class SupervisorAgent:
             cancel_event=cancel_event,
             agent_catalog=agent_catalog,
             topology_provider=topology_provider,
-            default_provider=default_provider,
-            default_model=default_model,
-            image_generator=image_generator,
+            options=options,
         )
 
 
@@ -113,8 +122,8 @@ def _determine_review_rounds(review_rounds: int | None) -> int:
 def _resolve_supervisor_config(
     agent_config_repo: Any,
     profile: Any,
-    default_provider: str = "gemini",
-    default_model: str = "gemini-3.6-flash",
+    default_provider: str = _DEFAULT_PROVIDER,
+    default_model: str = _DEFAULT_MODEL,
 ) -> tuple[str, str]:
     config = agent_config_repo.find_by_role(profile.display_name) or agent_config_repo.find_by_role(profile.id)
     default_prov = getattr(profile, "default_provider", "") or default_provider
@@ -502,9 +511,7 @@ async def _debate_generator(
     cancel_event: asyncio.Event | None = None,
     agent_catalog: IAgentCatalogRepository | None = None,
     topology_provider: ITopologyProvider | None = None,
-    default_provider: str = "gemini",
-    default_model: str = "gemini-3.6-flash",
-    image_generator: IImageGenerator | None = None,
+    options: DebateRunOptions | None = None,
 ) -> AsyncGenerator[SupervisorEvent, None]:
     if agent_catalog is None:
         raise ValueError("agent_catalog must be provided to SupervisorAgent.run()")
@@ -513,6 +520,7 @@ async def _debate_generator(
     if active_topology is None:
         raise ValueError("Either topology or topology_provider must be provided to SupervisorAgent.run()")
 
+    resolved_options = options or DebateRunOptions()
     state = DebateState()
     supervisor_profile = agent_catalog.get_profile(active_topology.supervisor)
     sup_agent_name = supervisor_profile.display_name
@@ -520,20 +528,20 @@ async def _debate_generator(
         _resolve_supervisor_config,
         agent_config_repo,
         supervisor_profile,
-        default_provider,
-        default_model,
+        resolved_options.default_provider,
+        resolved_options.default_model,
     )
     supervisor_provider = await asyncio.to_thread(llm_factory, sup_provider_name)
     run_role = _build_role_runner(
         agent_config_repo,
         document_store,
         llm_factory,
-        default_provider,
-        default_model,
+        resolved_options.default_provider,
+        resolved_options.default_model,
         chat_history,
         state,
         agent_catalog,
-        image_generator=image_generator,
+        image_generator=resolved_options.image_generator,
     )
 
     triage = await asyncio.to_thread(

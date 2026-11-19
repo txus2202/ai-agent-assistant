@@ -38,11 +38,12 @@ Se acordó implementar OAuth2 con tokens JWT rotativos y validación asíncrona.
 
 def test_learn_from_session_requires_document_parser(tmp_path: Path):
     store = InMemoryDocumentStore()
+    llm = FakeLLM()
     with pytest.raises(ValueError, match="document_parser"):
         LearnFromSession.run(
             session_id="test-session-123",
             chat_history=[{"role": "user", "content": "Hello"}],
-            llm_provider=FakeLLM(),
+            llm_provider=llm,
             document_store=store,
             vault_root=tmp_path,
             model_name="mock-model",

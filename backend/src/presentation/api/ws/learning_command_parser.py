@@ -51,13 +51,16 @@ _SKIP_TAGS_EXACT = frozenset({
 _SKIP_TAGS_PREFIXES = ("sin tag", "sin etiqueta", "asimil", "adelante")
 
 
+_HTTP_SCHEMES: tuple[str, str] = ("http://", "https://")
+
+
 def is_http_url(source: str) -> bool:
-    return isinstance(source, str) and source.strip().lower().startswith(("http://", "https://"))
+    return isinstance(source, str) and source.strip().lower().startswith(_HTTP_SCHEMES)
 
 
 def detect_source_type(source: str) -> SourceType:
     lower = source.lower()
-    if lower.startswith(("http://", "https://")):
+    if lower.startswith(_HTTP_SCHEMES):
         return SourceType.URL
     if lower.endswith(".pdf"):
         return SourceType.PDF
@@ -71,7 +74,7 @@ def detect_source_type(source: str) -> SourceType:
 def _append_unique_tags(target: list[str], candidates: Iterable[str]) -> None:
     for item in candidates:
         clean = item.strip().lstrip("#")
-        if clean and clean not in target and not clean.startswith(("http://", "https://")):
+        if clean and clean not in target and not clean.startswith(_HTTP_SCHEMES):
             target.append(clean)
 
 

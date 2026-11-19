@@ -18,7 +18,7 @@ const BRACKET_PREFIX_REGEX = /^\[[\w\s.-]+\]\s*/i
 const SINGLE_TOKEN_HEADER_REGEX = /^##\s+(?:[a-záéíóúüñ_][a-záéíóúüñ0-9_-]{1,31})\s*\n+/i
 
 function escapeRegexLiteral(value: string): string {
-  return value.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)
 }
 
 export function stripAgentHeaderPrefixes(
@@ -38,7 +38,7 @@ export function stripAgentHeaderPrefixes(
     }
   }
   const escapedAlternation = Array.from(dynamicNames).map(escapeRegexLiteral).join('|')
-  const knownHeaderRegex = new RegExp(`^##\\s+(?:${escapedAlternation})\\s*\\n+`, 'i')
+  const knownHeaderRegex = new RegExp(String.raw`^##\s+(?:${escapedAlternation})\s*\n+`, 'i')
 
   let changed = true
   while (changed) {

@@ -77,6 +77,14 @@ function extractDetail(payload: unknown): unknown {
   return null
 }
 
+function stripTrailingSlashes(value: string): string {
+  let end = value.length
+  while (end > 0 && value.charCodeAt(end - 1) === 47) {
+    end--
+  }
+  return value.slice(0, end)
+}
+
 export class HttpClient {
   private baseUrl = ''
   private credentials: RequestCredentials = 'same-origin'
@@ -87,7 +95,7 @@ export class HttpClient {
 
   configure(config: Partial<HttpClientConfig>): void {
     if (config.baseUrl !== undefined) {
-      this.baseUrl = config.baseUrl.replace(/\/+$/, '')
+      this.baseUrl = stripTrailingSlashes(config.baseUrl)
     }
     if (config.credentials !== undefined) {
       this.credentials = config.credentials
@@ -139,13 +147,11 @@ export class HttpClient {
     if (!this.refreshSession) {
       return false
     }
-    if (!this.pendingRefresh) {
-      this.pendingRefresh = this.refreshSession()
-        .catch(() => false)
-        .finally(() => {
-          this.pendingRefresh = null
-        })
-    }
+    this.pendingRefresh ??= this.refreshSession()
+      .catch(() => false)
+      .finally(() => {
+        this.pendingRefresh = null
+      })
     return this.pendingRefresh
   }
 

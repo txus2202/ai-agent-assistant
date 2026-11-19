@@ -92,14 +92,15 @@ class TestSupervisorAgentEventOrder:
     async def test_requires_agent_catalog_and_topology(self):
         from src.application.agents.supervisor_agent import SupervisorAgent
 
+        stream = SupervisorAgent.run(
+            user_request="Design",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_approve_always,
+        )
         with pytest.raises(ValueError, match="agent_catalog"):
-            await _collect(SupervisorAgent.run(
-                user_request="Design",
-                document_store=InMemoryDocumentStore(),
-                agent_config_repo=FakeAgentConfigRepo(),
-                llm_factory=lambda _: FakeLLM(),
-                hitl_callback=_approve_always,
-            ))
+            await _collect(stream)
 
     @pytest.mark.anyio
     async def test_full_approve_flow_starts_with_nl_interpreter(self, monkeypatch, generic_catalog, generic_topology):
@@ -464,7 +465,7 @@ class TestSupervisorAgentHITL:
     @pytest.mark.anyio
     async def test_review_rounds_and_defaults_are_injected_without_settings(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
-        from src.application.agents.supervisor_agent import SupervisorAgent
+        from src.application.agents.supervisor_agent import DebateRunOptions, SupervisorAgent
         from src.application.agents.sub_agent_runner import SubAgentResponse
 
         call_counts: dict[str, int] = {}
@@ -498,9 +499,11 @@ class TestSupervisorAgentHITL:
             review_rounds=0,
             agent_catalog=generic_catalog,
             topology=generic_topology,
-            default_provider="openai",
-            default_model="gpt-4o-mini",
-            image_generator=sentinel_img_gen,  # type: ignore[arg-type]
+            options=DebateRunOptions(
+                default_provider="openai",
+                default_model="gpt-4o-mini",
+                image_generator=sentinel_img_gen,  # type: ignore[arg-type]
+            ),
         ))
 
         # When review_rounds is 0, PropOne and PropTwo run once in phase 2, Auditor runs once in phase 3

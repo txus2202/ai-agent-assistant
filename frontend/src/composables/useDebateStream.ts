@@ -194,11 +194,12 @@ export function useDebateStream(deps: UseDebateStreamDeps) {
       deps.sessionCachedTokens.value = 0
     }
 
-    const targetAgentsList = Array.isArray(targetAgent)
-      ? targetAgent.length > 0
-        ? targetAgent
-        : ['supervisor']
-      : [targetAgent || 'supervisor']
+    let targetAgentsList: string[]
+    if (Array.isArray(targetAgent)) {
+      targetAgentsList = targetAgent.length > 0 ? targetAgent : ['supervisor']
+    } else {
+      targetAgentsList = [targetAgent || 'supervisor']
+    }
     const primaryTarget = targetAgentsList[0] || 'supervisor'
 
     deps.agents.value.forEach((a) => {

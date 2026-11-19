@@ -187,6 +187,7 @@ const confirmDelete = async (userId: string) => {
       data-test="user-management-modal-backdrop"
       class="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-4 md:p-6 border-0 m-0 w-full h-full max-w-none max-h-none text-inherit"
       @click.self="emit('close')"
+      @keydown.enter.self="emit('close')"
       @cancel.prevent="emit('close')"
       aria-labelledby="user-modal-title"
       aria-modal="true"

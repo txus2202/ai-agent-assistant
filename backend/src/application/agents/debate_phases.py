@@ -377,6 +377,31 @@ async def execute_phase_1_interpreters(
         yield event
 
 
+async def _execute_proposer_round(
+    state: DebateState,
+    run_role: RoleRunner,
+    roles_to_run: tuple[str, ...],
+    reviewer_roles: tuple[str, ...],
+    review_rounds: int,
+    refinement: str,
+) -> AsyncGenerator[SupervisorEvent, None]:
+    req = state.formalized + (f"\n\n## User Refinement\n{refinement}" if refinement else "")
+    async for event in run_parallel_roles(
+        roles_to_run,
+        constant_prompt(req),
+        run_role,
+        state,
+        error_format="[Fallo al generar propuesta de {role}: {error}]",
+    ):
+        yield event
+
+    if not reviewer_roles or review_rounds <= 0:
+        return
+    for reviewer_role in reviewer_roles:
+        async for event in run_review_rounds(state, run_role, roles_to_run, reviewer_role, review_rounds, req):
+            yield event
+
+
 async def execute_phase_2_proposers(
     state: DebateState,
     run_role: RoleRunner,
@@ -389,21 +414,15 @@ async def execute_phase_2_proposers(
     if not proposer_roles:
         return
 
-    async def _round_stream(roles_to_run: tuple[str, ...], refinement: str) -> AsyncGenerator[SupervisorEvent, None]:
-        req = state.formalized + (f"\n\n## User Refinement\n{refinement}" if refinement else "")
-        async for event in run_parallel_roles(
-            roles_to_run,
-            constant_prompt(req),
-            run_role,
+    def _round_stream(roles_to_run: tuple[str, ...], refinement: str) -> AsyncGenerator[SupervisorEvent, None]:
+        return _execute_proposer_round(
             state,
-            error_format="[Fallo al generar propuesta de {role}: {error}]",
-        ):
-            yield event
-
-        if reviewer_roles and review_rounds > 0:
-            for reviewer_role in reviewer_roles:
-                async for event in run_review_rounds(state, run_role, roles_to_run, reviewer_role, review_rounds, req):
-                    yield event
+            run_role,
+            roles_to_run,
+            reviewer_roles,
+            review_rounds,
+            refinement,
+        )
 
     def _store_hitl2(combined: str) -> None:
         state.hitl2_content = combined

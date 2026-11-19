@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from src.application.agents.sub_agent_runner import SubAgentRunner
-from src.application.agents.supervisor_agent import SupervisorAgent
+from src.application.agents.supervisor_agent import DebateRunOptions, SupervisorAgent
 from src.application.services.learn_from_source import SourceType
 from src.application.services.llm_provider_registry import LLMProviderRegistry
 from src.domain.agents.sub_agent_profiles import SubAgentProfile
@@ -229,9 +229,11 @@ class DebateWebSocketHandler:
                 cancel_event=self._cancel_event,
                 agent_catalog=self.agent_catalog,
                 topology_provider=self.topology_provider,
-                default_provider=self.settings.default_provider,
-                default_model=self.settings.default_model,
-                image_generator=self.image_generator,
+                options=DebateRunOptions(
+                    default_provider=self.settings.default_provider,
+                    default_model=self.settings.default_model,
+                    image_generator=self.image_generator,
+                ),
             ):
                 if self._cancel_event.is_set():
                     raise DebateCancelledError("Debate cancelled by user")

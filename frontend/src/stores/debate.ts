@@ -9,12 +9,10 @@ import { useDebateStream } from '../composables/useDebateStream'
 import {
   cleanAgentMessageContent,
   normalizeAgentRole,
-  resolveHitlUserMessage,
   type Agent,
   type ChatMessage,
   type SupervisorEvent,
 } from '../utils/debateHelpers'
-import { findSentenceSplitIndex, getToolSpokenFallback } from '../utils/ttsFilter'
 
 export { resolveWsUrl } from '../services/wsClient'
 export type { DebateTopology } from '../services/configService'
@@ -26,8 +24,9 @@ export type {
   HitlDecisionType,
   SupervisorEvent,
 } from '../utils/debateHelpers'
-export { cleanAgentMessageContent, normalizeAgentRole, resolveHitlUserMessage }
-export { findSentenceSplitIndex, getToolSpokenFallback }
+export { cleanAgentMessageContent, normalizeAgentRole }
+export { resolveHitlUserMessage } from '../utils/debateHelpers'
+export { findSentenceSplitIndex, getToolSpokenFallback } from '../utils/ttsFilter'
 
 export async function uploadFile(file: File): Promise<string> {
   return debateApiService.uploadFile(file)
@@ -239,12 +238,12 @@ export const useDebateStore = defineStore('debate', () => {
       learningStatusMessage.value = msg
       return { success: true, message: msg }
     } catch (err: unknown) {
-      const errMsg =
-        err instanceof HttpError
-          ? formatHttpErrorDetail(err.detail, 'Error al persistir el aprendizaje')
-          : err instanceof Error
-            ? err.message
-            : 'Error inesperado al aprender la sesión'
+      let errMsg = 'Error inesperado al aprender la sesión'
+      if (err instanceof HttpError) {
+        errMsg = formatHttpErrorDetail(err.detail, 'Error al persistir el aprendizaje')
+      } else if (err instanceof Error) {
+        errMsg = err.message
+      }
       learningStatusMessage.value = `❌ Error: ${errMsg}`
       return { success: false, message: errMsg }
     } finally {

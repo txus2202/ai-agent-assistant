@@ -136,12 +136,14 @@ def _default_extractors(
 
 class TestLearnFromSource:
     def test_requires_injected_document_parser(self, tmp_path: Path):
+        llm = FakeLLM()
+        store = InMemoryDocumentStore()
         with pytest.raises(ValueError, match="document_parser"):
             LearnFromSource.run(
                 source="Raw text",
                 source_type=SourceType.TEXT,
-                llm_provider=FakeLLM(),
-                document_store=InMemoryDocumentStore(),
+                llm_provider=llm,
+                document_store=store,
                 vault_root=tmp_path,
             )
 

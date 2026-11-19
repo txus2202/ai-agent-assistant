@@ -1000,11 +1000,12 @@ def test_debate_ws_forwards_injected_settings_and_image_generator_to_supervisor(
         ev = websocket.receive_json()
         assert ev["type"] == EventType.DONE.value
 
-    assert captured_kwargs["default_provider"] == "openai"
-    assert captured_kwargs["default_model"] == "gpt-4o"
+    opts = captured_kwargs["options"]
+    assert opts.default_provider == "openai"
+    assert opts.default_model == "gpt-4o"
     assert captured_kwargs["review_rounds"] == 3
-    assert isinstance(captured_kwargs["image_generator"], IImageGenerator)
-    assert captured_kwargs["image_generator"].get_provider_name() == "imagen"
+    assert isinstance(opts.image_generator, IImageGenerator)
+    assert opts.image_generator.get_provider_name() == "imagen"
 
 
 

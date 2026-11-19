@@ -23,12 +23,13 @@ if TYPE_CHECKING:
     from anthropic.types import Base64ImageSourceParam, ImageBlockParam, MessageParam, TextBlockParam
 
 _DEFAULT_MAX_TOKENS = 4096
+_DEFAULT_IMAGE_MIME_TYPE: Literal["image/jpeg"] = "image/jpeg"
 _SUPPORTED_IMAGE_MIME_TYPES: dict[
     str,
     Literal["image/jpeg", "image/png", "image/gif", "image/webp"],
 ] = {
-    "image/jpeg": "image/jpeg",
-    "image/jpg": "image/jpeg",
+    _DEFAULT_IMAGE_MIME_TYPE: _DEFAULT_IMAGE_MIME_TYPE,
+    "image/jpg": _DEFAULT_IMAGE_MIME_TYPE,
     "image/png": "image/png",
     "image/gif": "image/gif",
     "image/webp": "image/webp",
@@ -93,7 +94,7 @@ class AnthropicAdapter(UsageTrackingMixin, ILLMProvider):
             import mimetypes  # noqa: PLC0415
 
             guessed_mime = mimetypes.guess_type(str(image_path))[0] or ""
-            media_type = _SUPPORTED_IMAGE_MIME_TYPES.get(guessed_mime, "image/jpeg")
+            media_type = _SUPPORTED_IMAGE_MIME_TYPES.get(guessed_mime, _DEFAULT_IMAGE_MIME_TYPE)
             b64_data = base64.b64encode(image_path.read_bytes()).decode("utf-8")
 
             image_source: Base64ImageSourceParam = {

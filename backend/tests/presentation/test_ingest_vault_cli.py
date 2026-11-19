@@ -154,7 +154,8 @@ def test_resolve_document_store_supports_http_server_and_chroma_persist_dir(monk
     from unittest.mock import MagicMock
 
     spec = importlib.util.spec_from_file_location("ingest_vault_cli", _CLI)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     cli_mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(cli_mod)
 

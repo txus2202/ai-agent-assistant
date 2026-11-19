@@ -310,6 +310,45 @@ const populateSpatialGrid = () => {
   }
 }
 
+const NEIGHBOR_OFFSETS: ReadonlyArray<readonly [number, number, number]> = (() => {
+  const offsets: Array<readonly [number, number, number]> = []
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        offsets.push([dx, dy, dz])
+      }
+    }
+  }
+  return offsets
+})()
+
+const drawBucketLinks = (
+  c: CanvasRenderingContext2D,
+  p1: Particle3D,
+  i: number,
+  a1: ParticleAgentInfo,
+  bucket: number[],
+  frame: FrameState,
+  linksDrawn: number
+): number => {
+  let count = linksDrawn
+  for (const j of bucket) {
+    if (j <= i) continue
+    const p2 = particles[j]
+    if (!p2 || p2.z < FAR_Z) continue
+    const ddx = p1.x - p2.x
+    const ddy = p1.y - p2.y
+    const ddz = p1.z - p2.z
+    const distSq = ddx * ddx + ddy * ddy + ddz * ddz
+    if (distSq >= LINK_MAX_DIST_SQ) continue
+    const a2 = getParticleActiveAgent(p2, frame)
+    drawLink(c, p1, p2, distSq, a1, a2, frame)
+    count++
+    if (count >= MAX_LINKS_PER_PARTICLE) return count
+  }
+  return count
+}
+
 const drawConnectionsFor = (
   c: CanvasRenderingContext2D,
   i: number,
@@ -323,28 +362,11 @@ const drawConnectionsFor = (
   const gz = gridCellCoord(p1.z)
   let linksDrawn = 0
 
-  for (let dx = -1; dx <= 1; dx++) {
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dz = -1; dz <= 1; dz++) {
-        const bucket = spatialGrid.get(packCellKey(gx + dx, gy + dy, gz + dz))
-        if (!bucket) continue
-        for (const j of bucket) {
-          if (j <= i) continue
-          const p2 = particles[j]
-          if (!p2 || p2.z < FAR_Z) continue
-          const ddx = p1.x - p2.x
-          const ddy = p1.y - p2.y
-          const ddz = p1.z - p2.z
-          const distSq = ddx * ddx + ddy * ddy + ddz * ddz
-          if (distSq < LINK_MAX_DIST_SQ) {
-            const a2 = getParticleActiveAgent(p2, frame)
-            drawLink(c, p1, p2, distSq, a1, a2, frame)
-            linksDrawn++
-            if (linksDrawn >= MAX_LINKS_PER_PARTICLE) return
-          }
-        }
-      }
-    }
+  for (const [dx, dy, dz] of NEIGHBOR_OFFSETS) {
+    const bucket = spatialGrid.get(packCellKey(gx + dx, gy + dy, gz + dz))
+    if (!bucket) continue
+    linksDrawn = drawBucketLinks(c, p1, i, a1, bucket, frame, linksDrawn)
+    if (linksDrawn >= MAX_LINKS_PER_PARTICLE) return
   }
 }
 

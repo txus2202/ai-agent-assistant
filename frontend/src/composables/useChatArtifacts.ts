@@ -107,7 +107,7 @@ export function useChatArtifacts(deps: UseChatArtifactsDeps) {
       if (msg.role === 'user') return []
       const isDocAgent = agentHasDocumentViewer(msg.agentName)
       const cached = parsedBlocksCache.get(key)
-      if (cached && cached.content === msg.content && cached.isDocAgent === isDocAgent) {
+      if (cached?.content === msg.content && cached?.isDocAgent === isDocAgent) {
         return cached.blocks
       }
       const blocks: RenderedMessageBlock[] = parseMessageContent(msg.content, {

@@ -16,8 +16,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from src.domain.ports.document_parser import IDocumentParser
 from src.domain.ports.document_store import IDocumentStore
-from src.infrastructure.rag.obsidian_parser import ObsidianParser
 
 
 @dataclass
@@ -37,6 +37,7 @@ class IngestVault:
     def run(
         vault_root: Path,
         document_store: IDocumentStore,
+        document_parser: IDocumentParser | None = None,
         on_file: Callable[[Path, int], None] | None = None,
     ) -> IngestResult:
         """
@@ -47,16 +48,20 @@ class IngestVault:
         Orphaned files (indexed in store but no longer present in the vault) are purged.
 
         Args:
-            vault_root:     Root directory of the Obsidian vault.
-            document_store: Target document store (ChromaDB or InMemory).
-            on_file:        Optional callback invoked after each file is parsed
-                            successfully. Signature: ``(file_path, n_chunks) -> None``.
-                            Useful for progress reporting in CLI and other
-                            presentation layers — keeps them DRY.
+            vault_root:      Root directory of the Obsidian vault.
+            document_store:  Target document store (ChromaDB or InMemory).
+            document_parser: Injected IDocumentParser port implementation.
+            on_file:         Optional callback invoked after each file is parsed
+                             successfully. Signature: ``(file_path, n_chunks) -> None``.
+                             Useful for progress reporting in CLI and other
+                             presentation layers — keeps them DRY.
 
         Returns:
             ``IngestResult`` with counts of files, chunks, deleted files, and any errors.
         """
+        if document_parser is None:
+            raise ValueError("document_parser must be provided to IngestVault.run()")
+
         result = IngestResult()
         all_chunks = []
 
@@ -83,7 +88,7 @@ class IngestVault:
 
         for md_file in md_files:
             try:
-                chunks = ObsidianParser.parse(md_file, vault_root=vault_root)
+                chunks = document_parser.parse(md_file, vault_root=vault_root)
                 all_chunks.extend(chunks)
                 result.files_processed += 1
                 if on_file is not None:

@@ -50,6 +50,7 @@ from src.domain.agents.supervisor_events import (
 )
 from src.domain.ports.agent_catalog_repository import IAgentCatalogRepository, ITopologyProvider
 from src.domain.ports.document_store import IDocumentStore
+from src.domain.ports.image_generator import IImageGenerator
 from src.domain.ports.llm_provider import ILLMProvider, invoke_llm_with_usage
 
 import json
@@ -223,6 +224,10 @@ class SupervisorAgent:
         cancel_event: asyncio.Event | None = None,
         agent_catalog: IAgentCatalogRepository | None = None,
         topology_provider: ITopologyProvider | None = None,
+        *,
+        default_provider: str = "gemini",
+        default_model: str = "gemini-3.6-flash",
+        image_generator: IImageGenerator | None = None,
     ) -> AsyncGenerator[SupervisorEvent, None]:
         """
         Run the full debate flow and yield SupervisorEvents asynchronously (ADR-016).
@@ -239,6 +244,9 @@ class SupervisorAgent:
             cancel_event=cancel_event,
             agent_catalog=agent_catalog,
             topology_provider=topology_provider,
+            default_provider=default_provider,
+            default_model=default_model,
+            image_generator=image_generator,
         )
 
 
@@ -267,25 +275,19 @@ class DebateState:
         self.agent_critiques.setdefault(agent_name, []).append(critique)
 
 
-def _determine_review_rounds(
-    review_rounds: int | None,
-    settings: Any,
-) -> int:
-    if review_rounds is not None:
-        return review_rounds
-    if settings and getattr(settings, "review_rounds", None) is not None:
-        return settings.review_rounds
-    return 1
+def _determine_review_rounds(review_rounds: int | None) -> int:
+    return review_rounds if review_rounds is not None else 1
 
 
 def _resolve_supervisor_config(
     agent_config_repo: Any,
     profile: Any,
-    settings: Any,
+    default_provider: str = "gemini",
+    default_model: str = "gemini-3.6-flash",
 ) -> tuple[str, str]:
     config = agent_config_repo.find_by_role(profile.display_name) or agent_config_repo.find_by_role(profile.id)
-    default_prov = getattr(profile, "default_provider", "") or settings.default_provider
-    default_mod = getattr(profile, "default_model", "") or settings.default_model
+    default_prov = getattr(profile, "default_provider", "") or default_provider
+    default_mod = getattr(profile, "default_model", "") or default_model
     provider_name = config.provider if (config and config.provider) else default_prov
     model_name = config.model_name if (config and config.model_name) else default_mod
     return provider_name, model_name
@@ -495,10 +497,12 @@ def _build_role_runner(
     agent_config_repo: Any,
     document_store: IDocumentStore,
     llm_factory: Callable[[str], ILLMProvider],
-    settings: Any,
+    default_provider: str,
+    default_model: str,
     chat_history: list[dict[str, Any]] | None,
     state: DebateState,
     agent_catalog: IAgentCatalogRepository,
+    image_generator: IImageGenerator | None = None,
 ) -> Callable[[str, str], Awaitable[tuple[str, str]]]:
     async def run_role(r: str, req: str) -> tuple[str, str]:
         profile = agent_catalog.get_profile(r)
@@ -506,8 +510,8 @@ def _build_role_runner(
 
         def _resolve_role_sync() -> tuple[Any, str, str, ILLMProvider]:
             cfg = agent_config_repo.find_by_role(agent_name) or agent_config_repo.find_by_role(profile.id)
-            default_prov = getattr(profile, "default_provider", "") or settings.default_provider
-            default_mod = getattr(profile, "default_model", "") or settings.default_model
+            default_prov = getattr(profile, "default_provider", "") or default_provider
+            default_mod = getattr(profile, "default_model", "") or default_model
             prov_name = cfg.provider if (cfg and cfg.provider) else default_prov
             mod_name = cfg.model_name if (cfg and cfg.model_name) else default_mod
             return cfg, prov_name, mod_name, llm_factory(prov_name)
@@ -525,6 +529,7 @@ def _build_role_runner(
             document_store=document_store,
             model_name=model_name,
             agent_catalog=agent_catalog,
+            image_generator=image_generator,
             **runner_kwargs,
         )
         meta = {
@@ -777,29 +782,41 @@ async def _debate_generator(
     cancel_event: asyncio.Event | None = None,
     agent_catalog: IAgentCatalogRepository | None = None,
     topology_provider: ITopologyProvider | None = None,
+    default_provider: str = "gemini",
+    default_model: str = "gemini-3.6-flash",
+    image_generator: IImageGenerator | None = None,
 ) -> AsyncGenerator[SupervisorEvent, None]:
     if agent_catalog is None:
         raise ValueError("agent_catalog must be provided to SupervisorAgent.run()")
-
-    from src.presentation.api.config import get_settings
-    settings = get_settings()
 
     active_topology = topology or (topology_provider.get_topology() if topology_provider else None)
     if active_topology is None:
         raise ValueError("Either topology or topology_provider must be provided to SupervisorAgent.run()")
 
-    effective_review_rounds = _determine_review_rounds(review_rounds, settings)
+    effective_review_rounds = _determine_review_rounds(review_rounds)
     state = DebateState()
 
     supervisor_profile = agent_catalog.get_profile(active_topology.supervisor)
     sup_agent_name = supervisor_profile.display_name
     sup_provider_name, sup_model_name = await asyncio.to_thread(
-        _resolve_supervisor_config, agent_config_repo, supervisor_profile, settings
+        _resolve_supervisor_config,
+        agent_config_repo,
+        supervisor_profile,
+        default_provider,
+        default_model,
     )
     supervisor_provider = await asyncio.to_thread(llm_factory, sup_provider_name)
 
     run_role = _build_role_runner(
-        agent_config_repo, document_store, llm_factory, settings, chat_history, state, agent_catalog
+        agent_config_repo,
+        document_store,
+        llm_factory,
+        default_provider,
+        default_model,
+        chat_history,
+        state,
+        agent_catalog,
+        image_generator=image_generator,
     )
 
     # 1. Triage Intent Classification

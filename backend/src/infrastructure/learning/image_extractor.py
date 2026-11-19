@@ -29,9 +29,10 @@ class ImageExtractor:
 
     @staticmethod
     def extract(
-        image_path: Path,
-        llm_provider: Any,
-        model_name: str,
+        image_path: Path | str,
+        llm_provider: Any = None,
+        model_name: str = "",
+        **_kwargs: Any,
     ) -> str:
         """
         Analyze an image file and return its textual technical description.
@@ -47,6 +48,8 @@ class ImageExtractor:
         Raises:
             ExtractionError: If the image cannot be read or LLM analysis fails.
         """
+        if llm_provider is None:
+            raise ExtractionError("llm_provider is required for image extraction")
         p = Path(image_path)
         if not p.exists() or not p.is_file():
             raise ExtractionError(f"Image file not found: {image_path}")

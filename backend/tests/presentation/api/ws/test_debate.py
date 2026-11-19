@@ -91,7 +91,7 @@ def ws_client(monkeypatch):
     """Provides a TestClient connected to a fresh app with mocked SupervisorAgent."""
     # Mock the LLM registry so we don't need real keys
     from src.presentation.api.ws import debate
-    monkeypatch.setattr(debate, "get_llm_provider", lambda _: None)
+    monkeypatch.setattr(debate, "get_llm_provider", lambda _prov, **_kw: None)
     
     # Mock the ChromaDB store init to avoid creating directories
     from src.infrastructure.rag.chroma_document_store import ChromaDBDocumentStore
@@ -432,6 +432,13 @@ def test_debate_learning_explicit_directive_with_tags(ws_client, monkeypatch):
     assert captured["source_type"] == SourceType.TEXT
     assert "El patrón Outbox" in captured["source"]
     assert captured["tags"] == ["mensajeria"]
+    assert captured["document_parser"] is not None
+    assert set(captured["extractors"].keys()) == {
+        SourceType.PDF,
+        SourceType.URL,
+        SourceType.MARKDOWN,
+        SourceType.IMAGE,
+    }
 
 
 def test_debate_learning_interactive_tag_flow(ws_client, monkeypatch):
@@ -940,6 +947,56 @@ def test_cancel_during_hitl_aborts_without_approving_next_phase(ws_client):
     record = repo.find_by_id(session_id, allow_unscoped=True)
     assert record is not None
     assert record.status == "aborted"
+
+
+def test_debate_ws_forwards_injected_settings_and_image_generator_to_supervisor(monkeypatch, tmp_path):
+    """Composition root WS handler passes default_provider, default_model, review_rounds and IImageGenerator explicitly."""
+    from unittest.mock import AsyncMock, MagicMock
+    from src.application.services.auth_service import AuthService
+    from src.domain.entities.user import User
+    from src.domain.ports.image_generator import IImageGenerator
+    from src.presentation.api.app import create_app
+    from src.presentation.api.config import Settings
+    from src.presentation.api.ws import debate
+
+    captured_kwargs: dict = {}
+
+    async def _capturing_supervisor_run(**kwargs):
+        captured_kwargs.update(kwargs)
+        yield SupervisorEvent(type=EventType.DONE, role="Supervisor", content="ok")
+
+    monkeypatch.delenv("IMAGE_GENERATION_PROVIDER", raising=False)
+    monkeypatch.delenv("IMAGE_PROVIDER", raising=False)
+    monkeypatch.setattr(debate.SupervisorAgent, "run", _capturing_supervisor_run)
+    monkeypatch.setattr(debate, "get_llm_provider", lambda _prov, **_kw: MagicMock())
+
+    mock_auth = MagicMock(spec=AuthService)
+    mock_auth.is_initialized = AsyncMock(return_value=True)
+    mock_auth.validate_token = AsyncMock(
+        return_value=User(id="usr-dip", username="tester", password_hash="h", is_admin=True, is_active=True)
+    )
+    settings = Settings(
+        sqlite_db_path=tmp_path / "ws_dip.db",
+        auth_secret_key="test_secret_key_32_bytes_minimum_length",
+        default_provider="openai",
+        default_model="gpt-4o",
+        review_rounds=3,
+        image_generation_provider="imagen",
+    )
+    fake_store = MagicMock()
+    app = create_app(settings=settings, auth_service=mock_auth, document_store=fake_store)
+    client = TestClient(app, cookies={"atenea_session": "tok"})
+
+    with client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({"type": "start", "user_request": "Diseña una arquitectura"})
+        ev = websocket.receive_json()
+        assert ev["type"] == EventType.DONE.value
+
+    assert captured_kwargs["default_provider"] == "openai"
+    assert captured_kwargs["default_model"] == "gpt-4o"
+    assert captured_kwargs["review_rounds"] == 3
+    assert isinstance(captured_kwargs["image_generator"], IImageGenerator)
+    assert captured_kwargs["image_generator"].get_provider_name() == "imagen"
 
 
 

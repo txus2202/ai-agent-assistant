@@ -10,12 +10,18 @@ from src.domain.ports.agent_catalog_repository import (
 )
 from src.domain.ports.agent_config_repository import IAgentConfigRepository
 from src.domain.ports.debate_repository import IDebateRepository
+from src.domain.ports.document_parser import IDocumentParser
 from src.domain.ports.document_store import IDocumentStore
+from src.domain.ports.image_generator import IImageGenerator
+from src.domain.ports.source_extractor import ISourceExtractor, SourceType
+from src.infrastructure.image_generation.service import ImageGenerationService
+from src.infrastructure.llm.registry import ConfiguredLLMProviderFactory, LLMProviderConfig
 from src.infrastructure.persistence.postgres_user_repository import PostgreSQLUserRepository
 from src.infrastructure.persistence.sqlite_agent_config_repository import SqliteAgentConfigRepository
 from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
 from src.infrastructure.persistence.sqlite_model_cache_repository import SqliteModelCacheRepository
 from src.infrastructure.persistence.sqlite_user_repository import SQLiteUserRepository
+from src.infrastructure.rag.obsidian_parser import ObsidianParser
 from src.presentation.api.app import create_app
 from src.presentation.api.config import Settings
 from src.presentation.api.dependencies.auth import (
@@ -24,8 +30,14 @@ from src.presentation.api.dependencies.auth import (
     get_debate_repository,
     reset_auth_service,
 )
+from src.presentation.api.dependencies.learning import build_source_extractors
+from src.presentation.api.dependencies.llm import (
+    build_image_generator,
+    build_llm_factory,
+    build_llm_provider_config,
+)
 from src.presentation.api.dependencies.model_cache import get_model_cache_repository
-from src.presentation.api.dependencies.rag import get_document_store
+from src.presentation.api.dependencies.rag import build_document_parser, get_document_store
 
 
 def _make_sqlite_settings(tmp_path, database_url: str = "") -> Settings:
@@ -190,3 +202,64 @@ def test_composition_root_wires_agent_catalog_topology_and_task_limit(monkeypatc
         auth_secret_key="test_secret_key_32_bytes_minimum_length",
     )
     assert custom_settings.task_prompt_max_length == 2048
+
+
+def test_composition_root_wires_ports_and_llm_image_config(monkeypatch, tmp_path):
+    monkeypatch.delenv("IMAGE_GENERATION_PROVIDER", raising=False)
+    monkeypatch.delenv("IMAGE_PROVIDER", raising=False)
+    settings = Settings(
+        sqlite_db_path=tmp_path / "sqlite.db",
+        auth_secret_key="test_secret_key_32_bytes_minimum_length",
+        gemini_api_key="gem-root-key",
+        openai_api_key="oai-root-key",
+        image_generation_provider="imagen",
+    )
+    app = create_app(settings=settings)
+
+    assert isinstance(app.state.llm_config, LLMProviderConfig)
+    assert app.state.llm_config.gemini_api_key == "gem-root-key"
+    assert app.state.llm_config.openai_api_key == "oai-root-key"
+
+    assert isinstance(app.state.image_generator, IImageGenerator)
+    assert isinstance(app.state.image_generator, ImageGenerationService)
+    assert app.state.image_generator.get_provider_name() == "imagen"
+
+    assert isinstance(app.state.document_parser, IDocumentParser)
+    assert isinstance(app.state.document_parser, ObsidianParser)
+
+    assert set(app.state.source_extractors.keys()) == {
+        SourceType.PDF,
+        SourceType.URL,
+        SourceType.MARKDOWN,
+        SourceType.IMAGE,
+    }
+    assert all(isinstance(ext, ISourceExtractor) for ext in app.state.source_extractors.values())
+
+    factory = build_llm_factory(settings)
+    assert isinstance(factory, ConfiguredLLMProviderFactory)
+    assert factory.is_configured("openai") is True
+    assert build_llm_provider_config(settings) == app.state.llm_config
+    assert build_image_generator(settings).get_provider_name() == "imagen"
+    assert isinstance(build_document_parser(), ObsidianParser)
+    assert len(build_source_extractors()) == 4
+
+
+def test_create_app_accepts_injected_dip_overrides(tmp_path):
+    settings = _make_sqlite_settings(tmp_path)
+    custom_parser = MagicMock(spec=IDocumentParser)
+    custom_img = MagicMock(spec=IImageGenerator)
+    custom_extractors = {SourceType.PDF: MagicMock(spec=ISourceExtractor)}
+    custom_cfg = LLMProviderConfig(gemini_api_key="override-key")
+
+    app = create_app(
+        settings=settings,
+        llm_config=custom_cfg,
+        image_generator=custom_img,
+        document_parser=custom_parser,
+        source_extractors=custom_extractors,
+    )
+
+    assert app.state.llm_config is custom_cfg
+    assert app.state.image_generator is custom_img
+    assert app.state.document_parser is custom_parser
+    assert app.state.source_extractors is custom_extractors

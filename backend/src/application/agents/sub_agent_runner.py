@@ -26,9 +26,9 @@ from src.application.services.query_vault import QueryVault
 from src.domain.agents.sub_agent_profiles import SubAgentProfile, format_team_roster
 from src.domain.ports.agent_catalog_repository import IAgentCatalogRepository
 from src.domain.ports.document_store import IDocumentStore
+from src.domain.ports.image_generator import IImageGenerator
 from src.domain.ports.llm_provider import ILLMProvider, invoke_llm_with_usage
 from src.domain.value_objects.document_chunk import DocumentChunk
-from src.infrastructure.image_generation.service import ImageGenerationService
 
 
 @dataclass
@@ -158,8 +158,13 @@ class SubAgentRunner:
         return "\n\n".join(parts)
 
     @classmethod
-    async def _postprocess_visual_content(cls, content: str, image_provider: str | None) -> str:
-        if not image_provider:
+    async def _postprocess_visual_content(
+        cls,
+        content: str,
+        image_provider: str | None,
+        image_generator: IImageGenerator | None = None,
+    ) -> str:
+        if not image_provider or image_generator is None:
             # Strip any stray image generation directives if present without backtracking
             cleaned = re.sub(r"\[GENERATE_IMAGE:[^\]]+\]", "", content)
             return re.sub(r"<!--\s*generate_image:[^-]+-->", "", cleaned)
@@ -172,7 +177,7 @@ class SubAgentRunner:
         if match:
             gen_prompt = match.group(1).strip()
             try:
-                _, img_url = await ImageGenerationService.generate_and_save(gen_prompt, provider=image_provider)
+                _, img_url = await image_generator.generate_and_save(gen_prompt, provider=image_provider)
                 clean_alt = re.sub(r"[\r\n]+", " ", gen_prompt)[:45].strip()
                 replacement = f"![{clean_alt}]({img_url})"
                 return content[:match.start()] + replacement + content[match.end():]
@@ -187,7 +192,7 @@ class SubAgentRunner:
             target_url = img_match.group(2)
             if "placeholder" in target_url.lower() or target_url.startswith("http"):
                 try:
-                    _, img_url = await ImageGenerationService.generate_and_save(alt_text, provider=image_provider)
+                    _, img_url = await image_generator.generate_and_save(alt_text, provider=image_provider)
                     return content[:img_match.start()] + f"![{alt_text}]({img_url})" + content[img_match.end():]
                 except Exception:
                     pass
@@ -227,6 +232,7 @@ class SubAgentRunner:
         rag_top_k: int | None = None,
         rag_min_score: float | None = None,
         agent_catalog: IAgentCatalogRepository | None = None,
+        image_generator: IImageGenerator | None = None,
     ) -> SubAgentResponse:
         """
         Run a sub-agent for the given role (async, ADR-016).
@@ -245,7 +251,7 @@ class SubAgentRunner:
             rag_top_k=rag_top_k,
             rag_min_score=rag_min_score,
         )
-        image_provider = ImageGenerationService.get_provider_name()
+        image_provider = image_generator.get_provider_name() if image_generator is not None else None
         team_profiles = agent_catalog.get_all_profiles() if profile.is_supervisor else ()
         prompt = cls._build_prompt(
             profile,
@@ -263,7 +269,11 @@ class SubAgentRunner:
         latency = round(time.perf_counter() - start_time, 2)
 
         if profile.supports_image_generation:
-            content = await cls._postprocess_visual_content(content, image_provider)
+            content = await cls._postprocess_visual_content(
+                content,
+                image_provider,
+                image_generator=image_generator,
+            )
 
         usage = cls._calculate_usage(prompt, content, llm_provider, usage=raw_usage)
 

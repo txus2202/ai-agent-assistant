@@ -293,7 +293,20 @@ class TestSubAgentRunner:
         assert any("TestWorker" in p for p in llm.received_prompts)
 
     @pytest.mark.anyio
-    async def test_visual_designer_without_image_provider_injects_html5_directive(self, monkeypatch):
+    async def test_visual_designer_without_image_provider_injects_html5_directive(self):
+        class DisabledImageGenerator:
+            def get_provider_name(self) -> str | None:
+                return None
+
+            def is_enabled(self) -> bool:
+                return False
+
+            async def generate_and_save(self, prompt: str, provider: str | None = None) -> tuple[str, str]:
+                raise AssertionError("Should not generate images when disabled")
+
+            def get_image_path(self, filename: str):
+                return None
+
         designer_profile = SubAgentProfile(
             id="designer",
             display_name="VisualDesigner",
@@ -303,13 +316,6 @@ class TestSubAgentRunner:
             tools=("code_viewer", "image_viewer"),
         )
         catalog = InMemoryAgentCatalogRepository(profiles=[designer_profile])
-        monkeypatch.setenv("IMAGE_GENERATION_PROVIDER", "")
-        monkeypatch.delenv("IMAGE_PROVIDER", raising=False)
-        try:
-            from src.presentation.api.config import get_settings
-            monkeypatch.setattr(get_settings(), "image_generation_provider", "")
-        except Exception:
-            pass
 
         llm = FakeLLM("```html\n<!DOCTYPE html><html><body><h1>Mockup</h1></body></html>\n```")
         response = await SubAgentRunner.run(
@@ -319,14 +325,26 @@ class TestSubAgentRunner:
             document_store=InMemoryDocumentStore(),
             model_name="gemini-3.6-flash",
             agent_catalog=catalog,
+            image_generator=DisabledImageGenerator(),
         )
 
         assert any("DIRECTIVA DE MAQUETACIÓN VISUAL (MODO SIN GENERADOR DE IMÁGENES)" in p for p in llm.received_prompts)
         assert "<!DOCTYPE html>" in response.content
 
     @pytest.mark.anyio
-    async def test_visual_designer_with_image_provider_generates_image_and_replaces_directive(self, monkeypatch):
-        from src.infrastructure.image_generation.service import ImageGenerationService
+    async def test_visual_designer_with_image_provider_generates_image_and_replaces_directive(self):
+        class StubImageGenerator:
+            def get_provider_name(self) -> str | None:
+                return "imagen"
+
+            def is_enabled(self) -> bool:
+                return True
+
+            async def generate_and_save(self, prompt: str, provider: str | None = None) -> tuple[str, str]:
+                return "design_test123.png", "/api/images/design_test123.png"
+
+            def get_image_path(self, filename: str):
+                return None
 
         designer_profile = SubAgentProfile(
             id="designer",
@@ -337,12 +355,6 @@ class TestSubAgentRunner:
             tools=("code_viewer", "image_viewer"),
         )
         catalog = InMemoryAgentCatalogRepository(profiles=[designer_profile])
-        monkeypatch.setenv("IMAGE_GENERATION_PROVIDER", "imagen")
-
-        async def fake_generate_and_save(prompt, provider=None):
-            return "design_test123.png", "/api/images/design_test123.png"
-
-        monkeypatch.setattr(ImageGenerationService, "generate_and_save", fake_generate_and_save)
 
         llm = FakeLLM(
             "Aquí tienes el concepto visual del dashboard.\n\n"
@@ -357,6 +369,7 @@ class TestSubAgentRunner:
             document_store=InMemoryDocumentStore(),
             model_name="gemini-3.6-flash",
             agent_catalog=catalog,
+            image_generator=StubImageGenerator(),
         )
 
         assert any("DIRECTIVA DE GENERACIÓN VISUAL (MOTOR IMAGEN ACTIVO)" in p for p in llm.received_prompts)
@@ -365,8 +378,19 @@ class TestSubAgentRunner:
         assert "[GENERATE_IMAGE:" not in response.content
 
     @pytest.mark.anyio
-    async def test_visual_designer_with_image_provider_failure_replaces_with_warning(self, monkeypatch):
-        from src.infrastructure.image_generation.service import ImageGenerationService
+    async def test_visual_designer_with_image_provider_failure_replaces_with_warning(self):
+        class FailingImageGenerator:
+            def get_provider_name(self) -> str | None:
+                return "imagen"
+
+            def is_enabled(self) -> bool:
+                return True
+
+            async def generate_and_save(self, prompt: str, provider: str | None = None) -> tuple[str, str]:
+                raise RuntimeError("API quota exceeded")
+
+            def get_image_path(self, filename: str):
+                return None
 
         designer_profile = SubAgentProfile(
             id="designer",
@@ -377,12 +401,6 @@ class TestSubAgentRunner:
             tools=("code_viewer", "image_viewer"),
         )
         catalog = InMemoryAgentCatalogRepository(profiles=[designer_profile])
-        monkeypatch.setenv("IMAGE_GENERATION_PROVIDER", "imagen")
-
-        async def fake_fail(prompt, provider=None):
-            raise RuntimeError("API quota exceeded")
-
-        monkeypatch.setattr(ImageGenerationService, "generate_and_save", fake_fail)
 
         llm = FakeLLM(
             "Propuesta visual:\n"
@@ -397,6 +415,7 @@ class TestSubAgentRunner:
             document_store=InMemoryDocumentStore(),
             model_name="gemini-3.6-flash",
             agent_catalog=catalog,
+            image_generator=FailingImageGenerator(),
         )
 
         assert "No se pudo generar la imagen con imagen: API quota exceeded" in response.content

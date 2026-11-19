@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+from pathlib import Path
+from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 from src.domain.exceptions import ExtractionError
@@ -88,7 +90,11 @@ class URLExtractor:
     """Fetches and strips HTML from a URL safely, returning plain text."""
 
     @staticmethod
-    def extract(url: str, max_bytes: int = DEFAULT_MAX_DOWNLOAD_BYTES) -> str:
+    def extract(
+        url: str | Path,
+        max_bytes: int = DEFAULT_MAX_DOWNLOAD_BYTES,
+        **_kwargs: Any,
+    ) -> str:
         """
         Fetch ``url`` and return its visible text content.
 
@@ -117,7 +123,7 @@ class URLExtractor:
                 "beautifulsoup4 is not installed. Run: pip install beautifulsoup4"
             ) from exc
 
-        current_url = url
+        current_url = str(url)
         try:
             for _ in range(MAX_REDIRECTS + 1):
                 _validate_url_target(current_url)

@@ -27,13 +27,15 @@ WORKDIR /app
 
 # Install minimal runtime OS libraries only and configure unprivileged user (UID 1000)
 # Directory ownership is set before copying .venv so chown never duplicates .venv layers
+# Pre-creating /home/atenea/.cache ensures Docker initializes named volumes with UID 1000 ownership
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    libatomic1 \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -m -u 1000 -s /bin/bash atenea \
-    && mkdir -p /app/data /app/obsidian_vault /app/voices /app/models \
-    && chown -R atenea:atenea /app
+    && mkdir -p /app/data /app/obsidian_vault /app/voices /app/models /home/atenea/.cache/huggingface \
+    && chown -R atenea:atenea /app /home/atenea/.cache
 
 # Copy pre-built virtualenv directly with target ownership (avoids OverlayFS layer duplication)
 COPY --from=builder --chown=atenea:atenea /app/.venv /app/.venv

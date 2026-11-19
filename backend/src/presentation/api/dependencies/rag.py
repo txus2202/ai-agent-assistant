@@ -12,11 +12,30 @@ from typing import Any
 
 from starlette.requests import HTTPConnection
 
+from src.domain.ports.document_parser import IDocumentParser
 from src.domain.ports.document_store import IDocumentStore
 from src.infrastructure.rag.chroma_document_store import ChromaDBDocumentStore
+from src.infrastructure.rag.obsidian_parser import ObsidianParser
 from src.presentation.api.config import Settings, get_settings
 
 _fallback_lock = asyncio.Lock()
+
+
+def build_document_parser() -> IDocumentParser:
+    """Build the default Obsidian IDocumentParser adapter."""
+    return ObsidianParser()
+
+
+def get_document_parser(connection: HTTPConnection) -> IDocumentParser:
+    """Resolve the singleton IDocumentParser stored on `app.state.document_parser`."""
+    app_state = getattr(getattr(connection, "app", None), "state", None)
+    existing = getattr(app_state, "document_parser", None) if app_state is not None else None
+    if existing is not None:
+        return existing
+    parser = build_document_parser()
+    if app_state is not None:
+        app_state.document_parser = parser
+    return parser
 
 
 def create_document_store(settings: Settings) -> IDocumentStore:

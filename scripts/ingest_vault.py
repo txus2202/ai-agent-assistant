@@ -65,6 +65,7 @@ from src.application.services.ingest_vault import IngestVault  # noqa: E402
 from src.domain.ports.document_store import IDocumentStore  # noqa: E402
 from src.infrastructure.rag.chroma_document_store import ChromaDBDocumentStore  # noqa: E402
 from src.infrastructure.rag.in_memory_document_store import InMemoryDocumentStore  # noqa: E402
+from src.infrastructure.rag.obsidian_parser import ObsidianParser  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # ANSI colour helpers (gracefully degrade on non-TTY)
@@ -204,6 +205,7 @@ def main(argv: list[str] | None = None) -> int:
     result = IngestVault.run(
         vault_root=vault_root,
         document_store=store,
+        document_parser=ObsidianParser(),
         on_file=_on_file if verbose else None,
     )
     elapsed = time.perf_counter() - t0

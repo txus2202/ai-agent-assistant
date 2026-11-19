@@ -74,20 +74,8 @@ LAYER_FORBIDDEN_IMPORTS: dict[str, frozenset[str]] = {
     }),
 }
 
-# Pre-existing dependency violations scheduled for Fase 4 remediation ([02][P1]).
-# Any new violation outside this baseline fails immediately; baseline entries
-# emit a warning unless STRICT_ARCH_GUARD=1 is set.
-KNOWN_DEPENDENCY_BASELINE: frozenset[tuple[str, str]] = frozenset({
-    ("application/agents/sub_agent_runner.py", "src.infrastructure.image_generation.service"),
-    ("application/agents/supervisor_agent.py", "src.presentation.api.config"),
-    ("application/services/ingest_vault.py", "src.infrastructure.rag.obsidian_parser"),
-    ("application/services/learn_from_source.py", "src.infrastructure.learning.image_extractor"),
-    ("application/services/learn_from_source.py", "src.infrastructure.learning.markdown_extractor"),
-    ("application/services/learn_from_source.py", "src.infrastructure.learning.pdf_extractor"),
-    ("application/services/learn_from_source.py", "src.infrastructure.learning.url_extractor"),
-    ("infrastructure/image_generation/service.py", "src.presentation.api.config"),
-    ("infrastructure/llm/registry.py", "src.presentation.api.config"),
-})
+# All Phase 4 Punto 23-24 dependency inversions are now resolved; zero baseline violations remain.
+KNOWN_DEPENDENCY_BASELINE: frozenset[tuple[str, str]] = frozenset()
 
 
 def _shipped_agent_names() -> list[str]:

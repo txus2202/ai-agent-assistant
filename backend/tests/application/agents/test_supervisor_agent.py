@@ -462,21 +462,26 @@ class TestSupervisorAgentHITL:
             assert t != EventType.HITL_REQUIRED
 
     @pytest.mark.anyio
-    async def test_review_rounds_env_setting_is_respected(self, monkeypatch, generic_catalog, generic_topology):
-        from src.presentation.api import config as config_mod
+    async def test_review_rounds_and_defaults_are_injected_without_settings(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
         from src.application.agents.sub_agent_runner import SubAgentResponse
 
-        settings = config_mod.get_settings()
-        assert hasattr(settings, "review_rounds")
-
-        monkeypatch.setattr(settings, "review_rounds", 0)
-
         call_counts: dict[str, int] = {}
+        seen_providers: list[str] = []
+        seen_models: list[str] = []
+        sentinel_img_gen = object()
+        seen_img_gens: list[object] = []
+
+        def _capturing_factory(provider_name: str):
+            seen_providers.append(provider_name)
+            return FakeLLM()
+
         async def _counting_runner(role, user_request, llm_provider, document_store, model_name, **kwargs):
             key = role.value if hasattr(role, "value") else str(role)
             call_counts[key] = call_counts.get(key, 0) + 1
+            seen_models.append(model_name)
+            seen_img_gens.append(kwargs.get("image_generator"))
             return SubAgentResponse(role=role, content=f"{key} response", context_chunks=[])
 
         monkeypatch.setattr(_mod.SubAgentRunner, "run", _counting_runner)
@@ -488,16 +493,23 @@ class TestSupervisorAgentHITL:
             user_request="Design something",
             document_store=InMemoryDocumentStore(),
             agent_config_repo=FakeAgentConfigRepo(),
-            llm_factory=lambda _: FakeLLM(),
+            llm_factory=_capturing_factory,
             hitl_callback=_cb,
+            review_rounds=0,
             agent_catalog=generic_catalog,
             topology=generic_topology,
+            default_provider="openai",
+            default_model="gpt-4o-mini",
+            image_generator=sentinel_img_gen,  # type: ignore[arg-type]
         ))
 
         # When review_rounds is 0, PropOne and PropTwo run once in phase 2, Auditor runs once in phase 3
         assert call_counts.get("PropOne", 0) == 1
         assert call_counts.get("PropTwo", 0) == 1
         assert call_counts.get("Auditor", 0) == 1
+        assert all(p == "openai" for p in seen_providers)
+        assert all(m == "gpt-4o-mini" for m in seen_models)
+        assert all(g is sentinel_img_gen for g in seen_img_gens)
 
 
 class TestAdaptiveSupervisorRouting:

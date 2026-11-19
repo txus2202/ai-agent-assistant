@@ -250,7 +250,7 @@ class TestAsyncEventLoopNonBlocking:
                 errors=[],
             )
 
-        monkeypatch.setattr("src.presentation.api.routes.learning.get_llm_provider", lambda _: MagicMock())
+        monkeypatch.setattr("src.presentation.api.routes.learning.get_llm_provider", lambda _prov, **_kw: MagicMock())
         monkeypatch.setattr(LearnFromSession, "run", staticmethod(_slow_learn_run))
 
         settings = Settings(

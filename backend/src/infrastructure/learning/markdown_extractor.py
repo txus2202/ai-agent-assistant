@@ -6,6 +6,7 @@ Extracts plain text / Markdown content from local markdown files.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from src.domain.exceptions import ExtractionError
 
@@ -14,7 +15,7 @@ class MarkdownExtractor:
     """Extracts text content from Markdown (.md) files."""
 
     @staticmethod
-    def extract(path: Path) -> str:
+    def extract(path: Path | str, **_kwargs: Any) -> str:
         """
         Read a Markdown file and return its textual content.
 

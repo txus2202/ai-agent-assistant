@@ -14,19 +14,17 @@ Obsidian vault / ChromaDB RAG pipeline (ADR-014).
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
 
 from src.application.services.ingest_vault import IngestResult, IngestVault
 from src.domain.exceptions import ExtractionError, LLMProviderError
+from src.domain.ports.document_parser import IDocumentParser
 from src.domain.ports.document_store import IDocumentStore
 from src.domain.ports.llm_provider import ILLMProvider
-from src.infrastructure.learning.image_extractor import ImageExtractor
-from src.infrastructure.learning.markdown_extractor import MarkdownExtractor
-from src.infrastructure.learning.pdf_extractor import PDFExtractor
-from src.infrastructure.learning.url_extractor import URLExtractor
+from src.domain.ports.source_extractor import ISourceExtractor, SourceType
 
 # ---------------------------------------------------------------------------
 # System prompt sent to the LLM — enforces vault-compatible .md structure
@@ -57,15 +55,8 @@ Return ONLY the Markdown document. Do not add any extra explanation.
 
 
 # ---------------------------------------------------------------------------
-# Public types
+# Public types (SourceType re-exported from domain.ports.source_extractor)
 # ---------------------------------------------------------------------------
-
-class SourceType(Enum):
-    PDF = "pdf"
-    URL = "url"
-    MARKDOWN = "markdown"
-    IMAGE = "image"
-    TEXT = "text"
 
 
 @dataclass
@@ -83,18 +74,17 @@ def _extract_raw_text(
     source_type: SourceType,
     llm_provider: ILLMProvider,
     model_name: str,
+    extractors: Mapping[SourceType, ISourceExtractor] | None = None,
 ) -> str:
-    if source_type == SourceType.PDF:
-        return PDFExtractor.extract(Path(source))
-    if source_type == SourceType.URL:
-        return URLExtractor.extract(source)
-    if source_type == SourceType.MARKDOWN:
-        return MarkdownExtractor.extract(Path(source))
-    if source_type == SourceType.IMAGE:
-        return ImageExtractor.extract(Path(source), llm_provider, model_name=model_name)
     if source_type == SourceType.TEXT:
         return source
-    raise ExtractionError(f"Unsupported source type: {source_type}")
+    if not extractors or source_type not in extractors:
+        raise ExtractionError(f"Unsupported or unconfigured source type: {source_type}")
+    return extractors[source_type].extract(
+        source,
+        llm_provider=llm_provider,
+        model_name=model_name,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -114,27 +104,40 @@ class LearnFromSource:
         model_name: str = "gemini-3.6-flash",
         tags: list[str] | None = None,
         target_domain: str = "learned",
+        extractors: Mapping[SourceType, ISourceExtractor] | None = None,
+        document_parser: IDocumentParser | None = None,
     ) -> LearnResult:
         """
         Learn from an external source and update the knowledge vault.
 
         Args:
-            source:         File path (PDF, MD, Image), URL or direct text.
-            source_type:    SourceType (PDF, URL, MARKDOWN, IMAGE, TEXT).
-            llm_provider:   ILLMProvider used to generate the structured .md.
-            document_store: Target store (ChromaDB or InMemory for tests).
-            vault_root:     Root of the Obsidian vault.
-            model_name:     Model to use for generation.
-            tags:           Optional list of explicit tags requested by the user.
-            target_domain:  Target domain or directory within the vault (default: 'learned').
+            source:          File path (PDF, MD, Image), URL or direct text.
+            source_type:     SourceType (PDF, URL, MARKDOWN, IMAGE, TEXT).
+            llm_provider:    ILLMProvider used to generate the structured .md.
+            document_store:  Target store (ChromaDB or InMemory for tests).
+            vault_root:      Root of the Obsidian vault.
+            model_name:      Model to use for generation.
+            tags:            Optional list of explicit tags requested by the user.
+            target_domain:   Target domain or directory within the vault (default: 'learned').
+            extractors:      Mapping of SourceType -> ISourceExtractor injected from composition root.
+            document_parser: Injected IDocumentParser for re-ingesting the updated vault.
 
         Returns:
             LearnResult with path to generated file, ingest summary, and errors.
             Never raises — all failures are captured in LearnResult.errors.
         """
+        if document_parser is None:
+            raise ValueError("document_parser must be provided to LearnFromSource.run()")
+
         # ── 1. Extract raw text ───────────────────────────────────────────
         try:
-            raw_text = _extract_raw_text(source, source_type, llm_provider, model_name)
+            raw_text = _extract_raw_text(
+                source,
+                source_type,
+                llm_provider,
+                model_name,
+                extractors=extractors,
+            )
         except ExtractionError as exc:
             return LearnResult(source=source, generated_file=None, errors=[str(exc)])
 
@@ -182,6 +185,7 @@ class LearnFromSource:
         ingest_result = IngestVault.run(
             vault_root=vault_root,
             document_store=document_store,
+            document_parser=document_parser,
         )
 
         return LearnResult(

@@ -31,7 +31,11 @@ if TYPE_CHECKING:
         IAgentCatalogRepository,
         ITopologyProvider,
     )
+    from src.domain.ports.document_parser import IDocumentParser
     from src.domain.ports.document_store import IDocumentStore
+    from src.domain.ports.image_generator import IImageGenerator
+    from src.domain.ports.source_extractor import ISourceExtractor, SourceType
+    from src.infrastructure.llm.registry import LLMProviderConfig
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +129,10 @@ def create_app(
     document_store: IDocumentStore | None = None,
     agent_catalog: IAgentCatalogRepository | None = None,
     topology_provider: ITopologyProvider | None = None,
+    llm_config: Any = None,
+    image_generator: IImageGenerator | None = None,
+    document_parser: IDocumentParser | None = None,
+    source_extractors: dict[SourceType, ISourceExtractor] | None = None,
 ) -> FastAPI:
     cfg = settings or get_settings()
 
@@ -138,6 +146,12 @@ def create_app(
         build_agent_catalog_repository,
         build_topology_provider,
     )
+    from src.presentation.api.dependencies.learning import build_source_extractors
+    from src.presentation.api.dependencies.llm import (
+        build_image_generator,
+        build_llm_provider_config,
+    )
+    from src.presentation.api.dependencies.rag import build_document_parser
 
     resolved_catalog = agent_catalog or build_agent_catalog_repository(cfg)
     resolved_topology_provider = topology_provider or build_topology_provider(
@@ -149,6 +163,12 @@ def create_app(
     app.state.document_store = document_store
     app.state.agent_catalog = resolved_catalog
     app.state.topology_provider = resolved_topology_provider
+    app.state.llm_config = llm_config if llm_config is not None else build_llm_provider_config(cfg)
+    app.state.image_generator = image_generator if image_generator is not None else build_image_generator(cfg)
+    app.state.document_parser = document_parser if document_parser is not None else build_document_parser()
+    app.state.source_extractors = (
+        source_extractors if source_extractors is not None else build_source_extractors()
+    )
     if auth_service is not None:
         app.state.auth_service = auth_service
 

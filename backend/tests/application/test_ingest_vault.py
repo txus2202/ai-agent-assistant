@@ -1,8 +1,5 @@
 """
-RED tests for IngestVault application service.
-
-Spec: obsidian_vault/docs/features/feature_rag_ingestion.md (Scenarios 6-8)
-Phase: 2 | Layer: Application
+Unit & Integration Tests for IngestVault application service.
 
 Uses InMemoryDocumentStore and tmp_path — no ChromaDB or embeddings needed.
 """
@@ -11,34 +8,38 @@ from pathlib import Path
 import pytest
 
 from src.application.services.ingest_vault import IngestResult, IngestVault
+from src.domain.ports.document_parser import IDocumentParser
 from src.infrastructure.rag.in_memory_document_store import InMemoryDocumentStore
+from src.infrastructure.rag.obsidian_parser import ObsidianParser
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _write_md(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
 @pytest.fixture
 def store() -> InMemoryDocumentStore:
     return InMemoryDocumentStore()
 
 
-# ---------------------------------------------------------------------------
-# Scenario 6: IngestVault processes all .md files in the vault
-# ---------------------------------------------------------------------------
+@pytest.fixture
+def parser() -> IDocumentParser:
+    return ObsidianParser()
+
+
+def test_ingest_vault_requires_injected_document_parser(
+    tmp_path: Path,
+    store: InMemoryDocumentStore,
+) -> None:
+    with pytest.raises(ValueError, match="document_parser"):
+        IngestVault.run(vault_root=tmp_path, document_store=store)
+
 
 def test_ingest_vault_processes_all_md_files(
     tmp_path: Path,
     store: InMemoryDocumentStore,
+    parser: IDocumentParser,
 ) -> None:
     _write_md(
         tmp_path / "docs" / "features" / "feature_a.md",
@@ -53,21 +54,18 @@ def test_ingest_vault_processes_all_md_files(
         "## ADR 001\nFirst decision.\n## ADR 002\nSecond decision.\n",
     )
 
-    result = IngestVault.run(vault_root=tmp_path, document_store=store)
+    result = IngestVault.run(vault_root=tmp_path, document_store=store, document_parser=parser)
 
     assert result.files_processed == 3
-    assert result.chunks_upserted >= 5  # at least 5 non-empty sections
+    assert result.chunks_upserted >= 5
     assert result.errors == []
     assert store.count() == result.chunks_upserted
 
 
-# ---------------------------------------------------------------------------
-# Scenario 7: IngestVault skips .obsidian/ directory
-# ---------------------------------------------------------------------------
-
 def test_ingest_vault_skips_obsidian_directory(
     tmp_path: Path,
     store: InMemoryDocumentStore,
+    parser: IDocumentParser,
 ) -> None:
     _write_md(
         tmp_path / "real_note.md",
@@ -78,45 +76,39 @@ def test_ingest_vault_skips_obsidian_directory(
         "## Plugin Config\nThis must NOT be ingested.\n",
     )
 
-    result = IngestVault.run(vault_root=tmp_path, document_store=store)
+    result = IngestVault.run(vault_root=tmp_path, document_store=store, document_parser=parser)
 
     assert result.files_processed == 1
     assert store.count() == 1
 
 
-# ---------------------------------------------------------------------------
-# Scenario 8: IngestVault is idempotent — running twice does not duplicate
-# ---------------------------------------------------------------------------
-
 def test_ingest_vault_is_idempotent(
     tmp_path: Path,
     store: InMemoryDocumentStore,
+    parser: IDocumentParser,
 ) -> None:
     _write_md(
         tmp_path / "doc.md",
         "## Section A\nContent A.\n## Section B\nContent B.\n",
     )
 
-    IngestVault.run(vault_root=tmp_path, document_store=store)
+    IngestVault.run(vault_root=tmp_path, document_store=store, document_parser=parser)
     first_count = store.count()
 
-    IngestVault.run(vault_root=tmp_path, document_store=store)
+    IngestVault.run(vault_root=tmp_path, document_store=store, document_parser=parser)
     second_count = store.count()
 
-    assert first_count == second_count  # re-ingestion must not duplicate
+    assert first_count == second_count
 
-
-# ---------------------------------------------------------------------------
-# Extra: IngestResult is a structured dataclass
-# ---------------------------------------------------------------------------
 
 def test_ingest_result_has_expected_fields(
     tmp_path: Path,
     store: InMemoryDocumentStore,
+    parser: IDocumentParser,
 ) -> None:
     _write_md(tmp_path / "note.md", "## Section\nSome content.\n")
 
-    result = IngestVault.run(vault_root=tmp_path, document_store=store)
+    result = IngestVault.run(vault_root=tmp_path, document_store=store, document_parser=parser)
 
     assert isinstance(result, IngestResult)
     assert isinstance(result.files_processed, int)
@@ -128,25 +120,22 @@ def test_ingest_result_has_expected_fields(
 def test_ingest_vault_cleans_up_orphaned_files(
     tmp_path: Path,
     store: InMemoryDocumentStore,
+    parser: IDocumentParser,
 ) -> None:
     file_a = tmp_path / "note_a.md"
     file_b = tmp_path / "note_b.md"
     _write_md(file_a, "## Section A\nContent of A.\n")
     _write_md(file_b, "## Section B\nContent of B.\n")
 
-    # Initial ingestion of both files
-    res1 = IngestVault.run(vault_root=tmp_path, document_store=store)
+    res1 = IngestVault.run(vault_root=tmp_path, document_store=store, document_parser=parser)
     assert res1.files_processed == 2
     assert res1.files_deleted == 0
     assert store.count() == 2
 
-    # User deletes note_b.md from the vault
     file_b.unlink()
 
-    # Re-running ingestion must detect that note_b.md is gone and purge its chunks
-    res2 = IngestVault.run(vault_root=tmp_path, document_store=store)
+    res2 = IngestVault.run(vault_root=tmp_path, document_store=store, document_parser=parser)
     assert res2.files_processed == 1
     assert res2.files_deleted == 1
     assert store.count() == 1
     assert store.get_indexed_file_paths() == {"note_a.md"}
-

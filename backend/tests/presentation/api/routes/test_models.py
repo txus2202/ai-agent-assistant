@@ -35,7 +35,7 @@ def client(test_user, shared_cache_repo):
 
 @pytest.fixture(autouse=True)
 def mock_gemini_configured(monkeypatch):
-    monkeypatch.setattr(models_module, "is_provider_configured", lambda name: name == "gemini")
+    monkeypatch.setattr(models_module, "is_provider_configured", lambda name, **_kw: name == "gemini")
 
 
 def test_cold_start_swr_returns_preliminary_and_executes_probe(client, shared_cache_repo, monkeypatch):
@@ -54,7 +54,7 @@ def test_cold_start_swr_returns_preliminary_and_executes_probe(client, shared_ca
     monkeypatch.setattr(
         models_module,
         "get_llm_provider",
-        lambda name: FakeGemini() if name == "gemini" else (_ for _ in ()).throw(RuntimeError("N/A")),
+        lambda name, **_kw: FakeGemini() if name == "gemini" else (_ for _ in ()).throw(RuntimeError("N/A")),
     )
 
     # 1. Cold start request returns preliminary list immediately and runs background probe
@@ -109,7 +109,7 @@ def test_multi_pod_simulation_avoids_duplicate_probing(test_user, shared_cache_r
     monkeypatch.setattr(
         models_module,
         "get_llm_provider",
-        lambda name: FakeGemini() if name == "gemini" else (_ for _ in ()).throw(RuntimeError("N/A")),
+        lambda name, **_kw: FakeGemini() if name == "gemini" else (_ for _ in ()).throw(RuntimeError("N/A")),
     )
 
     # Seed shared DB with lock held by another pod
@@ -151,7 +151,7 @@ def test_refresh_query_param_invalidates_shared_cache(client, shared_cache_repo,
     monkeypatch.setattr(
         models_module,
         "get_llm_provider",
-        lambda name: FakeGemini() if name == "gemini" else (_ for _ in ()).throw(RuntimeError("N/A")),
+        lambda name, **_kw: FakeGemini() if name == "gemini" else (_ for _ in ()).throw(RuntimeError("N/A")),
     )
 
     res = client.get("/models?refresh=true")
@@ -167,13 +167,13 @@ def test_unconfigured_providers_are_never_attempted_or_probed(client, monkeypatc
         def list_models(self, probe: bool = True):
             return [{"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash"}]
 
-    def fake_get_provider(name: str):
+    def fake_get_provider(name: str, **_kw):
         attempted_providers.append(name)
         if name == "gemini":
             return FakeGemini()
         raise AssertionError(f"Provider {name} should not have been attempted!")
 
-    monkeypatch.setattr(models_module, "is_provider_configured", lambda name: name == "gemini")
+    monkeypatch.setattr(models_module, "is_provider_configured", lambda name, **_kw: name == "gemini")
     monkeypatch.setattr(models_module, "get_llm_provider", fake_get_provider)
 
     res = client.get("/models")

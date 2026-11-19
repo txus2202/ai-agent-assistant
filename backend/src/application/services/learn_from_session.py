@@ -15,6 +15,7 @@ from typing import Any
 from src.application.services.ingest_vault import IngestVault
 from src.application.services.learn_from_source import LearnResult
 from src.domain.exceptions import LLMProviderError
+from src.domain.ports.document_parser import IDocumentParser
 from src.domain.ports.document_store import IDocumentStore
 from src.domain.ports.llm_provider import ILLMProvider
 
@@ -64,7 +65,11 @@ class LearnFromSession:
         model_name: str,
         solution_content: str | None = None,
         target_domain: str = DEFAULT_TARGET_DOMAIN,
+        document_parser: IDocumentParser | None = None,
     ) -> LearnResult:
+        if document_parser is None:
+            raise ValueError("document_parser must be provided to LearnFromSession.run()")
+
         if not chat_history and not solution_content:
             return LearnResult(
                 source=session_id,
@@ -121,6 +126,7 @@ class LearnFromSession:
         ingest_result = IngestVault.run(
             vault_root=vault_root,
             document_store=document_store,
+            document_parser=document_parser,
         )
 
         return LearnResult(

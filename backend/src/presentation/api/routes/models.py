@@ -6,9 +6,14 @@ from pydantic import BaseModel
 
 from src.domain.entities.user import User
 from src.domain.ports.model_cache_port import CachedModelCatalog, IModelCacheRepository
-from src.infrastructure.llm.registry import get_llm_provider, is_provider_configured
+from src.infrastructure.llm.registry import (
+    LLMProviderConfig,
+    get_llm_provider,
+    is_provider_configured,
+)
 from src.presentation.api.config import get_settings
 from src.presentation.api.dependencies.auth import get_current_user
+from src.presentation.api.dependencies.llm import get_llm_config
 from src.presentation.api.dependencies.model_cache import get_model_cache_repository
 
 logger = logging.getLogger(__name__)
@@ -32,17 +37,18 @@ class ProviderResponse(BaseModel):
 def _probe_provider_in_background(
     provider_name: str,
     cache_repo: IModelCacheRepository,
+    llm_config: LLMProviderConfig | None = None,
 ) -> None:
     """
     Background worker for a single provider that runs healthcheck probes,
     saves the verified catalog to the shared database, and releases the probe lock.
     """
-    if not is_provider_configured(provider_name):
+    if not is_provider_configured(provider_name, config=llm_config):
         cache_repo.release_probe_lock(provider_name)
         return
 
     try:
-        provider = get_llm_provider(provider_name)
+        provider = get_llm_provider(provider_name, config=llm_config)
         verified_models = provider.list_models(probe=True)
         if verified_models:
             settings = get_settings()
@@ -68,12 +74,13 @@ def _resolve_provider_catalog(
     app_version: str,
     cache_repo: IModelCacheRepository,
     background_tasks: BackgroundTasks,
+    llm_config: LLMProviderConfig | None = None,
 ) -> tuple[Optional[dict], bool]:
     """
     Resolves models for one provider using SWR from the shared database.
     Returns (provider_dict_or_None, is_probing_triggered).
     """
-    if not is_provider_configured(provider_name):
+    if not is_provider_configured(provider_name, config=llm_config):
         return (None, False)
 
     cached = cache_repo.get(provider_name)
@@ -84,12 +91,12 @@ def _resolve_provider_catalog(
     if cached and cached.models and not refresh:
         probing = False
         if cache_repo.acquire_probe_lock(provider_name):
-            background_tasks.add_task(_probe_provider_in_background, provider_name, cache_repo)
+            background_tasks.add_task(_probe_provider_in_background, provider_name, cache_repo, llm_config)
             probing = True
         return ({"id": provider_name, "name": provider_name.upper(), "models": cached.models}, probing)
 
     # Cold start: fetch fast preliminary list (probe=False) so UI is never blocked
-    provider = get_llm_provider(provider_name)
+    provider = get_llm_provider(provider_name, config=llm_config)
     preliminary = provider.list_models(probe=False)
     if not preliminary:
         return (None, False)
@@ -106,7 +113,7 @@ def _resolve_provider_catalog(
 
     probing = False
     if cache_repo.acquire_probe_lock(provider_name):
-        background_tasks.add_task(_probe_provider_in_background, provider_name, cache_repo)
+        background_tasks.add_task(_probe_provider_in_background, provider_name, cache_repo, llm_config)
         probing = True
 
     return ({"id": provider_name, "name": provider_name.upper(), "models": preliminary}, probing)
@@ -118,6 +125,7 @@ def get_available_models(
     background_tasks: BackgroundTasks,
     response: Response,
     cache_repo: Annotated[IModelCacheRepository, Depends(get_model_cache_repository)],
+    llm_config: Annotated[LLMProviderConfig, Depends(get_llm_config)],
     refresh: bool = False,
 ):
     """
@@ -138,11 +146,17 @@ def get_available_models(
     any_probing = False
 
     for provider_name in providers:
-        if not is_provider_configured(provider_name):
+        if not is_provider_configured(provider_name, config=llm_config):
             continue
         try:
             catalog, probing = _resolve_provider_catalog(
-                provider_name, now, refresh, app_version, cache_repo, background_tasks
+                provider_name,
+                now,
+                refresh,
+                app_version,
+                cache_repo,
+                background_tasks,
+                llm_config=llm_config,
             )
             if catalog:
                 result.append(catalog)

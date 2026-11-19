@@ -26,7 +26,7 @@ def test_learning_unauthenticated():
 
 @pytest.fixture(autouse=True)
 def mock_external_services(monkeypatch):
-    monkeypatch.setattr("src.presentation.api.routes.learning.get_llm_provider", lambda _: MagicMock())
+    monkeypatch.setattr("src.presentation.api.routes.learning.get_llm_provider", lambda _prov, **_kw: MagicMock())
     monkeypatch.setattr("src.presentation.api.dependencies.rag.ChromaDBDocumentStore", lambda *a, **kw: MagicMock())
 
 def test_post_learn_session(client, tmp_path, monkeypatch):

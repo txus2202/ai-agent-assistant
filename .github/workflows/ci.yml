@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - develop
+      - refactor/architecture-audit
   pull_request:
     types: [opened, synchronize, reopened]
 
@@ -168,3 +169,13 @@ jobs:
             -Dsonar.issue.ignore.multicriteria=e1
             -Dsonar.issue.ignore.multicriteria.e1.ruleKey=css:S4667
             -Dsonar.issue.ignore.multicriteria.e1.resourceKey=**/*.css
+
+  docker-publish:
+    name: Build & Publish Docker Images
+    needs: [backend-qa, frontend-qa, e2e-playwright, sonar]
+    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'main' || github.ref_name == 'refactor/architecture-audit') }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker-publish.yml
+    secrets: inherit

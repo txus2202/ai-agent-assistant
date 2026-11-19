@@ -30,6 +30,15 @@ RoleRunner = Callable[[str, str], Awaitable[tuple[str, str]]]
 HitlCallback = Callable[[SupervisorEvent], Awaitable[HITLResponse]]
 
 
+def constant_prompt(prompt: str) -> Callable[[str], str]:
+    """Return a single-argument prompt builder returning ``prompt`` for any role."""
+
+    def _build(_role: str) -> str:
+        return prompt
+
+    return _build
+
+
 async def execute_role_safely(
     role: str,
     req: str,
@@ -333,7 +342,7 @@ async def execute_phase_1_interpreters(
         req = user_request + (f"\n\n## User Refinement\n{refinement}" if refinement else "")
         return run_parallel_roles(
             roles_to_run,
-            lambda _r, r=req: r,
+            constant_prompt(req),
             run_role,
             state,
             error_format="[Error en {role}: {error}]",
@@ -384,7 +393,7 @@ async def execute_phase_2_proposers(
         req = state.formalized + (f"\n\n## User Refinement\n{refinement}" if refinement else "")
         async for event in run_parallel_roles(
             roles_to_run,
-            lambda _r, r=req: r,
+            constant_prompt(req),
             run_role,
             state,
             error_format="[Fallo al generar propuesta de {role}: {error}]",
@@ -427,9 +436,12 @@ async def execute_phase_3_evaluators(
         return
 
     def _round_stream(roles_to_run: tuple[str, ...], refinement: str) -> AsyncGenerator[SupervisorEvent, None]:
+        def _prompt(agent_name: str) -> str:
+            return build_phase_3_prompt(state, agent_name, refinement)
+
         return run_parallel_roles(
             roles_to_run,
-            lambda agent_name, ref=refinement: build_phase_3_prompt(state, agent_name, ref),
+            _prompt,
             run_role,
             state,
             error_format="[Fallo en evaluación de {role}: {error}]",
@@ -472,7 +484,7 @@ async def execute_phase_4_implementers(
 
     async for event in run_parallel_roles(
         implementer_roles,
-        lambda _r, r=req: r,
+        constant_prompt(req),
         run_role,
         state,
         error_format="[Fallo en {role}: {error}]",

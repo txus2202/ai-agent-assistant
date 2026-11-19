@@ -487,7 +487,8 @@ class SqliteDebateRepository(IDebateRepository, SqliteConnectionManager):
                 continue
 
             if ev_type == "done":
-                metadata = ev.get("metadata") if isinstance(ev.get("metadata"), dict) else {}
+                raw_metadata = ev.get("metadata")
+                metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
                 if str(metadata.get("metrics_reported", "")).lower() == "true":
                     continue
                 if idx > 0:

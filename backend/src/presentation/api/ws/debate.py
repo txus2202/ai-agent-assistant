@@ -407,9 +407,13 @@ class DebateWebSocketHandler:
         }
         self.debate_repo.append_event(self.debate_record.id, json.dumps(user_event_dict))
 
-        effective_user = (
+        raw_user = (
             self.authenticated_user.username if self.authenticated_user else user_id
-        ) or getattr(self.settings, "langfuse_default_user_id", "local_user")
+        )
+        default_user = str(
+            getattr(self.settings, "langfuse_default_user_id", "local_user") or "local_user"
+        )
+        effective_user: str = str(raw_user) if raw_user else default_user
 
         self.obs_tracker.start_trace(
             session_id=self.debate_record.id,

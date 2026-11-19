@@ -420,6 +420,18 @@ class TestAnthropicAdapter:
         assert isinstance(result, str)
         assert result == "Anthropic response"
 
+    def test_complete_image_returns_string(self, tmp_path: Path):
+        from src.infrastructure.llm.anthropic_adapter import AnthropicAdapter
+
+        img_file = tmp_path / "test.png"
+        img_file.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        adapter = AnthropicAdapter(api_key="test-key")
+        result = adapter.complete_image("Describe diagram", img_file, "claude-3-5-sonnet-latest")
+
+        assert isinstance(result, str)
+        assert result == "Anthropic response"
+
     def test_complete_wraps_sdk_exception_as_llm_provider_error(self):
         from src.infrastructure.llm.anthropic_adapter import AnthropicAdapter
 

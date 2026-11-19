@@ -12,12 +12,27 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal
 
 from src.domain.exceptions import LLMProviderError
 from src.domain.ports.llm_provider import ILLMProvider, LLMCompletion
 from src.infrastructure.llm.usage_tracking import UsageTrackingMixin, build_usage
 
+if TYPE_CHECKING:
+    from anthropic.types import Base64ImageSourceParam, ImageBlockParam, MessageParam, TextBlockParam
+
 _DEFAULT_MAX_TOKENS = 4096
+_SUPPORTED_IMAGE_MIME_TYPES: dict[
+    str,
+    Literal["image/jpeg", "image/png", "image/gif", "image/webp"],
+] = {
+    "image/jpeg": "image/jpeg",
+    "image/jpg": "image/jpeg",
+    "image/png": "image/png",
+    "image/gif": "image/gif",
+    "image/webp": "image/webp",
+}
 
 
 class AnthropicAdapter(UsageTrackingMixin, ILLMProvider):
@@ -56,18 +71,50 @@ class AnthropicAdapter(UsageTrackingMixin, ILLMProvider):
                 )
             self._set_scoped_usage(usage)
 
-            text = ""
-            for block in message.content:
-                block_text = getattr(block, "text", None)
-                if isinstance(block_text, str):
-                    text = block_text
-                    break
+            text = self._extract_text(message)
             return LLMCompletion(content=text, usage=usage)
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
 
+    @staticmethod
+    def _extract_text(message: Any) -> str:
+        for block in message.content:
+            block_text = getattr(block, "text", None)
+            if isinstance(block_text, str):
+                return block_text
+        return ""
+
     def complete(self, prompt: str, model_name: str) -> str:
         return self.complete_with_usage(prompt, model_name).content
+
+    def complete_image(self, prompt: str, image_path: Path, model_name: str) -> str:
+        try:
+            import base64  # noqa: PLC0415
+            import mimetypes  # noqa: PLC0415
+
+            guessed_mime = mimetypes.guess_type(str(image_path))[0] or ""
+            media_type = _SUPPORTED_IMAGE_MIME_TYPES.get(guessed_mime, "image/jpeg")
+            b64_data = base64.b64encode(image_path.read_bytes()).decode("utf-8")
+
+            image_source: Base64ImageSourceParam = {
+                "type": "base64",
+                "media_type": media_type,
+                "data": b64_data,
+            }
+            image_block: ImageBlockParam = {"type": "image", "source": image_source}
+            text_block: TextBlockParam = {"type": "text", "text": prompt}
+            user_message: MessageParam = {
+                "role": "user",
+                "content": [image_block, text_block],
+            }
+            message = self._client.messages.create(
+                model=model_name,
+                max_tokens=_DEFAULT_MAX_TOKENS,
+                messages=[user_message],
+            )
+            return self._extract_text(message)
+        except Exception as exc:  # noqa: BLE001
+            raise LLMProviderError(str(exc)) from exc
 
     def complete_stream(self, prompt: str, model_name: str) -> Iterator[str]:
         try:

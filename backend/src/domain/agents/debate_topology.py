@@ -12,9 +12,9 @@ in the multi-agent debate:
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from src.domain.agents.sub_agent_profiles import SubAgentProfile, resolve_profile
 
@@ -45,9 +45,17 @@ class DebateTopology:
         Raises KeyError if an agent cannot be resolved.
         Raises ValueError if rules are violated (e.g. non-supervisor in supervisor slot).
         """
-        resolve = catalog.get_profile if _has_get_profile(catalog) else (
-            lambda ident: resolve_profile(ident, catalog)  # type: ignore[arg-type]
-        )
+        resolve: Callable[[str], SubAgentProfile]
+        if isinstance(catalog, Sequence):
+            seq_catalog = catalog
+
+            def _resolve_seq(ident: str) -> SubAgentProfile:
+                return resolve_profile(ident, seq_catalog)
+
+            resolve = _resolve_seq
+        else:
+            repo_catalog = catalog
+            resolve = repo_catalog.get_profile
 
         sup_profile = resolve(self.supervisor)
         if not getattr(sup_profile, "is_supervisor", False):
@@ -62,7 +70,3 @@ class DebateTopology:
         ):
             for agent_name in role_agents:
                 resolve(agent_name)
-
-
-def _has_get_profile(obj: Any) -> bool:
-    return callable(getattr(obj, "get_profile", None))

@@ -29,6 +29,7 @@ from src.application.agents.consolidation_service import (
 from src.application.agents.debate_phases import (
     HitlCallback,
     RoleRunner,
+    constant_prompt,
     execute_phase_1_interpreters as _run_phase_1,
     execute_phase_2_proposers as _run_phase_2,
     execute_phase_3_evaluators as _run_phase_3,
@@ -262,7 +263,7 @@ async def _maybe_divert_to_targets(
     req = state.formalized + (f"\n\n## User Refinement\n{state.refinement}" if state.refinement else "")
     async for event in run_parallel_roles(
         tuple(target_agents),
-        lambda _a, r=req: r,
+        constant_prompt(req),
         run_role,
         state,
         error_format="[Fallo en {role}: {error}]",

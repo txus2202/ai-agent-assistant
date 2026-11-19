@@ -142,8 +142,8 @@ class Settings(BaseSettings):
                 try:
                     import json
                     return json.loads(v)
-                except Exception:
-                    pass
+                except ValueError:
+                    return [origin.strip() for origin in v.split(",") if origin.strip()]
             return [origin.strip() for origin in v.split(",") if origin.strip()]
         return v
 

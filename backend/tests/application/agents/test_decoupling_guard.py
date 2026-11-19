@@ -29,10 +29,17 @@ ROOT = BACKEND.parent
 
 GENERIC_SOURCES = [
     "src/application/agents/supervisor_agent.py",
+    "src/application/agents/triage_service.py",
+    "src/application/agents/consolidation_service.py",
+    "src/application/agents/debate_phases.py",
+    "src/application/agents/debate_state.py",
     "src/application/agents/sub_agent_runner.py",
     "src/domain/agents/debate_topology.py",
     "src/domain/agents/supervisor_events.py",
     "src/presentation/api/ws/debate.py",
+    "src/presentation/api/ws/learning_command_parser.py",
+    "src/presentation/api/ws/debate_learning.py",
+    "src/presentation/api/ws/debate_observability_tracker.py",
     "src/presentation/api/ws/wake_word.py",
     "src/presentation/api/routes/config.py",
     "src/presentation/api/config.py",
@@ -74,8 +81,13 @@ LAYER_FORBIDDEN_IMPORTS: dict[str, frozenset[str]] = {
     }),
 }
 
-# All Phase 4 Punto 23-24 dependency inversions are now resolved; zero baseline violations remain.
-KNOWN_DEPENDENCY_BASELINE: frozenset[tuple[str, str]] = frozenset()
+# Strict mode enforced in CI: zero Clean Architecture baseline exemptions remain.
+STRICT_PROMPT_MODULES = (
+    "src/application/agents/supervisor_agent.py",
+    "src/application/agents/triage_service.py",
+    "src/application/agents/consolidation_service.py",
+    "src/application/agents/debate_phases.py",
+)
 
 
 def _shipped_agent_names() -> list[str]:
@@ -151,31 +163,36 @@ def test_profiles_module_contains_no_concrete_agents_or_builtin_supervisor():
 
 
 def test_supervisor_agent_prompts_are_domain_neutral():
-    source = (BACKEND / "src/application/agents/supervisor_agent.py").read_text(encoding="utf-8")
-    for domain_word in ("arquitect", "Redis"):
-        assert domain_word.lower() not in source.lower(), f"domain word '{domain_word}' found"
+    for rel_path in STRICT_PROMPT_MODULES:
+        source = (BACKEND / rel_path).read_text(encoding="utf-8")
+        for domain_word in ("arquitect", "Redis"):
+            assert domain_word.lower() not in source.lower(), (
+                f"domain word '{domain_word}' found in {rel_path}"
+            )
 
 
 def test_clean_architecture_dependency_rule_ast():
-    actual = _collect_layer_dependency_violations()
-    domain_violations = sorted(v for v in actual if v[0].startswith("domain/"))
-    assert not domain_violations, (
-        "Domain layer must have zero external/OS/YAML/layer violations:\n"
-        + "\n".join(f"  - {path} imports '{mod}'" for path, mod in domain_violations)
-    )
-    unexpected = sorted(actual - KNOWN_DEPENDENCY_BASELINE)
-    assert not unexpected, (
-        "New Clean Architecture dependency rule violations detected:\n"
-        + "\n".join(f"  - {path} imports '{mod}'" for path, mod in unexpected)
+    actual = sorted(_collect_layer_dependency_violations())
+    assert not actual, (
+        "Clean Architecture dependency rule violations detected (strict AST guard):\n"
+        + "\n".join(f"  - {path} imports '{mod}'" for path, mod in actual)
     )
 
-    baseline_remaining = sorted(actual & KNOWN_DEPENDENCY_BASELINE)
-    if baseline_remaining:
-        summary = ", ".join(f"{path}->{mod}" for path, mod in baseline_remaining)
-        if os.environ.get("STRICT_ARCH_GUARD") == "1":
-            pytest.fail(f"STRICT_ARCH_GUARD=1 enabled; remaining violations: {summary}")
-        warnings.warn(
-            f"[Fase 4 baseline] {len(baseline_remaining)} known Clean Architecture dependency violations remain: {summary}",
-            UserWarning,
-            stacklevel=1,
-        )
+
+def test_no_silent_broad_except_pass_ast():
+    offenders: list[str] = []
+    for py_file in sorted(SRC.rglob("*.py")):
+        tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ExceptHandler):
+                continue
+            if len(node.body) == 1 and isinstance(node.body[0], ast.Pass):
+                is_bare = node.type is None
+                is_exception = isinstance(node.type, ast.Name) and node.type.id in ("Exception", "BaseException")
+                if is_bare or is_exception:
+                    rel = py_file.relative_to(SRC).as_posix()
+                    offenders.append(f"{rel}:{node.lineno}")
+    assert not offenders, (
+        "Silent broad 'except Exception: pass' blocks are forbidden; log or handle explicitly:\n"
+        + "\n".join(f"  - {loc}" for loc in offenders)
+    )

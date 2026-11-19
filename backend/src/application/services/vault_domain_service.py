@@ -114,6 +114,67 @@ class VaultDomainService:
         resolved_root = vault_root.resolve()
         return cls._list_system_domains(resolved_root) + cls._discover_custom_domains(resolved_root)
 
+    @staticmethod
+    def _resolve_safe_domain_paths(vault_root: Path, domain_id: str) -> tuple[str, str, Path, Path, Path]:
+        raw_id = domain_id.strip()
+        clean_id = os.path.basename(raw_id)
+        if not clean_id or clean_id != raw_id or not _SAFE_ID_RE.fullmatch(clean_id):
+            raise ValueError(f"Invalid domain ID '{domain_id}'. Must contain only alphanumeric, '_' or '-'.")
+
+        vault_real = os.path.realpath(str(vault_root))
+        vault_prefix = vault_real + os.sep
+        domain_real = os.path.realpath(os.path.join(vault_real, clean_id))
+        if not domain_real.startswith(vault_prefix):
+            raise ValueError(f"Invalid domain ID '{domain_id}': path traversal detected.")
+
+        clean_slug = clean_id.replace("-", "_")
+        moc_filename = f"MOC_{clean_slug}.md"
+        moc_real = os.path.realpath(os.path.join(domain_real, moc_filename))
+        if not moc_real.startswith(domain_real + os.sep) or not moc_real.startswith(vault_prefix):
+            raise ValueError(f"Invalid MOC filename '{moc_filename}'.")
+
+        return clean_id, vault_prefix, Path(vault_real), Path(domain_real), Path(moc_real)
+
+    @staticmethod
+    def _ensure_moc_file(moc_path: Path, clean_id: str, name: str, description: str) -> None:
+        if moc_path.exists():
+            return
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        moc_content = (
+            f"---\n"
+            f"created: {today_str}\n"
+            f"updated: {today_str}\n"
+            f"type: moc\n"
+            f"category: {clean_id}\n"
+            f"tags: [moc, {clean_id}, domain]\n"
+            f"---\n\n"
+            f"# 📁 MOC — {name}\n\n"
+            f"Volver a: [[HOME|🏛️ HOME Master Index]]\n\n"
+            f"{description or 'Base de conocimiento del dominio ' + name + '.'}\n\n"
+            f"## 📑 Documentos Asociados\n"
+        )
+        moc_path.write_text(moc_content, encoding="utf-8")
+
+    @staticmethod
+    def _append_home_wikilink(
+        vault_real: Path,
+        vault_prefix: str,
+        clean_id: str,
+        moc_stem: str,
+        name: str,
+        description: str,
+    ) -> None:
+        home_real = os.path.realpath(os.path.join(str(vault_real), "HOME.md"))
+        if not home_real.startswith(vault_prefix):
+            raise ValueError("Invalid home path.")
+        home_path = Path(home_real)
+        if not home_path.exists():
+            return
+        home_text = home_path.read_text(encoding="utf-8")
+        link_entry = f"\n* [[{clean_id}/{moc_stem}|📁 {clean_id} — {name}]]: {description or name}"
+        if f"[[{clean_id}/" not in home_text:
+            home_path.write_text(home_text.strip() + "\n" + link_entry + "\n", encoding="utf-8")
+
     @classmethod
     def create_domain(
         cls,
@@ -126,63 +187,14 @@ class VaultDomainService:
         Create a new domain directory, initialize its MOC file,
         and update HOME.md with the new wikilink.
         """
-        raw_id = domain_id.strip()
-        clean_id = os.path.basename(raw_id)
-        if not clean_id or clean_id != raw_id or not _SAFE_ID_RE.fullmatch(clean_id):
-            raise ValueError(f"Invalid domain ID '{domain_id}'. Must contain only alphanumeric, '_' or '-'.")
-
-        vault_real = os.path.realpath(str(vault_root))
-        vault_prefix = vault_real + os.sep
-        resolved_vault = Path(vault_real)
-
-        domain_real = os.path.realpath(os.path.join(vault_real, clean_id))
-        if not domain_real.startswith(vault_prefix):
-            raise ValueError(f"Invalid domain ID '{domain_id}': path traversal detected.")
-
-        domain_dir = Path(domain_real)
+        clean_id, vault_prefix, resolved_vault, domain_dir, moc_path = cls._resolve_safe_domain_paths(
+            vault_root, domain_id
+        )
         domain_dir.mkdir(parents=True, exist_ok=True)
+        cls._ensure_moc_file(moc_path, clean_id, name, description)
+        cls._append_home_wikilink(resolved_vault, vault_prefix, clean_id, moc_path.stem, name, description)
 
-        clean_slug = clean_id.replace("-", "_")
-        moc_filename = f"MOC_{clean_slug}.md"
-        moc_real = os.path.realpath(os.path.join(domain_real, moc_filename))
-        if not moc_real.startswith(domain_real + os.sep) or not moc_real.startswith(vault_prefix):
-            raise ValueError(f"Invalid MOC filename '{moc_filename}'.")
-
-        moc_path = Path(moc_real)
         moc_rel = moc_path.relative_to(resolved_vault).as_posix()
-
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        if not moc_path.exists():
-            moc_content = (
-                f"---\n"
-                f"created: {today_str}\n"
-                f"updated: {today_str}\n"
-                f"type: moc\n"
-                f"category: {clean_id}\n"
-                f"tags: [moc, {clean_id}, domain]\n"
-                f"---\n\n"
-                f"# 📁 MOC — {name}\n\n"
-                f"Volver a: [[HOME|🏛️ HOME Master Index]]\n\n"
-                f"{description or 'Base de conocimiento del dominio ' + name + '.'}\n\n"
-                f"## 📑 Documentos Asociados\n"
-            )
-            with open(moc_real, "w", encoding="utf-8") as moc_file:
-                moc_file.write(moc_content)
-
-        # Update HOME.md if present
-        home_real = os.path.realpath(os.path.join(vault_real, "HOME.md"))
-        if not home_real.startswith(vault_prefix):
-            raise ValueError("Invalid home path.")
-
-        home_path = Path(home_real)
-        if home_path.exists():
-            with open(home_real, "r", encoding="utf-8") as home_file:
-                home_text = home_file.read()
-            link_entry = f"\n* [[{clean_id}/{moc_path.stem}|📁 {clean_id} — {name}]]: {description or name}"
-            if f"[[{clean_id}/" not in home_text:
-                with open(home_real, "w", encoding="utf-8") as home_file:
-                    home_file.write(home_text.strip() + "\n" + link_entry + "\n")
-
         doc_count = len(list(domain_dir.rglob("*.md")))
         return KnowledgeDomain(
             id=clean_id,

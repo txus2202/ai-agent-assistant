@@ -1,6 +1,8 @@
 import asyncio
 import io
+import logging
 import os
+import threading
 from pathlib import Path
 from typing import BinaryIO, Optional
 
@@ -13,13 +15,26 @@ from src.domain.ports.agent_catalog_repository import IAgentCatalogRepository
 from src.domain.ports.audio_service import IAudioService
 from src.infrastructure.audio.phonetic_normalizer import SpanishTechPhoneticNormalizer
 
-# Patch PyAV open to ignore 'metadata_errors' which was removed in newer versions
-# but is still passed by faster-whisper <= 1.2.x, causing a TypeError.
-original_av_open = av.open
-def patched_av_open(*args, **kwargs):
-    kwargs.pop("metadata_errors", None)
-    return original_av_open(*args, **kwargs)
-av.open = patched_av_open
+logger = logging.getLogger(__name__)
+_PYAV_PATCH_LOCK = threading.Lock()
+
+
+def _ensure_pyav_compat_patched() -> None:
+    """
+    Lazily patch PyAV open once to drop 'metadata_errors' removed in newer PyAV
+    versions but still passed by faster-whisper <= 1.2.x.
+    """
+    with _PYAV_PATCH_LOCK:
+        if getattr(av.open, "_atenea_compat_patched", False):
+            return
+        original_av_open = av.open
+
+        def _patched_av_open(*args, **kwargs):
+            kwargs.pop("metadata_errors", None)
+            return original_av_open(*args, **kwargs)
+
+        _patched_av_open._atenea_compat_patched = True  # type: ignore[attr-defined]
+        av.open = _patched_av_open
 
 
 class LocalAudioService(IAudioService):
@@ -63,21 +78,28 @@ class LocalAudioService(IAudioService):
 
         self.phonetic_normalizer = SpanishTechPhoneticNormalizer()
 
-        # We load Whisper model lazily to avoid blocking startup.
+        # Load models lazily with dedicated locks to prevent concurrent cold-start double loads
         self.whisper_model = None
-        
-        # Load Kokoro lazily
         self.kokoro = None
+        self._whisper_lock = threading.Lock()
+        self._kokoro_lock = threading.Lock()
 
     def _get_whisper_model(self) -> WhisperModel:
         if self.whisper_model is None:
-            print(f"Loading Whisper model '{self.whisper_model_size}' with {self.whisper_threads} threads...")
-            self.whisper_model = WhisperModel(
-                self.whisper_model_size,
-                device="cpu",
-                compute_type="int8",
-                cpu_threads=self.whisper_threads,
-            )
+            with self._whisper_lock:
+                if self.whisper_model is None:
+                    _ensure_pyav_compat_patched()
+                    logger.info(
+                        "Loading Whisper model '%s' with %d threads...",
+                        self.whisper_model_size,
+                        self.whisper_threads,
+                    )
+                    self.whisper_model = WhisperModel(
+                        self.whisper_model_size,
+                        device="cpu",
+                        compute_type="int8",
+                        cpu_threads=self.whisper_threads,
+                    )
         return self.whisper_model
 
     def _resolve_omp_threads(self) -> int | None:
@@ -96,7 +118,11 @@ class LocalAudioService(IAudioService):
 
         omp_threads = self._resolve_omp_threads()
         if omp_threads:
-            print(f"Loading Kokoro from '{self.kokoro_model_path}' with {omp_threads} ONNX intra_op threads...")
+            logger.info(
+                "Loading Kokoro from '%s' with %d ONNX intra_op threads...",
+                self.kokoro_model_path,
+                omp_threads,
+            )
             import onnxruntime as rt
             sess_options = rt.SessionOptions()
             sess_options.intra_op_num_threads = omp_threads
@@ -108,12 +134,14 @@ class LocalAudioService(IAudioService):
             )
             return Kokoro.from_session(session, str(self.kokoro_voices_path))
 
-        print(f"Loading Kokoro from '{self.kokoro_model_path}' (default ONNX thread pool)...")
+        logger.info("Loading Kokoro from '%s' (default ONNX thread pool)...", self.kokoro_model_path)
         return Kokoro(str(self.kokoro_model_path), str(self.kokoro_voices_path))
 
     def _get_kokoro(self) -> Kokoro:
         if self.kokoro is None:
-            self.kokoro = self._init_kokoro_instance()
+            with self._kokoro_lock:
+                if self.kokoro is None:
+                    self.kokoro = self._init_kokoro_instance()
         return self.kokoro
 
     def _build_initial_prompt(self) -> str:
@@ -125,7 +153,7 @@ class LocalAudioService(IAudioService):
             if names:
                 prompt = f"{prompt.rstrip('.')} Nombres de agentes: {', '.join(names)}."
         except Exception:
-            pass
+            logger.warning("Failed to append agent names from catalog to Whisper initial prompt", exc_info=True)
         return prompt
 
     async def transcribe_audio(self, audio_file: BinaryIO) -> str:

@@ -16,6 +16,7 @@ from src.domain.ports.document_store import IDocumentStore
 from src.domain.value_objects.document_chunk import DocumentChunk, SearchFilter
 
 _DEFAULT_TOP_K = 5
+_FILTER_FIELDS: tuple[str, ...] = ("type", "layer", "status", "phase", "category", "domain")
 
 
 class InMemoryDocumentStore(IDocumentStore):
@@ -94,31 +95,24 @@ class InMemoryDocumentStore(IDocumentStore):
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _matches_field_value(chunk_val: str | None, target: Any) -> bool:
+        if chunk_val is None:
+            return False
+        if isinstance(target, (list, tuple)):
+            return chunk_val in [str(x) for x in target]
+        return chunk_val == str(target)
+
+    @classmethod
     def _apply_filter(
+        cls,
         chunks: list[DocumentChunk],
         filter: SearchFilter,
     ) -> list[DocumentChunk]:
         result = chunks
-
-        def _match_val(chunk_val: str | None, target: Any) -> bool:
-            if target is None:
-                return True
-            if chunk_val is None:
-                return False
-            if isinstance(target, (list, tuple)):
-                return chunk_val in [str(x) for x in target]
-            return chunk_val == str(target)
-
-        if filter.type is not None:
-            result = [c for c in result if _match_val(c.metadata.get("type"), filter.type)]
-        if filter.layer is not None:
-            result = [c for c in result if _match_val(c.metadata.get("layer"), filter.layer)]
-        if filter.status is not None:
-            result = [c for c in result if _match_val(c.metadata.get("status"), filter.status)]
-        if filter.phase is not None:
-            result = [c for c in result if _match_val(c.metadata.get("phase"), filter.phase)]
-        if getattr(filter, "category", None) is not None:
-            result = [c for c in result if _match_val(c.metadata.get("category"), filter.category)]
-        if getattr(filter, "domain", None) is not None:
-            result = [c for c in result if _match_val(c.metadata.get("domain"), filter.domain)]
+        for field in _FILTER_FIELDS:
+            target = getattr(filter, field, None)
+            if target is not None:
+                result = [
+                    c for c in result if cls._matches_field_value(c.metadata.get(field), target)
+                ]
         return result

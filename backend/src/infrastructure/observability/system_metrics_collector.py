@@ -24,8 +24,8 @@ class SystemMetricsCollector:
             cpu = float(psutil.cpu_percent(interval=None))
             if cpu > 0.0:
                 return round(cpu, 1)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("psutil CPU collection unavailable; using fallback: %s", e)
 
         # Native fallback via os.getloadavg
         try:
@@ -82,8 +82,8 @@ class SystemMetricsCollector:
             mem = float(psutil.virtual_memory().percent)
             if mem > 0.0:
                 return round(mem, 1)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("psutil CPU collection unavailable; using fallback: %s", e)
 
         # Native fallback on macOS (Darwin)
         if sys.platform == "darwin":

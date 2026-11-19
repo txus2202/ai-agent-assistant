@@ -16,6 +16,7 @@ asyncio.to_thread() here so the event loop is not blocked.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import time
 from collections.abc import Sequence
@@ -29,6 +30,8 @@ from src.domain.ports.document_store import IDocumentStore
 from src.domain.ports.image_generator import IImageGenerator
 from src.domain.ports.llm_provider import ILLMProvider, invoke_llm_with_usage
 from src.domain.value_objects.document_chunk import DocumentChunk
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -195,7 +198,11 @@ class SubAgentRunner:
                     _, img_url = await image_generator.generate_and_save(alt_text, provider=image_provider)
                     return content[:img_match.start()] + f"![{alt_text}]({img_url})" + content[img_match.end():]
                 except Exception:
-                    pass
+                    logger.warning(
+                        "Fallback image generation failed for %s",
+                        image_provider,
+                        exc_info=True,
+                    )
 
         return content
 

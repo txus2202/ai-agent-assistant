@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+import logging
 import uuid
 from typing import Optional, Tuple
 from src.domain.entities.user import User
@@ -18,6 +19,8 @@ from src.domain.ports.password_hasher import IPasswordHasher
 from src.domain.ports.token_service import ITokenService
 from src.domain.ports.debate_repository import IDebateRepository
 from src.domain.ports.agent_config_repository import IAgentConfigRepository
+
+logger = logging.getLogger(__name__)
 
 # Pre-computed Argon2id hash for constant-time timing attack mitigation
 _DUMMY_HASH = "$argon2id$v=19$m=65536,t=2,p=2$c29tZXNhbHQxMjM0NTY3OA$9/3e3T5e0qYFmE2iU4zQ5sW8aD6gH7jK9lM1nO3pQ5s"
@@ -82,7 +85,11 @@ class AuthService:
                 try:
                     self._debate_repo.assign_legacy_debates_to_user(user.id)
                 except Exception:
-                    pass
+                    logger.warning(
+                        "Failed to assign pre-auth legacy debates to initial administrator %s",
+                        user.id,
+                        exc_info=True,
+                    )
 
             token = self._token_service.create_access_token(
                 user_id=user.id,
@@ -311,7 +318,12 @@ class AuthService:
                 try:
                     repo.delete_by_user_id(user_id)
                 except Exception:
-                    pass
+                    logger.warning(
+                        "Failed to purge user %s resources from %s",
+                        user_id,
+                        type(repo).__name__,
+                        exc_info=True,
+                    )
 
     async def delete_user(self, actor: User, user_id: str) -> str:
         """

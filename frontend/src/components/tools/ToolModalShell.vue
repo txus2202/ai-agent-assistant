@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { X } from '@lucide/vue'
 
 const props = withDefaults(
@@ -34,6 +34,25 @@ const emit = defineEmits<{
 const isTestEnv = import.meta !== undefined && import.meta.env?.MODE === 'test'
 const shouldDisableTeleport = computed(() => props.teleportDisabled || isTestEnv)
 const modalWindowRef = ref<HTMLElement | null>(null)
+const dialogRef = ref<HTMLDialogElement | null>(null)
+const supportsShowModal =
+  typeof HTMLDialogElement !== 'undefined' &&
+  typeof HTMLDialogElement.prototype.showModal === 'function'
+
+watch(
+  () => [props.isOpen, dialogRef.value] as const,
+  ([open, dialogEl]) => {
+    if (!dialogEl || !supportsShowModal) return
+    if (open) {
+      if (dialogEl.isConnected && !dialogEl.open) {
+        dialogEl.showModal()
+      }
+    } else if (dialogEl.open) {
+      dialogEl.close()
+    }
+  },
+  { flush: 'post', immediate: true },
+)
 
 const windowClasses = computed(() =>
   props.accentTheme === 'pink'
@@ -60,14 +79,15 @@ defineExpose({
   <Teleport to="body" :disabled="shouldDisableTeleport">
     <dialog
       v-if="isOpen"
-      open
+      ref="dialogRef"
+      :open="supportsShowModal ? undefined : true"
       :data-test="backdropTestId"
       class="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex flex-col items-center justify-center animate-fade-in border-0 m-0 w-full h-full max-w-none max-h-none text-inherit"
       :class="paddingClass"
       @click.self="emit('close')"
       @cancel.prevent="emit('close')"
       :aria-labelledby="modalTitleId"
-      aria-modal="true"
+      :aria-modal="supportsShowModal ? undefined : 'true'"
     >
       <div
         ref="modalWindowRef"

@@ -465,3 +465,13 @@ html.light .glow-red    { box-shadow: 0 2px 10px -2px rgba(185,28,28,0.3); }
 html.light .glow-purple { box-shadow: 0 2px 10px -2px rgba(126,34,206,0.3); }
 html.light .glow-orange { box-shadow: 0 2px 10px -2px rgba(194,65,12,0.3); }
 html.light .glow-darkblue { box-shadow: 0 2px 10px -2px rgba(29,78,216,0.3); }
+
+/* Native top-layer modal dialogs: prevent background scroll chaining */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: transparent;
+}

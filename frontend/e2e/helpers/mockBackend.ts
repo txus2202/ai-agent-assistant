@@ -284,7 +284,7 @@ export async function setupMockBackend(
   })
 
   // 5. Users API (/api/auth/users)
-  await page.route('*/**/api/auth/users*', async (route) => {
+  await page.route(/\/api\/auth\/users(?:\/|\?|$)/, async (route) => {
     const method = route.request().method()
     const url = route.request().url()
 
@@ -332,7 +332,7 @@ export async function setupMockBackend(
   })
 
   // 7. Debates History
-  await page.route('*/**/api/debates*', async (route) => {
+  await page.route(/\/api\/debates(?:\/|\?|$)/, async (route) => {
     const method = route.request().method()
     const parsedUrl = new URL(route.request().url())
     const pathParts = parsedUrl.pathname.split('/').filter(Boolean)

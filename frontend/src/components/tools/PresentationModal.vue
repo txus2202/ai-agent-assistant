@@ -146,14 +146,13 @@ const handleKeyDown = (e: KeyboardEvent) => {
     e.preventDefault()
     prevSlide()
   } else if (e.key === 'Escape') {
-    if (isDownloadMenuOpen.value) {
-      isDownloadMenuOpen.value = false
-      return
-    }
+    isDownloadMenuOpen.value = false
     if (document.fullscreenElement) {
+      e.preventDefault()
       document.exitFullscreen().catch(() => {})
       isFullscreen.value = false
     } else {
+      e.preventDefault()
       emit('close')
     }
   } else if (e.key.toLowerCase() === 'f') {

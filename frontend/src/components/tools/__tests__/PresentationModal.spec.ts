@@ -154,8 +154,13 @@ describe('PresentationModal.vue', () => {
     await wrapper.find('[data-test="presentation-modal-close-btn"]').trigger('click')
     expect(wrapper.emitted('close')).toHaveLength(1)
 
-    // Escape key
+    // Escape key closes modal even when download dropdown is open
+    await wrapper.find('[data-test="presentation-modal-download-btn"]').trigger('click')
+    expect(wrapper.find('[data-test="presentation-download-dropdown"]').exists()).toBe(true)
+
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="presentation-download-dropdown"]').exists()).toBe(false)
     expect(wrapper.emitted('close')).toHaveLength(2)
   })
 

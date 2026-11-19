@@ -1027,7 +1027,7 @@ describe('ChatPanel.vue', () => {
     })
     await flushPromises()
 
-    const scrollEl = wrapper.find({ ref: 'chatScroll' }).element as HTMLElement
+    const scrollEl = wrapper.find('[data-test="chat-messages-scroll"]').element as HTMLElement
     const scrollToMock = vi.fn()
     scrollEl.scrollTo = scrollToMock
 
@@ -1036,7 +1036,7 @@ describe('ChatPanel.vue', () => {
     Object.defineProperty(scrollEl, 'clientHeight', { value: 400, configurable: true })
     Object.defineProperty(scrollEl, 'scrollTop', { value: 100, configurable: true, writable: true })
 
-    await wrapper.find({ ref: 'chatScroll' }).trigger('scroll')
+    await wrapper.find('[data-test="chat-messages-scroll"]').trigger('scroll')
     await flushPromises()
 
     const btn = wrapper.find('[data-test="chat-scroll-toggle-btn"]')
@@ -1050,7 +1050,7 @@ describe('ChatPanel.vue', () => {
 
     // Case 2: User in lower half (scrollTop = 450, halfway = 300)
     scrollEl.scrollTop = 450
-    await wrapper.find({ ref: 'chatScroll' }).trigger('scroll')
+    await wrapper.find('[data-test="chat-messages-scroll"]').trigger('scroll')
     await flushPromises()
 
     expect(btn.attributes('title')).toBe('Subir al inicio del chat')

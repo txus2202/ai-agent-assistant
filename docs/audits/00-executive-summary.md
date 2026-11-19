@@ -86,7 +86,7 @@ Se recomienda ejecutar los refactors siguiendo estas **6 fases incrementales**, 
 25. ✅ `[x]` `[02][P1]` Consolidación de un único `LLMProviderRegistry` en el composition root, estandarización de `domain/ports/*` (`Protocol` vs `ABC`) y traslado de `NoOpObservabilityService` a `infrastructure/observability/`.
 26. ✅ `[x]` `[02][P2]` Descomposición de God Modules (`supervisor_agent.py`, `ws/debate.py`), simplificación de `_apply_filter`, `threading.Lock` en modelos de audio y sustitución de `except Exception: pass` por logging explícito. *(Al finalizar los puntos 23-26, activar en verde estricto las guardas AST de `test_decoupling_guard.py`)*.
 27. ✅ `[x]` `[03][P1]` Creación de la capa `frontend/src/services/` (`httpClient.ts`, servicios de API y WebSockets) y eliminación del monkey-patch global de `window.fetch` en `main.ts`.
-28. `[03][P1]` Descomposición de `ChatPanel.vue` (1959 L), `stores/debate.ts` (1693 L) y modales pesados en composables de audio/wake-word y subcomponentes presentacionales cohesionados.
+28. ✅ `[x]` `[03][P1]` Descomposición de `ChatPanel.vue` (1959 L), `stores/debate.ts` (1693 L) y modales pesados en composables de audio/wake-word y subcomponentes presentacionales cohesionados.
 
 ### Fase 5 — Escalado Horizontal Stateless Multi-Réplica y Estándares Enterprise (Riesgo Alto)
 29. `[04][P1]` Eliminación de estado mutable compartido en proceso: `KaldiRecognizer` aislado por conexión en `ws/wake_word.py`, `RedisRateLimiter` + corrección de `get_client_ip`, `AUTH_SECRET_KEY` obligatorio en producción, trazado sin diccionarios compartidos en `LangfuseObservabilityAdapter` y coordinación de sesiones HITL/cancelación mediante Redis Pub/Sub.

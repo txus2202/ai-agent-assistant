@@ -748,8 +748,7 @@ def test_cancel_message_aborts_and_acknowledges(ws_client):
 
 def test_debate_learning_explicit_target_domain_skips_prompting(ws_client, monkeypatch):
     """When target_domain is passed in the start message, Metis ingests immediately without interactive tag/domain question."""
-    from src.application.services.learn_from_source import LearnResult
-    from src.presentation.api.ws import debate
+    from src.application.services.learn_from_source import LearnFromSource, LearnResult
     from pathlib import Path
 
     captured_kwargs = {}
@@ -762,7 +761,7 @@ def test_debate_learning_explicit_target_domain_skips_prompting(ws_client, monke
             errors=[],
         )
 
-    monkeypatch.setattr(debate.LearnFromSource, "run", fake_learn_run)
+    monkeypatch.setattr(LearnFromSource, "run", fake_learn_run)
 
     with ws_client.websocket_connect("/ws/debate") as websocket:
         websocket.send_json({

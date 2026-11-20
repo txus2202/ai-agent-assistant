@@ -577,5 +577,52 @@ class TestAnthropicAdapter:
         a_comp = a_adapter.complete_with_usage("Hello", "claude-3-5-sonnet-latest")
         assert a_comp.usage == {"input": 150, "output": 30, "total": 180, "cached": 90}
 
+    def test_gemini_and_openai_complete_stream_record_usage_and_cached_tokens(self, monkeypatch):
+        from src.infrastructure.llm.gemini_adapter import GeminiAdapter
+        from src.infrastructure.llm.openai_adapter import OpenAIAdapter
+
+        # 1. Gemini streaming usage with cached_content_token_count
+        g_mock = _make_genai_mock()
+        monkeypatch.setitem(sys.modules, "google", MagicMock(genai=g_mock))
+        monkeypatch.setitem(sys.modules, "google.genai", g_mock)
+        g_chunk1 = MagicMock(text="Hola ", usage_metadata=None)
+        g_chunk2 = MagicMock(
+            text="Atenea",
+            usage_metadata=MagicMock(
+                prompt_token_count=400,
+                candidates_token_count=60,
+                total_token_count=460,
+                cached_content_token_count=250,
+            ),
+        )
+        g_mock.Client.return_value.models.generate_content_stream.return_value = iter([g_chunk1, g_chunk2])
+        g_adapter = GeminiAdapter(api_key="test-key")
+        g_chunks = list(g_adapter.complete_stream("Prompt", "gemini-2.5-flash"))
+        assert g_chunks == ["Hola ", "Atenea"]
+        assert g_adapter.get_last_usage() == {"input": 400, "output": 60, "total": 460, "cached": 250}
+
+        # 2. OpenAI streaming usage with prompt_tokens_details.cached_tokens
+        o_mock = _make_openai_mock()
+        monkeypatch.setitem(sys.modules, "openai", o_mock)
+        o_chunk1 = MagicMock(
+            choices=[MagicMock(delta=MagicMock(content="Hola "))],
+            usage=None,
+        )
+        o_chunk2 = MagicMock(
+            choices=[MagicMock(delta=MagicMock(content="GPT"))],
+            usage=MagicMock(
+                prompt_tokens=500,
+                completion_tokens=80,
+                total_tokens=580,
+                prompt_tokens_details=MagicMock(cached_tokens=320),
+            ),
+        )
+        o_mock.OpenAI.return_value.chat.completions.create.return_value = iter([o_chunk1, o_chunk2])
+        o_adapter = OpenAIAdapter(api_key="test-key")
+        o_chunks = list(o_adapter.complete_stream("Prompt", "gpt-4o"))
+        assert o_chunks == ["Hola ", "GPT"]
+        assert o_adapter.get_last_usage() == {"input": 500, "output": 80, "total": 580, "cached": 320}
+
+
 
 

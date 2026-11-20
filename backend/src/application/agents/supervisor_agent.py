@@ -187,9 +187,9 @@ async def _run_direct_chat_mode(
         exclude_id=supervisor_profile.id,
     )
     direct_prompt = (
+        f"# HISTORIAL DE CONVERSACIÓN\n{chr(10).join(hist_lines) or 'Sin historial previo.'}\n\n"
         f"# INSTRUCCIÓN DE SISTEMA\n{supervisor_profile.system_prompt}\n\n"
         f"{roster_context}\n\n"
-        f"# HISTORIAL DE CONVERSACIÓN\n{chr(10).join(hist_lines) or 'Sin historial previo.'}\n\n"
         f"# MENSAJE DEL USUARIO\n{user_request}\n\n"
         f"Responde directamente al usuario como {sup_agent_name} en español, manteniendo la personalidad y el tono definidos en tu instrucción de sistema. Si te piden presentar al equipo o sus miembros y funciones, básate estrictamente en la información oficial y veraz del consejo técnico."
     )

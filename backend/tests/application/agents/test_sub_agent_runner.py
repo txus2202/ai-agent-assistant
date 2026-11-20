@@ -508,3 +508,56 @@ class TestSubAgentRunner:
         assert res.tokens.get("cached", 0) > 0
         assert res.tokens["cached"] <= res.tokens["input"]
 
+    @pytest.mark.anyio
+    async def test_different_agents_share_identical_static_prefix_for_provider_kv_cache(self, generic_catalog):
+        store = InMemoryDocumentStore()
+        store.upsert([
+            _chunk(
+                "shared#1",
+                "Shared enterprise blueprint for zero-trust microservices.",
+                metadata={"type": "spec", "status": "implemented"},
+            )
+        ])
+        shared_history = [
+            {"role": "user", "content": "Diseña una plataforma de pagos global."},
+            {"role": "assistant", "agent": "Interpreter", "content": "Requisitos formalizados: baja latencia y PCI-DSS."},
+        ]
+        llm = FakeLLM("Agent response")
+
+        await SubAgentRunner.run(
+            role="PropOne",
+            user_request="Propón arquitectura cloud-native",
+            llm_provider=llm,
+            document_store=store,
+            model_name="gemini-3.6-flash",
+            chat_history=shared_history,
+            agent_catalog=generic_catalog,
+        )
+        await SubAgentRunner.run(
+            role="PropTwo",
+            user_request="Propón arquitectura corporativa estable",
+            llm_provider=llm,
+            document_store=store,
+            model_name="gemini-3.6-flash",
+            chat_history=shared_history,
+            agent_catalog=generic_catalog,
+        )
+
+        prompt_one, prompt_two = llm.received_prompts[0], llm.received_prompts[1]
+        p1_profile = generic_catalog.get_profile("PropOne")
+        p2_profile = generic_catalog.get_profile("PropTwo")
+
+        # Both prompts must start with the shared session history and RAG context BEFORE each agent's system_prompt
+        assert prompt_one.startswith("## Contexto de la Sesión Previa")
+        assert prompt_two.startswith("## Contexto de la Sesión Previa")
+        assert prompt_one.index("## Contexto de la Sesión Previa") < prompt_one.index(p1_profile.system_prompt)
+        assert prompt_one.index("Shared enterprise blueprint") < prompt_one.index(p1_profile.system_prompt)
+        assert prompt_two.index("Shared enterprise blueprint") < prompt_two.index(p2_profile.system_prompt)
+
+        # The static prefix up to each agent's system_prompt must be 100% identical byte-for-byte
+        prefix_one = prompt_one[: prompt_one.index(p1_profile.system_prompt)]
+        prefix_two = prompt_two[: prompt_two.index(p2_profile.system_prompt)]
+        assert prefix_one == prefix_two
+        assert len(prefix_one) > 100
+
+

@@ -15,6 +15,10 @@ from src.domain.agents.supervisor_events import EventType, SupervisorEvent
 from src.domain.ports.llm_provider import ILLMProvider, invoke_llm_with_usage
 
 CONSOLIDATION_PROMPT = """\
+--- Aportaciones del Consejo ---
+{debate_context}
+
+--- Instrucciones de Consolidación ---
 Eres {supervisor_name}, la autoridad máxima y orquestadora del consejo de agentes.
 El consejo colegiado de especialistas ha concluido su deliberación.
 Genera un documento estructurado en Markdown (300-500 palabras) que consolide todas las perspectivas en un dictamen claro, vinculante y de nivel de producción.
@@ -34,9 +38,6 @@ Criterios y pasos operativos acordes a las aportaciones de los agentes de implem
 
 ## 5. Plan de Acción Inmediato
 Pasos concretos y numerados para el equipo.
-
---- Aportaciones del Consejo ---
-{debate_context}
 """
 
 

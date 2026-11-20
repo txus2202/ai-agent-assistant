@@ -72,9 +72,21 @@ class OpenAIAdapter(UsageTrackingMixin, ILLMProvider):
                 messages=[{"role": "user", "content": prompt}],
                 stream=True,
             )
+            last_usage: dict[str, int] = {}
             for chunk in stream:
+                resp_usage = getattr(chunk, "usage", None)
+                if resp_usage:
+                    details = getattr(resp_usage, "prompt_tokens_details", None)
+                    cached = getattr(details, "cached_tokens", 0) if details is not None else 0
+                    last_usage = build_usage(
+                        getattr(resp_usage, "prompt_tokens", 0),
+                        getattr(resp_usage, "completion_tokens", 0),
+                        getattr(resp_usage, "total_tokens", None),
+                        cached,
+                    )
                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
+            self._set_scoped_usage(last_usage)
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(f"OpenAI streaming error: {exc}") from exc
 

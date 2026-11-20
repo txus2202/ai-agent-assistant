@@ -91,10 +91,20 @@ class GeminiAdapter(UsageTrackingMixin, ILLMProvider):
                 model=clean_model,
                 contents=prompt,
             )
+            last_usage: dict[str, int] = {}
             for chunk in response:
+                usage_meta = getattr(chunk, "usage_metadata", None)
+                if usage_meta:
+                    last_usage = build_usage(
+                        getattr(usage_meta, "prompt_token_count", 0),
+                        getattr(usage_meta, "candidates_token_count", 0),
+                        getattr(usage_meta, "total_token_count", None),
+                        getattr(usage_meta, "cached_content_token_count", 0),
+                    )
                 text = getattr(chunk, "text", "")
                 if text:
                     yield text
+            self._set_scoped_usage(last_usage)
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(f"Gemini streaming error: {exc}") from exc
 

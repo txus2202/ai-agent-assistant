@@ -145,16 +145,20 @@ class SubAgentRunner:
         image_provider: str | None,
         team_profiles: Sequence[SubAgentProfile] = (),
     ) -> str:
-        parts: list[str] = [profile.system_prompt]
+        parts: list[str] = []
+        # 1. Static Shared Prefix (token 0+): session history & RAG context first to maximize provider KV-Cache hits
+        chat_history_block = format_chat_history(chat_history)
+        if chat_history_block:
+            parts.append(chat_history_block)
+        if context_block:
+            parts.append(context_block)
+
+        # 2. Dynamic Agent Suffix: specialist identity, tools, and phase request
+        parts.append(profile.system_prompt)
         if profile.is_supervisor:
             roster_context = format_team_roster(team_profiles, exclude_id=profile.id)
             if roster_context:
                 parts.append(roster_context)
-        if context_block:
-            parts.append(context_block)
-        chat_history_block = format_chat_history(chat_history)
-        if chat_history_block:
-            parts.append(chat_history_block)
         if profile.supports_image_generation:
             parts.append(cls._build_visual_directive(image_provider))
         parts.append(f"## User Request\n{user_request}")

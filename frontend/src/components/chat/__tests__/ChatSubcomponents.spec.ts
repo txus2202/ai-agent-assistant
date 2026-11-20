@@ -64,6 +64,99 @@ describe('Chat subcomponents', () => {
     expect(wrapper.emitted('reject')).toHaveLength(1)
   })
 
+  it('ChatHitlCard collapses by default on mobile (<768px) and expands by default on desktop (>=768px)', () => {
+    // 1. Mobile viewport (< 768px)
+    window.innerWidth = 375
+    const mobileWrapper = mount(ChatHitlCard, {
+      props: {
+        selectableAgents: [{ value: 'architect', label: 'Hestia', colorHex: '#00e5ff' }],
+        selectedTargets: [],
+        hasErrorRecovery: false,
+      },
+    })
+    const mobileToggle = mobileWrapper.find('[data-test="hitl-collapse-toggle"]')
+    expect(mobileToggle.exists()).toBe(true)
+    expect(mobileToggle.attributes('aria-expanded')).toBe('false')
+    expect(mobileWrapper.find('[data-test="hitl-card-body"]').attributes('style')).toContain('display: none')
+
+    // 2. Desktop viewport (>= 768px)
+    window.innerWidth = 1024
+    const desktopWrapper = mount(ChatHitlCard, {
+      props: {
+        selectableAgents: [{ value: 'architect', label: 'Hestia', colorHex: '#00e5ff' }],
+        selectedTargets: [],
+        hasErrorRecovery: false,
+      },
+    })
+    const desktopToggle = desktopWrapper.find('[data-test="hitl-collapse-toggle"]')
+    expect(desktopToggle.exists()).toBe(true)
+    expect(desktopToggle.attributes('aria-expanded')).toBe('true')
+    expect(desktopWrapper.find('[data-test="hitl-card-body"]').attributes('style') || '').not.toContain('display: none')
+  })
+
+  it('ChatHitlCard toggles collapse state on toggle button click and respects initialCollapsed prop', async () => {
+    window.innerWidth = 1024
+    const wrapper = mount(ChatHitlCard, {
+      props: {
+        selectableAgents: [],
+        selectedTargets: [],
+        hasErrorRecovery: false,
+        initialCollapsed: false,
+      },
+    })
+
+    const toggleBtn = wrapper.find('[data-test="hitl-collapse-toggle"]')
+    expect(toggleBtn.attributes('aria-expanded')).toBe('true')
+
+    await toggleBtn.trigger('click')
+    expect(toggleBtn.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('[data-test="hitl-card-body"]').attributes('style')).toContain('display: none')
+
+    await toggleBtn.trigger('click')
+    expect(toggleBtn.attributes('aria-expanded')).toBe('true')
+  })
+
+  it('ChatHitlCard supports swipe gestures to expand and collapse', async () => {
+    window.innerWidth = 375
+    const wrapper = mount(ChatHitlCard, {
+      props: {
+        selectableAgents: [],
+        selectedTargets: [],
+        hasErrorRecovery: false,
+      },
+    })
+
+    const cardEl = wrapper.find('[data-test="hitl-chat-card"]').element
+
+    // Swipe Up (clientY from 200 to 100 -> deltaY = -100) -> Expand
+    cardEl.dispatchEvent(
+      new TouchEvent('touchstart', {
+        touches: [{ clientX: 100, clientY: 200 } as unknown as Touch],
+      }),
+    )
+    cardEl.dispatchEvent(
+      new TouchEvent('touchend', {
+        changedTouches: [{ clientX: 100, clientY: 100 } as unknown as Touch],
+      }),
+    )
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="hitl-collapse-toggle"]').attributes('aria-expanded')).toBe('true')
+
+    // Swipe Down (clientY from 100 to 200 -> deltaY = +100) -> Collapse
+    cardEl.dispatchEvent(
+      new TouchEvent('touchstart', {
+        touches: [{ clientX: 100, clientY: 100 } as unknown as Touch],
+      }),
+    )
+    cardEl.dispatchEvent(
+      new TouchEvent('touchend', {
+        changedTouches: [{ clientX: 100, clientY: 200 } as unknown as Touch],
+      }),
+    )
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="hitl-collapse-toggle"]').attributes('aria-expanded')).toBe('false')
+  })
+
   it('ChatAgentSelector toggles individual options and select-all cleanly', async () => {
     const wrapper = mount(ChatAgentSelector, {
       props: {

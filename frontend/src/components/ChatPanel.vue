@@ -401,7 +401,7 @@ defineExpose({
       @toggle-presentation-download="artifacts.togglePresentationDownloadMenu"
     />
 
-    <div class="p-4 border-t border-space-800 bg-[#060a11] shrink-0 md:min-h-[162px] flex flex-col justify-center">
+    <div class="p-3 sm:p-4 border-t border-space-800 bg-[#060a11] shrink-0 flex flex-col justify-center transition-all duration-300">
       <ChatHitlCard
         v-if="store.isHitlRequired"
         :selectable-agents="selectableAgents"

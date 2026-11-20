@@ -6,6 +6,7 @@ phase: 2
 layer: infrastructure
 status: implemented
 tags: [chromadb, rag, ingestion, cli, infrastructure, vector-store, ai-agent-assistant]
+category: meta-project
 ---
 
 # Feature: ChromaDBDocumentStore + IngestVault CLI

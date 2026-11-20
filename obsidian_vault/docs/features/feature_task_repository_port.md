@@ -6,6 +6,7 @@ phase: 2
 layer: domain
 status: implemented
 tags: [port, repository, task, domain, interface, ai-agent-assistant]
+category: meta-project
 ---
 
 # Feature: Domain Port — ITaskRepository

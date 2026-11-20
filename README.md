@@ -73,7 +73,7 @@ Para resolver este problema, la solución se estructura en dos niveles conceptua
 
 > [NOTA]
 > Para profundizar en el marco teórico de la separación entre el Framework y la Aplicación, consulta el documento de arquitectura:  
-> 📄 [docs/architecture/ai_agent_assistant_vs_atenea_concept.md](docs/architecture/ai_agent_assistant_vs_atenea_concept.md)
+> 📄 [obsidian_vault/docs/architecture/ai_agent_assistant_vs_atenea_concept.md](obsidian_vault/docs/architecture/ai_agent_assistant_vs_atenea_concept.md)
 
 ---
 

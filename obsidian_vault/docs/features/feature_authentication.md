@@ -6,6 +6,7 @@ phase: 7
 layer: application
 status: implemented
 tags: [authentication, security, session-management, clean-architecture, argon2id, jwt, rate-limiting, postgresql, sqlite]
+category: meta-project
 ---
 
 # Feature Specification: Authentication, Authorization & User Management (Phase 7)

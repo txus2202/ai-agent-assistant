@@ -6,6 +6,7 @@ phase: 2
 layer: infrastructure
 status: implemented
 tags: [parser, obsidian, markdown, chunking, frontmatter, infrastructure, ai-agent-assistant]
+category: meta-project
 ---
 
 # Feature: ObsidianParser — Markdown to DocumentChunks

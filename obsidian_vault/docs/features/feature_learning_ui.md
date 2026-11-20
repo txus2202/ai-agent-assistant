@@ -6,6 +6,7 @@ phase: 4
 layer: presentation
 status: draft
 tags: [learning, pdf, url, upload, frontend, vue, atenea]
+category: meta-project
 ---
 
 # Feature: Learning Agent UI

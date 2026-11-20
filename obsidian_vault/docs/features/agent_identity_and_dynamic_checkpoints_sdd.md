@@ -1,3 +1,14 @@
+---
+created: 2026-10-20
+updated: 2026-10-20
+type: spec
+phase: 5
+layer: cross-cutting
+status: implemented
+category: meta-project
+tags: [sdd, agents, display-name, hitl, checkpoints, decoupling]
+---
+
 # SDD: Unificación de Identidad por display_name y Checkpoints Dinámicos
 
 ## 1. Contexto y Justificación

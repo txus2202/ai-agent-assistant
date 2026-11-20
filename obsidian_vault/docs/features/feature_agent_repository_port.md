@@ -6,6 +6,7 @@ phase: 1
 layer: domain
 status: implemented
 tags: [port, repository, agent, domain, interface, ai-agent-assistant]
+category: meta-project
 ---
 
 # Feature: Domain Port - IAgentRepository

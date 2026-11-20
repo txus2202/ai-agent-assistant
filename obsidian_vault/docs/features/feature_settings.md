@@ -6,6 +6,7 @@ phase: 4
 layer: presentation
 status: draft
 tags: [settings, api-keys, configuration, models, env, ai-agent-assistant]
+category: meta-project
 ---
 
 # Feature: Settings — API Keys & Model Configuration

@@ -6,6 +6,7 @@ phase: 7
 layer: infrastructure
 status: implemented
 tags: [model-cache, sqlite, postgresql, distributed-lock, swr, clean-architecture, scalability]
+category: meta-project
 ---
 
 # Feature Specification: Shared Database Model Cache & Distributed Probe Lock

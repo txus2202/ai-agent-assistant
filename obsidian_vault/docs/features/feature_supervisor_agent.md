@@ -6,6 +6,7 @@ phase: 3
 layer: application
 status: implemented
 tags: [supervisor, hitl, orchestration, multi-agent, events, application, atenea]
+category: meta-project
 ---
 
 # Feature: Supervisor Agent & Human-In-The-Loop

@@ -3,6 +3,7 @@ type: feature_spec
 status: implemented
 created: 2026-09-19
 tags: [backend, history, realtime, phase4, ai-agent-assistant]
+category: meta-project
 ---
 
 # Feature: Real-time Debate History Persistence

@@ -6,6 +6,7 @@ phase: 7
 layer: infrastructure
 status: implemented
 tags: [tdd, models, gemini, anthropic, openai, probing, caching, swr, stale-while-revalidate, pytest]
+category: meta-project
 ---
 
 # TDD: Test Plan for Non-Blocking SWR Model Probing & Caching

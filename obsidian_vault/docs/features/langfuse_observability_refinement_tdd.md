@@ -1,3 +1,14 @@
+---
+created: 2026-11-09
+updated: 2026-11-09
+type: spec
+phase: 6
+layer: infrastructure
+status: implemented
+category: meta-project
+tags: [tdd, observability, langfuse, testing, pytest]
+---
+
 # TDD: Plan de Pruebas Dirigidas por Tests para Refinamiento de Langfuse
 
 ## 1. Estrategia de Testing (TDD)

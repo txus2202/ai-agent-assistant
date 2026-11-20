@@ -6,6 +6,7 @@ phase: 7
 layer: application
 status: implemented
 tags: [tdd, rag, chromadb, agent-config, testing, pytest, vitest]
+category: meta-project
 ---
 
 # TDD: Test-Driven Development Plan for Per-Agent & Per-User RAG Configuration

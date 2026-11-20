@@ -6,6 +6,7 @@ phase: 7
 layer: infrastructure
 status: implemented
 tags: [llm, models, gemini, anthropic, openai, healthcheck, probing, caching, swr, stale-while-revalidate, clean-architecture]
+category: meta-project
 ---
 
 # Feature Specification: Non-Blocking Stale-While-Revalidate (SWR) Model Probing & 24h Caching

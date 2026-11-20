@@ -6,6 +6,7 @@ phase: 3
 layer: domain
 status: implemented
 tags: [agents, roles, sub-agents, system-prompt, rag, domain, atenea]
+category: meta-project
 ---
 
 # Feature: Sub-Agent Definitions & Runner

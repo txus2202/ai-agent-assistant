@@ -1,3 +1,14 @@
+---
+created: 2026-10-20
+updated: 2026-11-14
+type: spec
+phase: 5
+layer: domain
+status: implemented
+category: meta-project
+tags: [sdd, topology, agents-yaml, decoupling, supervisor, clean-architecture]
+---
+
 # SDD: Topología Declarativa del Debate, Registro Dinámico de Agentes y Eliminación de AgentRole
 
 ## 1. Contexto y Problema

@@ -1,3 +1,14 @@
+---
+created: 2026-10-20
+updated: 2026-10-20
+type: spec
+phase: 5
+layer: application
+status: implemented
+category: meta-project
+tags: [sdd, supervisor, hitl, adaptive-triage, atenea, voice-commands]
+---
+
 # Software Design Document (SDD) - Supervisor Adaptativo & Flujo HITL Integrado (Punto 5)
 
 ## 1. Introducción y Objetivo

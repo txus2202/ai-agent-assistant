@@ -6,6 +6,7 @@ phase: 6
 layer: infrastructure
 status: implemented
 tags: [observability, langfuse, telemetry, metrics, vue3, clean-architecture]
+category: meta-project
 ---
 
 # Feature Specification: Full-Stack Observability with Langfuse & Mission-Control UI

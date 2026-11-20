@@ -6,6 +6,7 @@ phase: 7
 layer: testing
 status: implemented
 tags: [tdd, playwright, e2e, testing, test-matrix, red-green-refactor]
+category: meta-project
 ---
 
 # TDD: Test-Driven Development Plan for Playwright E2E Suite

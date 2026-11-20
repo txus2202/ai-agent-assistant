@@ -1,3 +1,14 @@
+---
+created: 2026-11-08
+updated: 2026-11-14
+type: spec
+phase: 7
+layer: cross-cutting
+status: implemented
+category: meta-project
+tags: [sdd, fidias, image-generation, modular-tools, viewers, caliope, aracne]
+---
+
 # SDD: Herramientas Modulares de Agentes, Generación Visual Dual para Fídias y Visualizadores Interactivos
 
 ## 1. Contexto y Objetivos

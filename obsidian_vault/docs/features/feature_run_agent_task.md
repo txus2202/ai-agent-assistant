@@ -6,6 +6,7 @@ phase: 1
 layer: application
 status: implemented
 tags: [use-case, agent, task, application, ai-agent-assistant]
+category: meta-project
 ---
 
 # Feature: Use Case - RunAgentTask

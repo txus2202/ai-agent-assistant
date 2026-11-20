@@ -3,6 +3,7 @@ type: feature_spec
 status: implemented
 created: 2026-09-19
 tags: [backend, config, phase4, ai-agent-assistant]
+category: meta-project
 ---
 
 # Feature: Agent Model Configuration

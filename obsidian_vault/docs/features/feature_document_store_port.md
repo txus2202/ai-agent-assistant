@@ -6,6 +6,7 @@ phase: 2
 layer: domain
 status: implemented
 tags: [port, rag, document-store, domain, interface, vector-search, ai-agent-assistant]
+category: meta-project
 ---
 
 # Feature: Domain Port — IDocumentStore + DocumentChunk

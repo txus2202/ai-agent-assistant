@@ -1,3 +1,14 @@
+---
+created: 2026-11-09
+updated: 2026-11-09
+type: spec
+phase: 6
+layer: infrastructure
+status: implemented
+category: meta-project
+tags: [sdd, observability, langfuse, telemetry, traces, hitl-scores]
+---
+
 # SDD: Refinamiento Integral de Métricas y Trazabilidad en Langfuse
 
 ## 1. Contexto y Objetivos

@@ -6,6 +6,7 @@ phase: 7
 layer: infrastructure
 status: implemented
 tags: [tdd, model-cache, sqlite, lock, persistence, pytest]
+category: meta-project
 ---
 
 # TDD: Test Plan for Shared Database Model Cache & Distributed Lock

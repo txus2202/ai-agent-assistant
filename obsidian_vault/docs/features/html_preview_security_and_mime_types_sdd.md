@@ -1,3 +1,14 @@
+---
+created: 2026-11-08
+updated: 2026-11-08
+type: spec
+phase: 7
+layer: presentation
+status: implemented
+category: meta-project
+tags: [sdd, security, html-preview, sandbox, csp, mime-types]
+---
+
 # SDD: Previsualización Segura de HTML5 en Sandbox y Manejo Dinámico de Tipos MIME
 
 ## 1. Contexto y Objetivos

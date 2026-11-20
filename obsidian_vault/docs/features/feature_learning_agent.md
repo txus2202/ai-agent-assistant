@@ -6,6 +6,7 @@ phase: 3
 layer: application
 status: implemented
 tags: [learning, apprentice, pdf, url, markdown, ingestion, application, atenea]
+category: meta-project
 ---
 
 # Feature: Learning Agent (Apprentice)

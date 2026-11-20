@@ -1,3 +1,14 @@
+---
+created: 2026-10-20
+updated: 2026-10-20
+type: spec
+phase: 5
+layer: presentation
+status: implemented
+category: meta-project
+tags: [sdd, mermaid, diagram-modal, tts-filter, aracne, vue3]
+---
+
 # SDD: Filtro TTS de Diagramas, Visualizador Modal Interactivo y Copia al Portapapeles
 
 ## 1. Contexto y Objetivos

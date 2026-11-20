@@ -6,6 +6,7 @@ phase: 4
 layer: presentation
 status: draft
 tags: [chat, observability, agent-cards, hitl, vue, left-panel, right-panel, atenea]
+category: meta-project
 ---
 
 # Feature: Chat UI, Agent Topology & HITL Panel

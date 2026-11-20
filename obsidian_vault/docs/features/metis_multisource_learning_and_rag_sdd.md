@@ -1,3 +1,14 @@
+---
+created: 2026-10-28
+updated: 2026-11-14
+type: spec
+phase: 6
+layer: cross-cutting
+status: implemented
+category: meta-project
+tags: [sdd, metis, learning, multimodal, rag, chromadb, obsidian]
+---
+
 # Documento de Diseño de Software (SDD): Aprendizaje Multi-Fuente y Memoria Persistente con Metis
 
 ## 1. Contexto y Objetivos

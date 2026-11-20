@@ -6,6 +6,7 @@ phase: 4
 layer: presentation
 status: implemented
 tags: [ui, layout, vue, dashboard, sci-fi, design-system, atenea]
+category: meta-project
 ---
 
 # Feature: UI Shell & Design System

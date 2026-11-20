@@ -1,3 +1,14 @@
+---
+created: 2026-10-25
+updated: 2026-10-25
+type: spec
+phase: 6
+layer: cross-cutting
+status: implemented
+category: meta-project
+tags: [sdd, orchestration, delegation, topology-view, supervisor, vue3]
+---
+
 # Documento de Diseño de Software (SDD): Orquestación Dinámica por Delegación y Visualización del Consejo
 
 ## 1. Contexto y Objetivos

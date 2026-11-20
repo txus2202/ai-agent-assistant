@@ -6,6 +6,7 @@ phase: 3
 layer: application
 status: implemented
 tags: [rag, query, use-case, application, context, chunks, ai-agent-assistant]
+category: meta-project
 ---
 
 # Feature: QueryVault Use Case

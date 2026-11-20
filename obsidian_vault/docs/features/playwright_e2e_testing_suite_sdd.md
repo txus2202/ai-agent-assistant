@@ -6,6 +6,7 @@ phase: 7
 layer: testing
 status: implemented
 tags: [playwright, e2e, testing, multi-agent, hitl, websocket, mock-controller, vue3]
+category: meta-project
 ---
 
 # Feature Specification (SDD): Playwright End-to-End (E2E) Testing Suite

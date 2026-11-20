@@ -6,6 +6,7 @@ phase: 4
 layer: infrastructure
 status: draft
 tags: [history, sqlite, debates, persistence, cleanup, ai-agent-assistant]
+category: meta-project
 ---
 
 # Feature: Debate History Persistence

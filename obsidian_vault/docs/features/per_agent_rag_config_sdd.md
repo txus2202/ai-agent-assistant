@@ -6,6 +6,7 @@ phase: 7
 layer: application
 status: implemented
 tags: [rag, chromadb, agent-config, multi-tenant, clean-architecture, vue3, sqlite]
+category: meta-project
 ---
 
 # Feature Specification: Per-Agent & Per-User Dynamic RAG Retrieval Configuration

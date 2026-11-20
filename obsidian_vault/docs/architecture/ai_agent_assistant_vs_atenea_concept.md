@@ -4,6 +4,7 @@ updated: 2026-11-13
 type: architecture_concept
 phase: 7
 status: approved
+category: meta-project
 tags: [architecture, meta-agent, framework, atenea, ai-agent-assistant, clean-architecture, tfm, multi-agent]
 ---
 
@@ -81,7 +82,7 @@ Para resolver este problema con rigor de ingeniería de software, este proyecto 
    - Puntos de control interactivos (HITL) que pausan la deliberación para que un operador humano pueda **aprobar**, **refinar**, **reintentar** o **redirigir** la acción propuesta.
 5. **Arnés de Pruebas Hermético (Test Harness):**
    - 38 pruebas End-to-End ejecutadas con Playwright en navegadores reales de escritorio y móviles sin consumo de tokens de API.
-   - 377 pruebas unitarias con Vitest y Pytest cubriendo el 100% de los puertos y adaptadores.
+   - 695 pruebas unitarias y de integración (380 en frontend con Vitest y 315 en backend con Pytest) cubriendo el 100% de puertos y adaptadores. Total: **733 pruebas automatizadas pasando**.
 
 ---
 

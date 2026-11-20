@@ -1,3 +1,14 @@
+---
+created: 2026-10-01
+updated: 2026-10-11
+type: spec
+phase: 4
+layer: presentation
+status: implemented
+category: meta-project
+tags: [spec, particle-orb, canvas, animation, voice-ui, vue3]
+---
+
 # Feature: Cosmic Particle Orb (ParticleOrb.vue)
 
 ## Overview

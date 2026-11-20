@@ -1,3 +1,14 @@
+---
+created: 2026-10-11
+updated: 2026-10-22
+type: spec
+phase: 5
+layer: infrastructure
+status: implemented
+category: meta-project
+tags: [sdd, audio, stt, tts, faster-whisper, kokoro, vosk, wake-word]
+---
+
 # Software Design Document (SDD) - Módulo de Audio (Fase 5)
 
 ## 1. Introducción

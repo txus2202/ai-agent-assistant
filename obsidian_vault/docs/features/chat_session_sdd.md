@@ -1,3 +1,14 @@
+---
+created: 2026-10-19
+updated: 2026-10-19
+type: spec
+phase: 5
+layer: cross-cutting
+status: implemented
+category: meta-project
+tags: [sdd, chat, session, multi-turn, history, sqlite]
+---
+
 # Software Design Document (SDD) - Sesión Continua de Chat Multi-Agente (Multi-turn Chat Session)
 
 ## 1. Introducción y Objetivo

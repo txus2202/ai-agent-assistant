@@ -1,3 +1,14 @@
+---
+created: 2026-10-30
+updated: 2026-10-30
+type: spec
+phase: 6
+layer: application
+status: implemented
+category: meta-project
+tags: [sdd, vault-sync, orphan-cleanup, chromadb, ingest-vault, rag]
+---
+
 # Documento de Diseño de Software (SDD): Sincronización del Vault y Limpieza de Huérfanos en ChromaDB
 
 ## 1. Contexto y Objetivos

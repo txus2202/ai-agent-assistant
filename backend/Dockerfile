@@ -28,7 +28,9 @@ WORKDIR /app
 # Install minimal runtime OS libraries only and configure unprivileged user (UID 1000)
 # Directory ownership is set before copying .venv so chown never duplicates .venv layers
 # Pre-creating /home/atenea/.cache ensures Docker initializes named volumes with UID 1000 ownership
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
     curl \
     libatomic1 \
     libsndfile1 \

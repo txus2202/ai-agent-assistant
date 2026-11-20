@@ -6,7 +6,6 @@ on:
     branches:
       - main
       - develop
-      - refactor/architecture-audit
   pull_request:
     types: [opened, synchronize, reopened]
 
@@ -185,7 +184,7 @@ jobs:
   docker-publish:
     name: Build & Publish Docker Images
     needs: [backend-qa, frontend-qa, e2e-playwright, sonar]
-    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'main' || github.ref_name == 'refactor/architecture-audit') }}
+    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_name == 'main' }}
     permissions:
       contents: read
       packages: write

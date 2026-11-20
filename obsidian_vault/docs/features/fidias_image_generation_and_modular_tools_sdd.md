@@ -1,6 +1,6 @@
 ---
 created: 2026-11-08
-updated: 2026-11-14
+updated: 2026-11-20
 type: spec
 phase: 7
 layer: cross-cutting
@@ -97,7 +97,9 @@ flowchart TD
     - `get_provider_name() -> str | None`: Resuelve el proveedor desde `Settings.image_generation_provider` y variables de entorno (`IMAGE_GENERATION_PROVIDER`, `IMAGE_PROVIDER`), aceptando únicamente motores privados (`imagen`).
     - `generate_and_save(prompt: str, provider: str) -> tuple[str, str]`: Genera los bytes y los guarda con nombre único `fidias_{uuid}.png` en el directorio de almacenamiento.
     - `get_image_path(filename: str) -> Path | None`: Valida que el archivo exista dentro del directorio permitido, sanitizando contra ataques de *directory traversal* (`../`).
-  - `ImagenGenerator`: Cliente `google.genai` que invoca `models.generate_images(model="imagen-3.0-generate-002", ...)`.
+  - `ImagenGenerator`: Cliente `google.genai` con soporte dual según el modo de autenticación del SDK (`google-genai >= 2.28.0`):
+    - **Modo Gemini Developer API (`GEMINI_API_KEY`, `vertexai=False`):**Dado que `models.generate_images()` lanza `ValueError("This method is only supported in Gemini Enterprise Agent Platform mode, not in Gemini Developer API mode.")` en `google-genai >= 2.28.0`, utiliza `client.models.generate_content(model=..., contents=prompt, config=types.GenerateContentConfig(response_modalities=["IMAGE"]))` sobre los modelos nativos de imagen de Gemini (`GEMINI_IMAGE_MODEL` o cadena de fallback `gemini-3.1-flash-image` → `gemini-2.5-flash-image` → `gemini-3-pro-image`), extrayendo los bytes binarios desde `part.inline_data.data`.
+    - **Modo Vertex AI (`GOOGLE_CLOUD_PROJECT`, `vertexai=True`):** Invoca `client.models.generate_images(model="imagen-3.0-generate-002", ...)` con fallback a `generate_content`.
 
 ### D. Capa de Presentación (`backend/src/presentation/api/`)
 - **`config.py`:**

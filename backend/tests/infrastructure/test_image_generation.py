@@ -130,3 +130,52 @@ class TestImageGenerationService:
         assert svc.get_image_path("../../../etc/passwd") is None
         assert svc.get_image_path("sub/folder/file.png") is None
         assert svc.get_image_path("nonexistent.png") is None
+
+    def test_imagen_generator_developer_api_uses_generate_content_when_generate_images_unsupported(
+        self, monkeypatch
+    ):
+        monkeypatch.setenv("GEMINI_API_KEY", "developer-api-key")
+
+        mock_client = MagicMock()
+        mock_client.models.generate_images.side_effect = ValueError(
+            "This method is only supported in Gemini Enterprise Agent Platform mode, "
+            "not in Gemini Developer API mode."
+        )
+
+        mock_part = MagicMock()
+        mock_part.inline_data.data = b"\x89PNG\r\n\x1a\ngemini_image_bytes"
+        mock_resp = MagicMock()
+        mock_resp.parts = [mock_part]
+        mock_resp.candidates = []
+        mock_client.models.generate_content.return_value = mock_resp
+
+        with patch("google.genai.Client", return_value=mock_client):
+            data = ImagenGenerator.generate("Futuristic microservices dashboard")
+            assert data == b"\x89PNG\r\n\x1a\ngemini_image_bytes"
+            mock_client.models.generate_content.assert_called_once()
+
+    def test_imagen_generator_falls_back_across_gemini_image_models(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "developer-api-key")
+        monkeypatch.delenv("GEMINI_IMAGE_MODEL", raising=False)
+
+        mock_client = MagicMock()
+        mock_client.models.generate_images.side_effect = ValueError(
+            "This method is only supported in Gemini Enterprise Agent Platform mode"
+        )
+
+        def _gen_content_side_effect(*, model, contents, config=None):
+            if model == "gemini-3.1-flash-image":
+                raise RuntimeError("404 model not found")
+            part = MagicMock()
+            part.inline_data.data = b"\x89PNG\r\n\x1a\nfallback_model_bytes"
+            resp = MagicMock()
+            resp.parts = [part]
+            return resp
+
+        mock_client.models.generate_content.side_effect = _gen_content_side_effect
+
+        with patch("google.genai.Client", return_value=mock_client):
+            data = ImagenGenerator.generate("Clean architecture diagram")
+            assert data == b"\x89PNG\r\n\x1a\nfallback_model_bytes"
+            assert mock_client.models.generate_content.call_count == 2
+

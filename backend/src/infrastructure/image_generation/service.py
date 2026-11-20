@@ -10,20 +10,75 @@ Configured via constructor injection from the composition root
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
 import re
 import tempfile
 import uuid
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from src.domain.ports.image_generator import IImageGenerator
 
 
 class ImagenGenerator:
-    """Generates images using Google Imagen 3 via google-genai SDK."""
+    """Generates images using Google Imagen 3 / Gemini Image via google-genai SDK."""
 
     MODEL_NAME: ClassVar[str] = "imagen-3.0-generate-002"
+    GEMINI_IMAGE_MODELS: ClassVar[tuple[str, ...]] = (
+        "gemini-3.1-flash-image",
+        "gemini-2.5-flash-image",
+        "gemini-3-pro-image",
+        "gemini-3.1-flash-image-preview",
+    )
+
+    @staticmethod
+    def _extract_inline_image_bytes(response: Any) -> bytes | None:
+        parts = list(getattr(response, "parts", None) or ())
+        for cand in getattr(response, "candidates", None) or ():
+            content = getattr(cand, "content", None)
+            cand_parts = getattr(content, "parts", None) or ()
+            parts.extend(cand_parts)
+
+        for part in parts:
+            inline_data = getattr(part, "inline_data", None)
+            raw_data = getattr(inline_data, "data", None) if inline_data is not None else None
+            if isinstance(raw_data, (bytes, bytearray)) and len(raw_data) > 0:
+                return bytes(raw_data)
+            if isinstance(raw_data, str) and len(raw_data) > 0:
+                return base64.b64decode(raw_data)
+        return None
+
+    @classmethod
+    def _candidate_gemini_image_models(cls) -> list[str]:
+        configured = (os.getenv("GEMINI_IMAGE_MODEL") or "").strip()
+        models: list[str] = [configured] if configured else []
+        for candidate in cls.GEMINI_IMAGE_MODELS:
+            if candidate not in models:
+                models.append(candidate)
+        return models
+
+    @classmethod
+    def _generate_via_gemini_content(cls, client: Any, types: Any, clean_prompt: str) -> bytes:
+        last_exc: Exception | None = None
+        for model_id in cls._candidate_gemini_image_models():
+            try:
+                response = client.models.generate_content(
+                    model=model_id,
+                    contents=clean_prompt,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["IMAGE"],
+                    ),
+                )
+                img_bytes = cls._extract_inline_image_bytes(response)
+                if img_bytes:
+                    return img_bytes
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                continue
+        if last_exc is not None:
+            raise RuntimeError(f"Gemini image generation failed: {last_exc}") from last_exc
+        raise RuntimeError("Gemini image model returned no image data")
 
     @classmethod
     def generate(cls, prompt: str, api_key: str | None = None, project: str | None = None) -> bytes:
@@ -47,20 +102,25 @@ class ImagenGenerator:
         else:
             client = genai.Client()
 
-        result = client.models.generate_images(
-            model=cls.MODEL_NAME,
-            prompt=clean_prompt,
-            config=types.GenerateImagesConfig(
-                number_of_images=1,
-                output_mime_type="image/png",
-                aspect_ratio="1:1",
-            ),
-        )
+        try:
+            result = client.models.generate_images(
+                model=cls.MODEL_NAME,
+                prompt=clean_prompt,
+                config=types.GenerateImagesConfig(
+                    number_of_images=1,
+                    output_mime_type="image/png",
+                    aspect_ratio="1:1",
+                ),
+            )
+            generated = getattr(result, "generated_images", None)
+            if generated:
+                img_bytes = getattr(generated[0].image, "image_bytes", None)
+                if isinstance(img_bytes, (bytes, bytearray)) and len(img_bytes) > 0:
+                    return bytes(img_bytes)
+        except Exception:  # noqa: BLE001
+            return cls._generate_via_gemini_content(client, types, clean_prompt)
 
-        if not result.generated_images:
-            raise RuntimeError("Imagen 3 returned no images")
-
-        return result.generated_images[0].image.image_bytes
+        return cls._generate_via_gemini_content(client, types, clean_prompt)
 
 
 class ImageGenerationService(IImageGenerator):

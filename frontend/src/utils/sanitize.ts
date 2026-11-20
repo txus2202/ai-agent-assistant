@@ -30,8 +30,20 @@ const HTML_SANITIZE_CONFIG: Config = {
 }
 
 const SVG_SANITIZE_CONFIG: Config = {
-  USE_PROFILES: { svg: true, svgFilters: true },
-  FORBID_TAGS: ['script', 'foreignObject', 'iframe', 'object', 'embed'],
+  USE_PROFILES: { svg: true, svgFilters: true, html: true },
+  ADD_TAGS: ['foreignObject'],
+  HTML_INTEGRATION_POINTS: { foreignobject: true, foreignObject: true },
+  FORBID_TAGS: [
+    'script',
+    'iframe',
+    'object',
+    'embed',
+    'form',
+    'input',
+    'textarea',
+    'select',
+    'button',
+  ],
   FORBID_ATTR: FORBIDDEN_EVENT_ATTRS,
 }
 

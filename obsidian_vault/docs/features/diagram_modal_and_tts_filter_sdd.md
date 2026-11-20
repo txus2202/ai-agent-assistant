@@ -91,15 +91,22 @@ export interface MessageBlock {
   - Fragmentos de tipo `'text'` para prosa normal.
   - Fragmentos de tipo `'mermaid'` con el código fuente limpio del diagrama (sin los delimitadores ````mermaid y ````).
 
-### C. Componente Modal de Diagrama (`frontend/src/components/DiagramModal.vue`)
+### C. Componente Modal de Diagrama (`frontend/src/components/tools/DiagramModal.vue`)
 - **Props:**
   - `isOpen: boolean`
   - `code: string`
   - `title?: string`
+  - `teleportDisabled?: boolean`
 - **Emits:**
   - `close: () => void`
-- **Capacidades:**
-  - Renderiza el SVG mediante la API oficial de `mermaid` (`mermaid.render()`).
+- **Capacidades y Sanitización Segura:**
+  - Renderiza el SVG mediante la API oficial de `mermaid` (`mermaid.render()`) con `securityLevel: 'strict'` y `flowchart: { htmlLabels: true }`.
+  - **Sanitización SVG (`sanitizeSvg`):** Para evitar ataques XSS sin destruir las etiquetas de texto de Mermaid (los diagramas no-secuencia como flowcharts, state diagrams y class diagrams encapsulan las etiquetas de texto dentro de `<foreignObject>` con XHTML `<div xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel">...</span></div>`):
+    - Se configuran los perfiles de DOMPurify: `{ svg: true, svgFilters: true, html: true }`.
+    - Se habilita el tag `foreignObject` en `ADD_TAGS`.
+    - Se configuran los puntos de integración HTML: `HTML_INTEGRATION_POINTS: { foreignobject: true, foreignObject: true }` para que DOMPurify no mutile los nodos de texto HTML dentro de contenedores SVG.
+    - Se prohíben explícitamente etiquetas ejecutables o embebidas (`FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input', 'textarea', 'select', 'button']`).
+    - Se prohíben atributos de eventos inline (`FORBID_ATTR: ['onerror', 'onload', 'onclick', ...]`).
   - Configuración de tema `dark` y paleta de colores coherente con la aplicación (`#00e5ff`, `#10b981`, `#0a192f`).
   - Controles de zoom (Zoom In, Zoom Out, Reset 100%).
   - Soporte de teclado: Escucha tecla `Escape` para cerrar.

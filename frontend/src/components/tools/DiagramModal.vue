@@ -39,7 +39,7 @@ try {
     fontFamily: 'monospace, sans-serif',
     flowchart: {
       useMaxWidth: false,
-      htmlLabels: false,
+      htmlLabels: true,
     },
     sequence: {
       useMaxWidth: false,

@@ -172,10 +172,10 @@ describe('DiagramModal.vue', () => {
     expect(clickSpy).toHaveBeenCalled()
   })
 
-  it('initializes mermaid with strict securityLevel and sanitizes rendered SVG payloads', async () => {
+  it('initializes mermaid with strict securityLevel and preserves sanitized foreignObject labels while stripping scripts', async () => {
     const mermaid = (await import('mermaid')).default
     vi.mocked(mermaid.render).mockResolvedValueOnce({
-      svg: '<svg onload="alert(1)"><g><text>Safe</text></g><script>alert(2)</script><foreignObject><div>evil</div></foreignObject></svg>',
+      svg: '<svg onload="alert(1)"><g><text>Safe Text</text></g><script>alert(2)</script><foreignObject width="100" height="40"><div xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel">Node Label</span><script>alert(3)</script></div></foreignObject></svg>',
       diagramType: 'flowchart'
     })
 
@@ -193,9 +193,11 @@ describe('DiagramModal.vue', () => {
     const rendered = wrapper.find('[data-test="rendered-diagram-svg"]')
     expect(rendered.exists()).toBe(true)
     const html = rendered.html()
-    expect(html).toContain('Safe')
+    expect(html).toContain('Safe Text')
+    expect(html).toContain('Node Label')
+    expect(html).toContain('foreignObject')
     expect(html).not.toContain('<script')
     expect(html).not.toContain('onload')
-    expect(html.toLowerCase()).not.toContain('foreignobject')
+    expect(html).not.toContain('alert(')
   })
 })

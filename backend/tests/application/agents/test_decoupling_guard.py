@@ -15,8 +15,6 @@ tracking known Phase 4 refactor baseline items in warning mode (unless
 from __future__ import annotations
 
 import ast
-import os
-import warnings
 from pathlib import Path
 
 import pytest

@@ -583,7 +583,6 @@ class TestAdaptiveSupervisorRouting:
         from src.application.agents.sub_agent_runner import SubAgentResponse
 
         async def _mock_runner(role, user_request, llm_provider, document_store, model_name, **kwargs):
-            role_str = role.value if hasattr(role, "value") else str(role)
             called_roles.append(role)
             return SubAgentResponse(role=role, content="```mermaid\nflowchart TD\nA-->B\n```", context_chunks=[])
 
@@ -632,7 +631,7 @@ class TestAdaptiveSupervisorRouting:
                     return '{"mode": "adaptive_debate", "target_agent": null, "skip_interpreter": true, "reasoning": "Requisitos ya estructurados"}'
                 return "Consolidación final de Coordinator"
 
-        events = await _collect(SupervisorAgent.run(
+        await _collect(SupervisorAgent.run(
             user_request="Necesito un SSO con Keycloak, 10 sesiones concurrentes, OAuth2 y TLS 1.3",
             document_store=InMemoryDocumentStore(),
             agent_config_repo=FakeAgentConfigRepo(),
@@ -671,7 +670,7 @@ class TestAdaptiveSupervisorRouting:
         async def _redirect_callback(_event: SupervisorEvent) -> HITLResponse:
             return next(decisions)
 
-        events = await _collect(SupervisorAgent.run(
+        await _collect(SupervisorAgent.run(
             user_request="Diseñar arquitectura de pagos",
             document_store=InMemoryDocumentStore(),
             agent_config_repo=FakeAgentConfigRepo(),
@@ -1320,7 +1319,7 @@ class TestSupervisorAgentFaultTolerance:
             # Second HITL after retry: both succeeded. Finish debate.
             return HITLResponse(decision=HITLDecision.FINISH)
 
-        events = await _collect(SupervisorAgent.run(
+        await _collect(SupervisorAgent.run(
             user_request="Build resilient microservices",
             document_store=InMemoryDocumentStore(),
             agent_config_repo=FakeAgentConfigRepo(),
@@ -1385,7 +1384,7 @@ class TestSupervisorAgentFaultTolerance:
                 return HITLResponse(decision=HITLDecision.RETRY, target_agents=["PropTwo"])
             return HITLResponse(decision=HITLDecision.FINISH)
 
-        events = await _collect(SupervisorAgent.run(
+        await _collect(SupervisorAgent.run(
             user_request="Build high performance system",
             document_store=InMemoryDocumentStore(),
             agent_config_repo=FakeAgentConfigRepo(),

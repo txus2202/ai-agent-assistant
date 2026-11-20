@@ -17,7 +17,6 @@ from fastapi.testclient import TestClient
 
 from src.domain.agents.supervisor_events import (
     EventType,
-    HITLDecision,
     SupervisorEvent,
 )
 
@@ -52,7 +51,7 @@ async def _fake_debate_generator(*args, **kwargs):
         metadata={"checkpoint": "after_Hermes", "agent": "Hermes"}
     )
     yield hitl1_event
-    hitl1_resp = await hitl_callback(hitl1_event)
+    await hitl_callback(hitl1_event)
     
     # Event 3: HITL 2
     hitl2_event = SupervisorEvent(
@@ -443,7 +442,7 @@ def test_debate_learning_explicit_directive_with_tags(ws_client, monkeypatch):
 
 def test_debate_learning_interactive_tag_flow(ws_client, monkeypatch):
     """Metis asks for tags when none are provided, and completes upon user response."""
-    from src.application.services.learn_from_source import LearnFromSource, SourceType, LearnResult
+    from src.application.services.learn_from_source import LearnFromSource, LearnResult
     from src.application.services.ingest_vault import IngestResult
     from pathlib import Path
 

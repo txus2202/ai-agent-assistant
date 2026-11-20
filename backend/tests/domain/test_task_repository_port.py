@@ -8,7 +8,6 @@ import uuid
 
 import pytest
 
-from src.domain.entities.agent import Agent
 from src.domain.entities.task import Task
 from src.domain.ports.task_repository import ITaskRepository
 from src.infrastructure.persistence.in_memory_task_repository import (

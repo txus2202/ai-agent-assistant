@@ -149,7 +149,7 @@ export async function setupMockBackend(
     },
   ]
 
-  let debatesList = [...debates]
+  let debatesList = debates.map((d) => ({ ...d, events: d.events ?? [] }))
 
   // Catch-all for any other /api endpoint to prevent 401 redirects (must be registered FIRST so specific routes override it)
   await page.route('*/**/api/**', async (route) => {

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.domain.exceptions import LLMProviderError, ProviderNotRegisteredError
+from src.domain.exceptions import ProviderNotRegisteredError
 from src.domain.ports.llm_provider import ILLMProvider
 
 

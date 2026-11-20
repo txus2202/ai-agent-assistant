@@ -6,11 +6,8 @@ from src.domain.exceptions import (
     UserInactiveError,
     SetupAlreadyCompletedError,
     UnauthorizedError,
-    UserAlreadyExistsError,
-    UserNotFoundError,
     LastAdminError,
     SelfModificationError,
-    WeakPasswordError,
 )
 from src.domain.ports.user_repository import IUserRepository
 from src.domain.ports.password_hasher import IPasswordHasher

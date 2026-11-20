@@ -2,7 +2,6 @@
 Unit tests for SearchFilter with multi-category and multi-value support (TDD).
 Spec: obsidian_vault/docs/features/feature_dynamic_knowledge_domains.md (AC 6)
 """
-import pytest
 from src.domain.value_objects.document_chunk import SearchFilter
 
 

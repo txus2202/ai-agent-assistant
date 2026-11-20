@@ -10,16 +10,13 @@ by a separate instance opened against the same file.
 
 All tests use pytest's `tmp_path` fixture to avoid touching real files.
 """
-import json
 import uuid
 from pathlib import Path
 
-import pytest
 
 from src.domain.entities.agent import Agent, AgentStatus
 from src.domain.entities.task import Task
 from src.domain.ports.agent_repository import IAgentRepository
-from src.domain.ports.task_repository import ITaskRepository
 from src.infrastructure.persistence.sqlite_agent_repository import (
     SqliteAgentRepository,
 )

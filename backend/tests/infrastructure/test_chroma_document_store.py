@@ -154,7 +154,7 @@ def test_chroma_store_initializes_http_client_when_host_provided(monkeypatch: py
     mock_http_client = MagicMock()
     monkeypatch.setattr(chromadb, "HttpClient", mock_http_client)
 
-    store = ChromaDBDocumentStore(host="chroma-cluster", port=8000)
+    ChromaDBDocumentStore(host="chroma-cluster", port=8000)
     mock_http_client.assert_called_once_with(host="chroma-cluster", port=8000)
 
 

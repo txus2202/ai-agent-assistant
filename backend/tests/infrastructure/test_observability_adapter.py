@@ -2,7 +2,6 @@
 RED Tests: LangfuseObservabilityAdapter and SystemMetricsCollector (Feature: feature_observability.md)
 """
 from unittest.mock import MagicMock, patch
-import pytest
 
 from src.domain.ports.observability_service import (
     IObservabilityService,

@@ -3,7 +3,6 @@ Unit tests for Image Generation Service and Providers (Imagen 3).
 """
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest

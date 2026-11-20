@@ -1,5 +1,5 @@
 import type { PresentationData, Slide } from './slideParser'
-import PptxGenJS from 'pptxgenjs'
+import type PptxGenJS from 'pptxgenjs'
 
 function escapeHtml(str: string): string {
   return str
@@ -656,7 +656,8 @@ function renderPptxNotes(
  * to guarantee no element or text overflows the slide.
  */
 export async function exportPresentationPptx(data: PresentationData, filename?: string): Promise<void> {
-  const pres = new PptxGenJS()
+  const { default: PptxGenJSClass } = await import('pptxgenjs')
+  const pres = new PptxGenJSClass()
   pres.layout = 'LAYOUT_WIDE'
 
   const total = data.slides.length

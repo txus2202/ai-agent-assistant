@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import patch, MagicMock
 from src.infrastructure.audio.wake_word_service import WakeWordService
 import json

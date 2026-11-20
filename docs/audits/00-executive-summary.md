@@ -14,12 +14,12 @@ Los hallazgos detallados con rutas, líneas exactas y pasos atómicos de remedia
 
 ## Diagnóstico Global por Área
 
-| Área | Puntuación | Estado Actual | Resumen de Riesgos Principales |
-| :--- | :---: | :--- | :--- |
-| **1. Infraestructura y DevOps** (`01`) | **6.0 / 10** | Base Compose sólida, brechas en Dockerfile backend, Nginx, `.env` y CI | `backend/Dockerfile` single-stage con `chown -R` que duplica capas; Nginx sin `client_max_body_size` (bloquea >1 MB); colisión `CHROMA_PORT` y desfase `.env.example`/Compose; `frontend/.dockerignore` sin `.env*`; CI en Python `3.14` sin `ruff`/`mypy`/build. |
-| **2. Backend & Clean Architecture** (`02`) | **5.5 / 10** | Núcleo de auth/casos de uso robusto, Regla de Dependencia y loop `async` comprometidos en agentes | `domain/agents/` importa `PyYAML`/`os` y lee disco al importar; `application/` e `infrastructure/` importan `presentation/api/config.py`; event loop bloqueado en RAG, triage, learning y SQLite; Path Traversal en `attachments` + SSRF en `URLExtractor`; `test_composition_root.py` usa argumento descartado `db_path=`. |
-| **3. Arquitectura Frontend** (`03`) | **5.5 / 10** | TypeScript estricto impecable, pero monolitos, fugas de ciclo de vida y sin capa de servicios | `DiagramModal` usa `securityLevel: 'loose'` sin `DOMPurify`; `ChatPanel.vue` (1959 L) y `stores/debate.ts` (1693 L) monolíticos; monkey-patch de `window.fetch` y llamadas `fetch` dispersas; fugas en callbacks TTS y doble keydown en modales; bucle $O(n^2)$ en `ParticleOrb` y doble `SoundBar` activo. |
-| **4. Integración y Escalabilidad** (`04`) | **4.5 / 10** | Operativo en nodo único con bugs de contrato; bloqueado para multi-réplica | Mensajes de Fase 4 silenciados y doble conteo de tokens; `POST /api/learning/session` desalineado; `{type: 'cancel'}` durante HITL dispara `APPROVE`; `asyncpg` ausente y Postgres solo implementado para `User`; `wake_word_service` compartido entre usuarios y estado mutable local al proceso. |
+| Área | Puntuación Inicial | Puntuación Actual (Fases 0–4) | Estado Actual | Resumen de Riesgos / Brechas Restantes |
+| :--- | :---: | :---: | :--- | :--- |
+| **1. Infraestructura y DevOps** (`01`) | 6.0 / 10 | **9.5 / 10** | Contenedores, Nginx, `.dockerignore`, caché ML, Trivy, paridad `.env.example`/Compose, CI (`ruff check .`) y `node:24-alpine` alineados | Solo diferencias esperadas de entorno host vs contenedor (`PYTHONUNBUFFERED`, `MALLOC_ARENA_MAX`, `LANGFUSE_BASE_URL`, `WHISPER_INITIAL_PROMPT` y extras `dev` en `.venv` local). |
+| **2. Backend & Clean Architecture** (`02`) | 5.5 / 10 | **9.5 / 10** | `domain/` purificado, puertos hexagonales, async desbloqueado, `debate_events` $O(1)$, AST guards en estricto y `ruff check .` / `mypy src/` en cero errores | **Fase 5 (#31)** pendiente (`/api/v1/`, `/health/live` y `/health/ready`, sobre estándar de errores, OTel/logs JSON, cookies `Secure; SameSite=Strict`, saneamiento PII). |
+| **3. Arquitectura Frontend** (`03`) | 5.5 / 10 | **9.5 / 10** | Capa `services/`, `ChatPanel` y `stores/debate.ts` descompuestos, `DOMPurify` + Mermaid `strict`, `tsconfig.e2e.json` activo y `pptxgenjs` diferido (`index` 549 kB) | Avisos de chunks > 500 kB en `vite build` (`elk`, `chunk-NGNAAXSQ`, `index`); re-sincronización WS tras reconexión ligada a Fase 5 (#30). |
+| **4. Integración y Escalabilidad** (`04`) | 4.5 / 10 | **7.5 / 10** | Contratos REST/WS, HITL, tokens y paginación `/debates` corregidos para nodo único; E2E 38/38 y `tsconfig.e2e.json` en verde | **Fase 5 (#29 y #30)** pendiente para producción multi-réplica: estado mutable local (`wake_word_service`, HITL/cancelación en memoria, `Langfuse` compartido, rate limit sin Redis), falta de `asyncpg`/adaptadores Postgres y `ObjectStoragePort` (S3/MinIO). |
 
 ---
 
@@ -52,7 +52,7 @@ Se recomienda ejecutar los refactors siguiendo estas **6 fases incrementales**, 
 
 ### Fase 0 — Higiene del repositorio, blindaje de tests y correcciones de riesgo nulo
 1. ✅ `[x]` `[04][P3]` Limpieza de scripts de debug huérfanos (`backend/patch_tests.py`, `backend/test_kokoro_whisper.py`, `frontend/test_history*.js`), artefactos runtime (`:memory:.ses`, `*.db`, `.chroma/`, `*.egg-info/`) y wikilink roto en `MOC_Enterprise_Architecture.md`.
-2. ✅ `[x]` `[02][P1]` Corrección de `test_composition_root.py` (`db_path=` -> `sqlite_db_path=`), actualización de firma `list_models(..., probe: bool = True)` en `tests/doubles.py` y ampliación de `test_decoupling_guard.py` con guardas AST (ejecutando en modo aviso/baseline hasta completar la Fase 4).
+2. ✅ `[x]` `[02][P1]` Corrección de `test_composition_root.py` (`db_path=` -> `sqlite_db_path=`), actualización de firma `list_models(..., probe: bool = True)` en `tests/doubles.py` y ampliación de `test_decoupling_guard.py` con guardas AST (ya activas en modo estricto sin exenciones tras completar el punto 26 en Fase 4).
 3. ✅ `[x]` `[01][P1]` Actualización de `frontend/.dockerignore` (excluir `.env*`, `e2e/`, reportes) y adición de `healthcheck` HTTP al servicio `frontend` en `docker-compose.yml`.
 
 ### Fase 1 — Seguridad crítica, bugs de contrato activos y fugas de memoria puntuales (Bajo Riesgo)
@@ -92,4 +92,43 @@ Se recomienda ejecutar los refactors siguiendo estas **6 fases incrementales**, 
 29. `[04][P1]` Eliminación de estado mutable compartido en proceso: `KaldiRecognizer` aislado por conexión en `ws/wake_word.py`, `RedisRateLimiter` + corrección de `get_client_ip`, `AUTH_SECRET_KEY` obligatorio en producción, trazado sin diccionarios compartidos en `LangfuseObservabilityAdapter` y coordinación de sesiones HITL/cancelación mediante Redis Pub/Sub.
 30. `[04][P1]` Persistencia distribuida completa para perfil `scale`: añadir `asyncpg` a `pyproject.toml`, implementar adaptadores PostgreSQL para `Debate`, `AgentConfig`, `ModelCache`, `Task` y `Agent`, extraer `ObjectStoragePort` (MinIO/S3) para adjuntos/imágenes y forzar `ChromaDBDocumentStore` con `HttpClient` (+ re-sincronización de estado tras reconexión WebSocket en cliente).
 31. `[02][P2]` Convergencia con los estándares de `obsidian_vault/01_enterprise_architecture/`: versionado `/api/v1/`, sobre estándar de errores, probes `/health/live` y `/health/ready`, propagación `traceparent`/OpenTelemetry, logs JSON estructurados, cookies `Secure; SameSite=Strict` y saneamiento PII pre-LLM.
+
+---
+
+## Verificación Integral Post-Fases 0–4 y Corrección de Flecos Menores
+
+Comprobación final ejecutada sobre la rama `refactor/architecture-audit` (base `cda3abd` + correcciones de flecos menores), sin añadir nuevas funcionalidades.
+
+### Resultados de Verificación Estática, Tests y Contenedores
+
+- **Backend:**
+  - `ruff check .` (alcance completo `src` + `tests` de `backend/pyproject.toml`): **OK** — `All checks passed!` (`0` errores tras limpiar los 36 avisos heredados en `tests/`).
+  - `mypy src/` (`uv run --no-sync --offline --with mypy mypy src/`): **OK** — `Success: no issues found in 122 source files` (`ignore_missing_imports = true`, `python_version = "3.12"` en `backend/pyproject.toml`).
+  - `STRICT_ARCH_GUARD=1 pytest -v tests/application/agents/test_decoupling_guard.py tests/presentation/api/dependencies/test_composition_root.py`: **31 passed, 1 warning** en `2.74s` (guardas AST de arquitectura limpia y `STRICT_PROMPT_MODULES` en estricto con cero exenciones).
+  - `STRICT_ARCH_GUARD=1 pytest -q`: **568 passed, 1 warning** en `131.93s` (`0:02:11`, solo un `DeprecationWarning` de terceros en `google/genai/types.py:42` bajo Python `3.14`).
+- **Frontend:**
+  - `npm run type-check` (`vue-tsc --build`, incluyendo `frontend/tsconfig.e2e.json`): **OK** (`0` errores).
+  - `npm run lint` (`oxlint .` + `eslint . --cache`): **OK** — `0` warnings y `0` errores (`129` ficheros analizados por `oxlint`).
+  - `npm run test:unit` (`vitest run`): **44 test files passed (44)**, **430 tests passed (430)** en `15.79s`.
+  - `npm run build` (`vite build`): **OK** en `2.67s`; la carga diferida de `pptxgenjs` extrajo `pptxgen.es` (`368.44 kB`) del chunk inicial (`index`: `917.95 kB` -> `549.29 kB`), manteniéndose avisos informativos en chunks > 500 kB (`elk`, `chunk-NGNAAXSQ`, `index`).
+  - `npx playwright test`: **38 passed** en `28.4s` (`chromium` + `mobile-chrome`); sin cambios requeridos en selectores ni mocks de UI.
+- **Contenedores (`docker compose`):**
+  - `docker compose config --quiet` (por defecto y con perfiles `local`, `scale`, `observability`, `full`): **OK** (`exit 0`).
+  - `AUTH_SECRET_KEY=... docker compose --env-file .env.example --profile full config --quiet`: **OK** (`exit 0`, requiere definir `AUTH_SECRET_KEY` porque está comentada en `.env.example` para impedir secretos por defecto).
+  - **Paridad `.env.example` / `docker-compose.yml`:** **0** sustituciones `${...}` de Compose ausentes en `.env.example` y **0** variables de `backend.environment` sin documentar salvo flags runtime del contenedor (`PYTHONUNBUFFERED`, `MALLOC_ARENA_MAX`).
+
+### Flecos Menores Corregidos
+
+1. **Higiene en `backend/tests/` y alcance de CI:** eliminados 36 errores de `ruff check .` en 24 ficheros de `tests/` (`27 F401`, `8 F841`, `1 E402` en `test_wake_word.py`) y actualizado `.github/workflows/ci.yml` de `ruff check src` a `ruff check .`.
+2. **Paridad de configuración Docker/Env:** reenviadas en `docker-compose.yml` `TASK_PROMPT_MAX_LENGTH`, opciones de `WHISPER_*`/`KOKORO_*` (respetando `WHISPER_INITIAL_PROMPT` por defecto en `Settings`) y `LANGFUSE_DEFAULT_USER_ID`; documentadas en `.env.example` `VAULT_ROOT`, `IMAGE_GENERATION_PROVIDER`, bloque de audio, Langfuse y overrides opcionales de puertos/bind.
+3. **Alineación Frontend / E2E / Docker:** actualizado `frontend/Dockerfile` de `node:20-alpine` a `node:24-alpine` (paridad con `package.json` `engines` y CI), añadido `frontend/tsconfig.e2e.json` en `frontend/tsconfig.json`, corregida normalización defensiva `d.events ?? []` en `frontend/e2e/helpers/mockBackend.ts` (6 errores latentes `TS18048`/`TS2488`) y pasada a carga dinámica `await import('pptxgenjs')` en `frontend/src/utils/presentationExporter.ts`.
+
+### Elementos Pendientes
+
+1. **Detalles menores no bloqueantes:**
+   - El `.venv` local de `backend/` corre Python `3.14` y no tenía sincronizado `--extra dev` (`ruff`, `mypy`, solo `pytest`).
+   - Valorar code-splitting adicional para diagramas Mermaid si se quieren eliminar los avisos de chunks > 500 kB (`elk`, `chunk-NGNAAXSQ`, `index`).
+   - En `docker-compose.yml` se omiten intencionadamente `API_VERSION` (constante de release), `LANGFUSE_BASE_URL` (alias host frente a DNS interno `langfuse-web`) y `WHISPER_INITIAL_PROMPT` (para no sobreescribir el prompt técnico por defecto con cadena vacía).
+2. **Bloques mayores de Fase 5 (sin iniciar):**
+   - Puntos **29**, **30** y **31** del roadmap (estado stateless multi-réplica, adaptadores Postgres + `asyncpg` + `ObjectStoragePort` + ChromaDB `HttpClient`, y estándares enterprise `/api/v1/`, probes `/health/live` y `/health/ready`, OTel/logs JSON, cookies `Secure; SameSite=Strict` y saneamiento PII pre-LLM).
 

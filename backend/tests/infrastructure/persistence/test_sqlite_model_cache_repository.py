@@ -57,7 +57,6 @@ def test_acquire_and_release_probe_lock(repo, tmp_path):
 
 def test_expired_probe_lock_can_be_reacquired(repo):
     # Simulate a crashed pod that held a lock that expired
-    now = time.time()
     assert repo.acquire_probe_lock("gemini", timeout_seconds=-5.0) is True
 
     # Second pod attempts to acquire: should reclaim expired lock

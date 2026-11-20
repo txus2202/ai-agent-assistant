@@ -39,11 +39,17 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - MALLOC_ARENA_MAX=2
-      - WHISPER_BEAM_SIZE=1
-      - WHISPER_THREADS=4
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-es}
+      - WHISPER_BEAM_SIZE=${WHISPER_BEAM_SIZE:-1}
+      - WHISPER_THREADS=${WHISPER_THREADS:-4}
+      - KOKORO_MODEL_PATH=${KOKORO_MODEL_PATH:-voices/kokoro-v1.0.onnx}
+      - KOKORO_VOICES_PATH=${KOKORO_VOICES_PATH:-voices/voices-v1.0.bin}
+      - KOKORO_VOICE_NAME=${KOKORO_VOICE_NAME:-ef_dora}
       - KOKORO_OMP_NUM_THREADS=${KOKORO_OMP_NUM_THREADS:-4}
       - AGENTS_FILE=/app/agents.yaml
       - TOPOLOGY_FILE=/app/topology.yaml
+      - TASK_PROMPT_MAX_LENGTH=${TASK_PROMPT_MAX_LENGTH:-10000}
       - VAULT_ROOT=/app/obsidian_vault
       - SQLITE_DB_PATH=/app/data/atenea.db
       - CHROMA_PERSIST_DIR=/app/data/chroma
@@ -67,6 +73,7 @@ services:
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
       - LANGFUSE_METRICS_ENABLED=${LANGFUSE_METRICS_ENABLED:-false}
+      - LANGFUSE_DEFAULT_USER_ID=${LANGFUSE_DEFAULT_USER_ID:-local_user}
       # --- Phase 7: Authentication & Security ---
       - AUTH_SECRET_KEY=${AUTH_SECRET_KEY:?Set AUTH_SECRET_KEY in .env (e.g. openssl rand -base64 48)}
       - AUTH_TOKEN_EXPIRY_SECONDS=${AUTH_TOKEN_EXPIRY_SECONDS:-28800}

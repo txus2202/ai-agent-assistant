@@ -36,7 +36,7 @@ const emit = defineEmits<{
 
 const hitlCardRef = ref<HTMLElement | null>(null)
 const isMobile = typeof window !== 'undefined' ? window.innerWidth < 768 : false
-const isCollapsed = ref(props.initialCollapsed !== null ? props.initialCollapsed : isMobile)
+const isCollapsed = ref(props.initialCollapsed ?? isMobile)
 
 watch(
   () => props.initialCollapsed,
@@ -81,7 +81,10 @@ const isSelected = (role: string) => props.selectedTargets.includes(role)
       <div
         class="flex items-center gap-2 select-none min-w-0"
         :class="{ 'cursor-pointer': collapsible }"
+        :role="collapsible ? 'button' : undefined"
+        :tabindex="collapsible ? 0 : undefined"
         @click="toggleCollapse"
+        @keydown.enter.space.prevent="toggleCollapse"
         title="Punto de control de decisión humana (HITL)"
       >
         <span class="w-2 h-2 rounded-full bg-neon-amber animate-pulse shrink-0"></span>

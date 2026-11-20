@@ -271,6 +271,30 @@ def _resolve_target_agents(agent_names: list[str], agent_catalog: IAgentCatalogR
     return resolved
 
 
+def _build_divert_hitl_event(current_targets: list[str], outputs: dict[str, str]) -> SupervisorEvent:
+    lead_agent = current_targets[0]
+    has_error = any(
+        any(marker in outputs.get(r, "") for marker in (FAILURE_MARKER, ERROR_MARKER))
+        for r in current_targets
+    )
+    hitl_metadata = {"checkpoint": f"after_divert_{lead_agent}", "agent": lead_agent}
+    if has_error:
+        hitl_metadata["error_recovery"] = "true"
+    combined_content = SECTION_SEPARATOR.join(outputs.get(r, "") for r in current_targets)
+    return SupervisorEvent(
+        type=EventType.HITL_REQUIRED,
+        role=lead_agent,
+        content=combined_content,
+        metadata=hitl_metadata,
+    )
+
+
+def _apply_divert_continuation(hitl: HITLResponse, state: DebateState, current_targets: list[str]) -> None:
+    state.target_agents = hitl.target_agents or current_targets
+    if hitl.feedback:
+        state.refinement = hitl.feedback
+
+
 async def _maybe_divert_to_targets(
     state: DebateState,
     run_role: RoleRunner,
@@ -300,22 +324,7 @@ async def _maybe_divert_to_targets(
         ):
             yield event
 
-        combined_content = SECTION_SEPARATOR.join(state.agent_outputs.get(r, "") for r in current_targets)
-        lead_agent = current_targets[0]
-        has_error = any(
-            any(marker in state.agent_outputs.get(r, "") for marker in (FAILURE_MARKER, ERROR_MARKER))
-            for r in current_targets
-        )
-        hitl_metadata = {"checkpoint": f"after_divert_{lead_agent}", "agent": lead_agent}
-        if has_error:
-            hitl_metadata["error_recovery"] = "true"
-
-        hitl_event = SupervisorEvent(
-            type=EventType.HITL_REQUIRED,
-            role=lead_agent,
-            content=combined_content,
-            metadata=hitl_metadata,
-        )
+        hitl_event = _build_divert_hitl_event(current_targets, state.agent_outputs)
         yield hitl_event
         hitl = await hitl_callback(hitl_event)
 
@@ -341,20 +350,7 @@ async def _maybe_divert_to_targets(
             )
             return
 
-        if hitl.decision == HITLDecision.DIVERT:
-            state.target_agents = hitl.target_agents or current_targets
-            if hitl.feedback:
-                state.refinement = hitl.feedback
-            continue
-
-        if hitl.decision == HITLDecision.REFINE:
-            state.refinement = hitl.feedback
-            state.target_agents = hitl.target_agents or current_targets
-            continue
-
-        if hitl.decision == HITLDecision.RETRY:
-            state.target_agents = hitl.target_agents or current_targets
-            continue
+        _apply_divert_continuation(hitl, state, current_targets)
 
     state.finish_early = True
     yield await _run_consolidation(
@@ -364,6 +360,62 @@ async def _maybe_divert_to_targets(
         supervisor_name=sup_agent_name,
         topology=active_topology,
     )
+
+
+def _resolve_role_llm_settings(
+    cfg: Any,
+    profile: SubAgentProfile,
+    default_provider: str,
+    default_model: str,
+) -> tuple[str, str]:
+    fallback_prov = getattr(profile, "default_provider", "") or default_provider
+    fallback_mod = getattr(profile, "default_model", "") or default_model
+    prov_name = cfg.provider if (cfg and getattr(cfg, "provider", None)) else fallback_prov
+    mod_name = cfg.model_name if (cfg and getattr(cfg, "model_name", None)) else fallback_mod
+    return prov_name, mod_name
+
+
+def _build_runner_kwargs(
+    config: Any,
+    chat_history: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {}
+    if chat_history:
+        kwargs["chat_history"] = chat_history
+    if config:
+        if getattr(config, "rag_top_k", None) is not None:
+            kwargs["rag_top_k"] = config.rag_top_k
+        if getattr(config, "rag_min_score", None) is not None:
+            kwargs["rag_min_score"] = config.rag_min_score
+    return kwargs
+
+
+def _record_agent_response_metadata(
+    state: DebateState,
+    agent_name: str,
+    profile_id: str,
+    resp: Any,
+    fallback_model: str,
+    req: str,
+) -> None:
+    in_tkn = resp.tokens.get("input", 0)
+    cached_tkn = resp.tokens.get("cached", 0)
+    if not cached_tkn and state.debate_history and req:
+        cached_tkn = min(in_tkn, max(1, len(req) // 4))
+    meta = {
+        "model": resp.model_name or fallback_model,
+        "prompt_tokens": str(in_tkn),
+        "completion_tokens": str(resp.tokens.get("output", 0)),
+        "total_tokens": str(resp.tokens.get("total", 0)),
+        "latency_seconds": str(resp.latency),
+        "tokens": str(resp.tokens.get("total", 0)),
+        "cached_tokens": str(cached_tkn),
+    }
+    state.agent_metadata[agent_name] = meta
+    state.agent_metadata[profile_id] = meta
+    state.agent_outputs[profile_id] = resp.content
+    state.agent_outputs[agent_name] = resp.content
+    state.debate_history.append({"role": "assistant", "name": agent_name, "content": resp.content})
 
 
 def _build_role_runner(
@@ -383,18 +435,11 @@ def _build_role_runner(
 
         def _resolve_role_sync() -> tuple[Any, str, ILLMProvider]:
             cfg = agent_config_repo.find_by_role(agent_name) or agent_config_repo.find_by_role(profile.id)
-            default_prov = getattr(profile, "default_provider", "") or default_provider
-            default_mod = getattr(profile, "default_model", "") or default_model
-            prov_name = cfg.provider if (cfg and cfg.provider) else default_prov
-            mod_name = cfg.model_name if (cfg and cfg.model_name) else default_mod
+            prov_name, mod_name = _resolve_role_llm_settings(cfg, profile, default_provider, default_model)
             return cfg, mod_name, llm_factory(prov_name)
 
         config, model_name, llm_provider = await asyncio.to_thread(_resolve_role_sync)
-        runner_kwargs: dict[str, Any] = {"chat_history": chat_history} if chat_history else {}
-        if config and getattr(config, "rag_top_k", None) is not None:
-            runner_kwargs["rag_top_k"] = config.rag_top_k
-        if config and getattr(config, "rag_min_score", None) is not None:
-            runner_kwargs["rag_min_score"] = config.rag_min_score
+        runner_kwargs = _build_runner_kwargs(config, chat_history)
 
         resp = await SubAgentRunner.run(
             role=agent_name,
@@ -406,24 +451,7 @@ def _build_role_runner(
             image_generator=image_generator,
             **runner_kwargs,
         )
-        in_tkn = resp.tokens.get("input", 0)
-        cached_tkn = resp.tokens.get("cached", 0)
-        if not cached_tkn and state.debate_history and req:
-            cached_tkn = min(in_tkn, max(1, len(req) // 4))
-        meta = {
-            "model": resp.model_name or model_name,
-            "prompt_tokens": str(in_tkn),
-            "completion_tokens": str(resp.tokens.get("output", 0)),
-            "total_tokens": str(resp.tokens.get("total", 0)),
-            "latency_seconds": str(resp.latency),
-            "tokens": str(resp.tokens.get("total", 0)),
-            "cached_tokens": str(cached_tkn),
-        }
-        state.agent_metadata[agent_name] = meta
-        state.agent_metadata[profile.id] = meta
-        state.agent_outputs[profile.id] = resp.content
-        state.agent_outputs[agent_name] = resp.content
-        state.debate_history.append({"role": "assistant", "name": agent_name, "content": resp.content})
+        _record_agent_response_metadata(state, agent_name, profile.id, resp, model_name, req)
         return agent_name, resp.content
 
     return run_role

@@ -53,9 +53,9 @@ async def execute_role_safely(
         logger.warning("Specialist role '%s' failed during execution", role, exc_info=True)
         try:
             profile = agent_catalog.get_profile(role) if agent_catalog is not None else None
-            agent_name = profile.display_name if profile is not None else str(role)
+            agent_name = profile.display_name if profile is not None else role
         except KeyError:
-            agent_name = str(role)
+            agent_name = role
         return agent_name, "", str(exc)
 
 

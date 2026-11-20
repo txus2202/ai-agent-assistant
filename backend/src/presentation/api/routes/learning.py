@@ -124,7 +124,7 @@ async def learn_session(
     if result.errors:
         raise HTTPException(status_code=400, detail="; ".join(result.errors))
 
-    generated_name = str(result.generated_file.name) if result.generated_file else ""
+    generated_name = result.generated_file.name if result.generated_file else ""
     return {
         "ok": True,
         "generated_file": generated_name,

@@ -63,6 +63,8 @@ describe('AppShell.vue', () => {
     expect(wrapper.find('[data-test="app-header"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="chat-panel"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="particle-orb"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="orchestration-footer"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="council-status-card"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Consejo en espera')
   })
 

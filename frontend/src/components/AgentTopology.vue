@@ -184,7 +184,10 @@ watch(
       </div>
 
       <!-- Orchestration Panel (Bottom Fixed, Height matches ChatPanel input container on desktop) -->
-      <div class="p-4 border-t border-space-800 bg-space-900 shrink-0 md:h-[162px] flex flex-col justify-center">
+      <div
+        data-test="orchestration-footer"
+        class="p-4 border-t border-space-800 bg-space-900 shrink-0 md:h-[162px] flex flex-col justify-center"
+      >
         <slot name="orchestration"></slot>
       </div>
     </template>

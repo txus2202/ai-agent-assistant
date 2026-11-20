@@ -242,8 +242,9 @@ async def _run_single_agent_mode(
     else:
         yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=target_name, content=content, metadata=meta)
     done_meta = {"metrics_reported": "true"}
-    if isinstance(meta, dict) and meta.get("model"):
-        done_meta["model"] = str(meta["model"])
+    model_val = meta.get("model") if isinstance(meta, dict) else None
+    if model_val:
+        done_meta["model"] = model_val
     yield SupervisorEvent(type=EventType.DONE, role=target_name, content=content, metadata=done_meta)
 
 

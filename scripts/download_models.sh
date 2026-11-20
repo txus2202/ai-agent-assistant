@@ -17,7 +17,7 @@ VOSK_FINAL_MDL_SHA256="ff9508e4db01d2e2375da3887973f94ef8057ee85411f4cb10a5c174c
 VOSK_README_SHA256="94132a6f5334701d8c0b4d25ef6890f74972909d8824c6c5974c41bca0542d88"
 
 VERIFY_ONLY=false
-if [ "${1:-}" = "--verify-only" ]; then
+if [[ "${1:-}" == "--verify-only" ]]; then
     VERIFY_ONLY=true
 fi
 
@@ -36,13 +36,13 @@ compute_sha256() {
 verify_sha256() {
     local file_path="$1"
     local expected="$2"
-    if [ ! -f "$file_path" ]; then
+    if [[ ! -f "$file_path" ]]; then
         echo "❌ Missing file for checksum verification: $file_path" >&2
         return 1
     fi
     local actual
     actual="$(compute_sha256 "$file_path")"
-    if [ "$actual" != "$expected" ]; then
+    if [[ "$actual" != "$expected" ]]; then
         echo "❌ SHA-256 mismatch for $file_path" >&2
         echo "   expected: $expected" >&2
         echo "   actual:   $actual" >&2
@@ -57,19 +57,19 @@ ensure_binary_model() {
     local expected_sha="$3"
     local tmp_file="${dest}.tmp"
 
-    if [ -f "$dest" ]; then
+    if [[ -f "$dest" ]]; then
         verify_sha256 "$dest" "$expected_sha"
         return 0
     fi
 
-    if [ "$VERIFY_ONLY" = true ]; then
+    if [[ "$VERIFY_ONLY" == true ]]; then
         echo "❌ Model missing in --verify-only mode: $dest" >&2
         return 1
     fi
 
     echo "Downloading $(basename "$dest") from $url..."
     rm -f "$tmp_file"
-    curl -fsSL -o "$tmp_file" "$url"
+    curl --proto '=https' --tlsv1.2 -fsSL -o "$tmp_file" "$url"
     if ! verify_sha256 "$tmp_file" "$expected_sha"; then
         rm -f "$tmp_file"
         return 1
@@ -92,18 +92,18 @@ VOSK_PARENT="$ROOT_DIR/backend/src/infrastructure/models/vosk"
 VOSK_DIR="$VOSK_PARENT/$VOSK_MODEL_NAME"
 mkdir -p "$VOSK_PARENT"
 
-if [ -d "$VOSK_DIR" ]; then
+if [[ -d "$VOSK_DIR" ]]; then
     verify_sha256 "$VOSK_DIR/am/final.mdl" "$VOSK_FINAL_MDL_SHA256"
     verify_sha256 "$VOSK_DIR/README" "$VOSK_README_SHA256"
 else
-    if [ "$VERIFY_ONLY" = true ]; then
+    if [[ "$VERIFY_ONLY" == true ]]; then
         echo "❌ Vosk model missing in --verify-only mode: $VOSK_DIR" >&2
         exit 1
     fi
     TMP_DIR="$(mktemp -d)"
     trap 'rm -rf "$TMP_DIR"' EXIT
     echo "Downloading ${VOSK_MODEL_NAME}.zip..."
-    curl -fsSL -o "$TMP_DIR/${VOSK_MODEL_NAME}.zip" "$VOSK_ZIP_URL"
+    curl --proto '=https' --tlsv1.2 -fsSL -o "$TMP_DIR/${VOSK_MODEL_NAME}.zip" "$VOSK_ZIP_URL"
     unzip -q "$TMP_DIR/${VOSK_MODEL_NAME}.zip" -d "$TMP_DIR"
     verify_sha256 "$TMP_DIR/$VOSK_MODEL_NAME/am/final.mdl" "$VOSK_FINAL_MDL_SHA256"
     verify_sha256 "$TMP_DIR/$VOSK_MODEL_NAME/README" "$VOSK_README_SHA256"

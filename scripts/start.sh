@@ -32,12 +32,13 @@ read_env_value() {
   local target_key="$1"
   local env_file="$2"
   local line raw_val
-  [ -f "$env_file" ] || return 0
-  while IFS= read -r line || [ -n "$line" ]; do
+  [[ -f "$env_file" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%%$'\r'}"
     line="${line#export }"
     case "$line" in
       ''|'#'*) continue ;;
+      *) ;;
     esac
     if [[ "$line" =~ ^[[:space:]]*${target_key}[[:space:]]*=(.*)$ ]]; then
       raw_val="${BASH_REMATCH[1]}"
@@ -59,35 +60,35 @@ echo "  🤖  Iniciando A.T.E.N.E.A. (AI Agent Assistant)"
 echo "=========================================================="
 
 # 1. Comprobar archivo de entorno
-if [ ! -f ".env" ]; then
-  if [ -f ".env.example" ]; then
+if [[ ! -f ".env" ]]; then
+  if [[ -f ".env.example" ]]; then
     echo "⚠️  No se encontró .env. Creando .env a partir de .env.example..."
     cp .env.example .env
   else
-    echo "❌ Error: No se encontró el archivo .env"
+    echo "❌ Error: No se encontró el archivo .env" >&2
     exit 1
   fi
 fi
 
 LANGFUSE_ENABLED="$(printf '%s' "$(read_env_value LANGFUSE_METRICS_ENABLED .env)" | tr '[:upper:]' '[:lower:]')"
-if [ -z "$LANGFUSE_ENABLED" ]; then
+if [[ -z "$LANGFUSE_ENABLED" ]]; then
   LANGFUSE_ENABLED="false"
 fi
 
 STARTED_LANGFUSE=false
-if [ "$WITH_LANGFUSE" = true ]; then
+if [[ "$WITH_LANGFUSE" == true ]]; then
   if ! command -v docker >/dev/null 2>&1; then
     echo "❌ Error: --with-langfuse requiere Docker instalado en PATH." >&2
     exit 1
   fi
-  if [ -z "$(docker compose --profile observability ps --status running -q langfuse-web 2>/dev/null || true)" ]; then
+  if [[ -z "$(docker compose --profile observability ps --status running -q langfuse-web 2>/dev/null || true)" ]]; then
     echo "📊 Arrancando pila Docker de Langfuse (--profile observability)..."
     docker compose --profile observability up -d langfuse-web langfuse-worker
     STARTED_LANGFUSE=true
   else
     echo "📊 Pila Docker de Langfuse ya activa; no se reiniciará ni detendrá al salir."
   fi
-elif [ "$LANGFUSE_ENABLED" = "true" ]; then
+elif [[ "$LANGFUSE_ENABLED" == "true" ]]; then
   echo "📊 LANGFUSE_METRICS_ENABLED=true en .env (ejecuta con --with-langfuse o 'docker compose --profile observability up -d' si necesitas arrancar Langfuse)."
 else
   echo "⚡ Observabilidad: LANGFUSE DESACTIVADO (Modo local ligero sin Docker)"
@@ -97,18 +98,18 @@ fi
 USE_UV=false
 if command -v uv >/dev/null 2>&1; then
   USE_UV=true
-  if [ ! -d "backend/.venv" ]; then
+  if [[ ! -d "backend/.venv" ]]; then
     echo "📦 Creando entorno virtual backend/.venv con uv sync --frozen --extra dev..."
     (cd backend && uv sync --frozen --extra dev --no-install-project)
   fi
-elif [ ! -d "backend/.venv" ]; then
-  echo "❌ Error: No se encontró backend/.venv ni 'uv' en PATH."
-  echo "   Instala uv y ejecuta: cd backend && uv sync --frozen --extra dev"
+elif [[ ! -d "backend/.venv" ]]; then
+  echo "❌ Error: No se encontró backend/.venv ni 'uv' en PATH." >&2
+  echo "   Instala uv y ejecuta: cd backend && uv sync --frozen --extra dev" >&2
   exit 1
 fi
 
 # 3. Comprobar node_modules en Frontend
-if [ ! -d "frontend/node_modules" ]; then
+if [[ ! -d "frontend/node_modules" ]]; then
   echo "📦 Instalando dependencias de frontend..."
   (cd frontend && npm ci --ignore-scripts)
 fi
@@ -120,15 +121,15 @@ FRONTEND_PID=""
 cleanup() {
   echo ""
   echo "🛑 Deteniendo servicios de Atenea..."
-  if [ -n "$BACKEND_PID" ]; then
+  if [[ -n "$BACKEND_PID" ]]; then
     kill "$BACKEND_PID" 2>/dev/null || true
   fi
-  if [ -n "$FRONTEND_PID" ]; then
+  if [[ -n "$FRONTEND_PID" ]]; then
     kill "$FRONTEND_PID" 2>/dev/null || true
   fi
   wait 2>/dev/null || true
 
-  if [ "$STARTED_LANGFUSE" = true ]; then
+  if [[ "$STARTED_LANGFUSE" == true ]]; then
     echo "🐳 Deteniendo contenedores Langfuse iniciados por start.sh..."
     docker compose --profile observability stop langfuse-web langfuse-worker clickhouse minio postgres redis 2>/dev/null || true
   fi
@@ -142,7 +143,7 @@ trap cleanup SIGINT SIGTERM EXIT
 echo "🚀 Iniciando Backend (FastAPI / Uvicorn en http://localhost:8000)..."
 (
   cd backend
-  if [ "$USE_UV" = true ]; then
+  if [[ "$USE_UV" == true ]]; then
     exec uv run --no-sync uvicorn src.presentation.api.app:app --reload --host 0.0.0.0 --port 8000
   else
     exec .venv/bin/uvicorn src.presentation.api.app:app --reload --host 0.0.0.0 --port 8000
@@ -164,7 +165,7 @@ for _ in $(seq 1 60); do
   sleep 0.5
 done
 
-if [ "$HEALTH_READY" != true ]; then
+if [[ "$HEALTH_READY" != true ]]; then
   echo "❌ Timeout esperando http://127.0.0.1:8000/health" >&2
   exit 1
 fi
@@ -181,7 +182,7 @@ echo ""
 echo "✨ Atenea está lista:"
 echo "   - Frontend UI:        http://localhost:5173"
 echo "   - Backend API Docs:   http://localhost:8000/docs"
-if [ "$LANGFUSE_ENABLED" = "true" ] || [ "$WITH_LANGFUSE" = true ]; then
+if [[ "$LANGFUSE_ENABLED" == "true" ]] || [[ "$WITH_LANGFUSE" == true ]]; then
   echo "   - Langfuse Dashboard: http://localhost:3000"
 fi
 echo ""

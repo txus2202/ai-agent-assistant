@@ -87,7 +87,7 @@ class ImageGenerationService(IImageGenerator):
     @staticmethod
     def normalize_provider_name(raw: str | None) -> str | None:
         """Normalize raw provider configuration to canonical provider id or None."""
-        val = str(raw or "").strip().lower()
+        val = (raw or "").strip().lower()
         if val in ("imagen", "google", "imagen3", "imagen-3", "imagen-3.0"):
             return "imagen"
         return None

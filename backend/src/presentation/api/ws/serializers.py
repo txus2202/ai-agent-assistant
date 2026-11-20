@@ -7,7 +7,6 @@ and raw dict → HITLResponse (from client JSON).
 from __future__ import annotations
 
 from src.domain.agents.supervisor_events import (
-    EventType,
     HITLDecision,
     HITLResponse,
     SupervisorEvent,
@@ -16,10 +15,10 @@ from src.domain.agents.supervisor_events import (
 
 def event_to_dict(event: SupervisorEvent) -> dict:
     """Serialize a SupervisorEvent to a JSON-safe dict for WebSocket transmission."""
-    if hasattr(event.role, "value"):
-        role_val = event.role.value
-    else:
+    if event.role is None or isinstance(event.role, str):
         role_val = event.role
+    else:
+        role_val = event.role.value
     return {
         "type": event.type.value,
         "role": role_val,
@@ -37,7 +36,11 @@ def dict_to_hitl_response(raw: dict) -> HITLResponse:
 
     Falls back to APPROVE on invalid decision (avoids WebSocket deadlock).
     """
+    raw_type = str(raw.get("type", "")).lower()
     raw_decision = str(raw.get("decision", "approve")).lower()
+    if raw_type in ("cancel", "abort") or raw_decision in ("cancel", "abort"):
+        raise ValueError("Cancellation payload is not a HITL decision")
+
     try:
         decision = HITLDecision(raw_decision)
     except ValueError:

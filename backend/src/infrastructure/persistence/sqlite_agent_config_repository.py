@@ -1,10 +1,11 @@
 import sqlite3
-from contextlib import contextmanager
-from typing import Generator, List, Optional
+from typing import List, Optional
 
 from src.domain.exceptions import RepositoryError
+from src.domain.ports.agent_catalog_repository import IAgentCatalogRepository
 from src.domain.ports.agent_config_repository import IAgentConfigRepository
 from src.domain.value_objects.agent_config import AgentConfig
+from src.infrastructure.persistence.sqlite_base import SqliteConnectionManager
 
 _CREATE_AGENT_CONFIGS_TABLE = """
     CREATE TABLE IF NOT EXISTS agent_configs (
@@ -29,9 +30,14 @@ _UPSERT_AGENT_CONFIG = """
 """
 
 
-class SqliteAgentConfigRepository(IAgentConfigRepository):
-    def __init__(self, db_path: str) -> None:
-        self._db_path = db_path
+class SqliteAgentConfigRepository(IAgentConfigRepository, SqliteConnectionManager):
+    def __init__(
+        self,
+        db_path: str,
+        agent_catalog: Optional[IAgentCatalogRepository] = None,
+    ) -> None:
+        SqliteConnectionManager.__init__(self, db_path)
+        self._agent_catalog = agent_catalog
         self._init_schema()
 
     def save(self, config: AgentConfig) -> None:
@@ -66,16 +72,16 @@ class SqliteAgentConfigRepository(IAgentConfigRepository):
 
         return self._row_to_config(row) if row else None
 
-    @staticmethod
-    def _candidate_roles(role: str) -> List[str]:
+    def _candidate_roles(self, role: str) -> List[str]:
         candidates = [role]
+        if self._agent_catalog is None:
+            return candidates
         try:
-            from src.domain.agents.sub_agent_profiles import get_profile
-            profile = get_profile(role)
+            profile = self._agent_catalog.get_profile(role)
             for alt in (profile.display_name, profile.id):
                 if alt not in candidates:
                     candidates.append(alt)
-        except Exception:
+        except KeyError:
             pass
         return candidates
 
@@ -183,19 +189,6 @@ class SqliteAgentConfigRepository(IAgentConfigRepository):
                     conn.execute("ALTER TABLE agent_configs ADD COLUMN rag_min_score REAL DEFAULT NULL")
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to initialise schema: {exc}") from exc
-
-    @contextmanager
-    def _connection(self) -> Generator[sqlite3.Connection, None, None]:
-        conn = sqlite3.connect(self._db_path)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
 
     @staticmethod
     def _row_to_config(row: sqlite3.Row) -> AgentConfig:

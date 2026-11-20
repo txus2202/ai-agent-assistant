@@ -1,37 +1,33 @@
 """
-RED Tests — LearnFromSource Service (Feature: feature_learning_agent.md)
+Tests — LearnFromSource Service (Feature: feature_learning_agent.md)
 
 Layer: Application
 
 Strategy:
-  - Extractors are mocked via monkeypatch at the module level.
+  - Source extractors and document parser are injected via domain ports (ISourceExtractor, IDocumentParser).
   - LLM provider is a FakeLLMProvider returning deterministic .md content.
   - InMemoryDocumentStore is used — no ChromaDB needed.
   - tmp_path is the vault_root.
-
-Scenarios covered:
-  1. PDF source generates a valid .md file
-  2. URL source generates a valid .md file
-  3. Generated .md is immediately queryable via RAG
-  6. LearnResult reports errors without raising when extraction fails
-  7. Re-learning the same source is idempotent
-  + additional edge cases
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
+from src.application.services.learn_from_source import (
+    LearnFromSource,
+    SourceType,
+    _extract_clean_file_tags,
+)
+from src.application.services.query_vault import QueryVault
 from src.domain.exceptions import ExtractionError, LLMProviderError
 from src.domain.ports.llm_provider import ILLMProvider
+from src.domain.ports.source_extractor import ISourceExtractor
+from src.domain.value_objects.document_chunk import DocumentChunk
 from src.infrastructure.rag.in_memory_document_store import InMemoryDocumentStore
 
-
-# ---------------------------------------------------------------------------
-# Fixtures & helpers
-# ---------------------------------------------------------------------------
 
 _SAMPLE_MD = """\
 ---
@@ -55,7 +51,7 @@ The infrastructure layer adapts external services to domain ports.
 
 
 class FakeLLM(ILLMProvider):
-    def list_models(self) -> list[dict[str, str]]:
+    def list_models(self, probe: bool = True) -> list[dict[str, str]]:
         return [{"id": "test", "name": "Test"}]
 
     def complete(self, prompt: str, model_name: str) -> str:
@@ -63,50 +59,104 @@ class FakeLLM(ILLMProvider):
 
 
 class FailingLLM(ILLMProvider):
-    def list_models(self) -> list[dict[str, str]]:
+    def list_models(self, probe: bool = True) -> list[dict[str, str]]:
         return [{"id": "test", "name": "Test"}]
 
     def complete(self, prompt: str, model_name: str) -> str:
         raise LLMProviderError("LLM unavailable")
 
 
-def _mock_url_extractor(monkeypatch, text: str = "Some raw content from the web."):
-    """Replace URLExtractor.extract with a mock that returns `text`."""
-    from src.application.services import learn_from_source as _mod
-    mock_cls = MagicMock()
-    mock_cls.extract.return_value = text
-    monkeypatch.setattr(_mod, "URLExtractor", mock_cls)
-    return mock_cls
+class StubExtractor(ISourceExtractor):
+    def __init__(self, content: str | Exception) -> None:
+        self._content = content
+
+    def extract(
+        self,
+        source: str | Path,
+        /,
+        *,
+        llm_provider: ILLMProvider | None = None,
+        model_name: str = "",
+    ) -> str:
+        if isinstance(self._content, Exception):
+            raise self._content
+        return self._content
 
 
-def _mock_pdf_extractor(monkeypatch, text: str = "Some raw content from a PDF."):
-    """Replace PDFExtractor.extract with a mock that returns `text`."""
-    from src.application.services import learn_from_source as _mod
-    mock_cls = MagicMock()
-    mock_cls.extract.return_value = text
-    monkeypatch.setattr(_mod, "PDFExtractor", mock_cls)
-    return mock_cls
+class StubMarkdownExtractor(ISourceExtractor):
+    def extract(
+        self,
+        source: str | Path,
+        /,
+        *,
+        llm_provider: ILLMProvider | None = None,
+        model_name: str = "",
+    ) -> str:
+        return Path(source).read_text(encoding="utf-8")
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
+class SimpleStubParser:
+    """Minimal pure IDocumentParser test double splitting sections by H2 headers."""
+
+    def parse(self, file_path: Path, vault_root: Path) -> list[DocumentChunk]:
+        text = file_path.read_text(encoding="utf-8")
+        rel = file_path.relative_to(vault_root).as_posix()
+        chunks: list[DocumentChunk] = []
+        sections = text.split("## ")
+        for idx, section in enumerate(sections):
+            body = section.strip()
+            if not body:
+                continue
+            heading = "" if idx == 0 else body.splitlines()[0].strip()
+            chunks.append(
+                DocumentChunk(
+                    id=f"{rel}#{idx}",
+                    content=body,
+                    file_path=rel,
+                    heading=heading,
+                    metadata={},
+                    score=None,
+                )
+            )
+        return chunks
+
+
+def _default_extractors(
+    url_text: str = "Some raw content from the web.",
+    pdf_text: str = "Some raw content from a PDF.",
+    image_text: str = "# Architecture\nComponent A -> B",
+) -> dict[SourceType, ISourceExtractor]:
+    return {
+        SourceType.URL: StubExtractor(url_text),
+        SourceType.PDF: StubExtractor(pdf_text),
+        SourceType.MARKDOWN: StubMarkdownExtractor(),
+        SourceType.IMAGE: StubExtractor(image_text),
+    }
+
 
 class TestLearnFromSource:
-    def test_url_source_creates_md_file_in_learned_directory(
-        self, tmp_path: Path, monkeypatch
-    ):
-        from src.application.services.learn_from_source import LearnFromSource, SourceType
-
-        _mock_url_extractor(monkeypatch)
+    def test_requires_injected_document_parser(self, tmp_path: Path):
+        llm = FakeLLM()
         store = InMemoryDocumentStore()
+        with pytest.raises(ValueError, match="document_parser"):
+            LearnFromSource.run(
+                source="Raw text",
+                source_type=SourceType.TEXT,
+                llm_provider=llm,
+                document_store=store,
+                vault_root=tmp_path,
+            )
 
+    def test_url_source_creates_md_file_in_learned_directory(self, tmp_path: Path):
+        store = InMemoryDocumentStore()
         result = LearnFromSource.run(
             source="https://example.com/article",
             source_type=SourceType.URL,
             llm_provider=FakeLLM(),
             document_store=store,
             vault_root=tmp_path,
+            extractors=_default_extractors(),
+            document_parser=SimpleStubParser(),
         )
 
         assert result.generated_file is not None
@@ -114,10 +164,7 @@ class TestLearnFromSource:
         assert result.generated_file.parent.name == "learned"
         assert result.generated_file.suffix == ".md"
 
-    def test_pdf_source_creates_md_file(self, tmp_path: Path, monkeypatch):
-        from src.application.services.learn_from_source import LearnFromSource, SourceType
-
-        _mock_pdf_extractor(monkeypatch)
+    def test_pdf_source_creates_md_file(self, tmp_path: Path):
         store = InMemoryDocumentStore()
         pdf_path = tmp_path / "test.pdf"
         pdf_path.write_bytes(b"%PDF-1.4 fake")
@@ -128,47 +175,43 @@ class TestLearnFromSource:
             llm_provider=FakeLLM(),
             document_store=store,
             vault_root=tmp_path,
+            extractors=_default_extractors(),
+            document_parser=SimpleStubParser(),
         )
 
         assert result.generated_file is not None
         assert result.generated_file.exists()
 
-    def test_generated_md_has_yaml_frontmatter(self, tmp_path: Path, monkeypatch):
-        from src.application.services.learn_from_source import LearnFromSource, SourceType
-
-        _mock_url_extractor(monkeypatch)
+    def test_generated_md_has_yaml_frontmatter(self, tmp_path: Path):
         result = LearnFromSource.run(
             source="https://example.com",
             source_type=SourceType.URL,
             llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
             vault_root=tmp_path,
+            extractors=_default_extractors(),
+            document_parser=SimpleStubParser(),
         )
 
         content = result.generated_file.read_text(encoding="utf-8")
         assert content.startswith("---")
 
-    def test_generated_md_has_at_least_one_h2_section(self, tmp_path: Path, monkeypatch):
-        from src.application.services.learn_from_source import LearnFromSource, SourceType
-
-        _mock_url_extractor(monkeypatch)
+    def test_generated_md_has_at_least_one_h2_section(self, tmp_path: Path):
         result = LearnFromSource.run(
             source="https://example.com",
             source_type=SourceType.URL,
             llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
             vault_root=tmp_path,
+            extractors=_default_extractors(),
+            document_parser=SimpleStubParser(),
         )
 
         content = result.generated_file.read_text(encoding="utf-8")
         assert "## " in content
 
-    def test_generated_md_is_ingested_into_store(self, tmp_path: Path, monkeypatch):
+    def test_generated_md_is_ingested_into_store(self, tmp_path: Path):
         """Scenario 3: generated .md is queryable via RAG after run()."""
-        from src.application.services.learn_from_source import LearnFromSource, SourceType
-        from src.application.services.query_vault import QueryVault
-
-        _mock_url_extractor(monkeypatch)
         store = InMemoryDocumentStore()
 
         LearnFromSource.run(
@@ -177,6 +220,8 @@ class TestLearnFromSource:
             llm_provider=FakeLLM(),
             document_store=store,
             vault_root=tmp_path,
+            extractors=_default_extractors(),
+            document_parser=SimpleStubParser(),
         )
 
         results = QueryVault.run(
@@ -185,16 +230,10 @@ class TestLearnFromSource:
         )
         assert len(results) >= 1
 
-    def test_extraction_failure_returns_result_with_errors_not_raises(
-        self, tmp_path: Path, monkeypatch
-    ):
+    def test_extraction_failure_returns_result_with_errors_not_raises(self, tmp_path: Path):
         """Scenario 6: errors in LearnResult, no exception raised."""
-        from src.application.services import learn_from_source as _mod
-        from src.application.services.learn_from_source import LearnFromSource, SourceType
-
-        failing_extractor = MagicMock()
-        failing_extractor.extract.side_effect = ExtractionError("corrupt PDF")
-        monkeypatch.setattr(_mod, "PDFExtractor", failing_extractor)
+        extractors = _default_extractors()
+        extractors[SourceType.PDF] = StubExtractor(ExtractionError("corrupt PDF"))
 
         result = LearnFromSource.run(
             source="/tmp/bad.pdf",
@@ -202,36 +241,47 @@ class TestLearnFromSource:
             llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
             vault_root=tmp_path,
+            extractors=extractors,
+            document_parser=SimpleStubParser(),
         )
 
         assert len(result.errors) > 0
         assert result.generated_file is None
         assert "corrupt PDF" in result.errors[0]
 
-    def test_llm_failure_returns_result_with_errors_not_raises(
-        self, tmp_path: Path, monkeypatch
-    ):
-        from src.application.services.learn_from_source import LearnFromSource, SourceType
+    def test_missing_extractor_returns_error_not_raises(self, tmp_path: Path):
+        result = LearnFromSource.run(
+            source="https://example.com",
+            source_type=SourceType.URL,
+            llm_provider=FakeLLM(),
+            document_store=InMemoryDocumentStore(),
+            vault_root=tmp_path,
+            extractors={},
+            document_parser=SimpleStubParser(),
+        )
 
-        _mock_url_extractor(monkeypatch)
+        assert len(result.errors) > 0
+        assert result.generated_file is None
 
+    def test_llm_failure_returns_result_with_errors_not_raises(self, tmp_path: Path):
         result = LearnFromSource.run(
             source="https://example.com",
             source_type=SourceType.URL,
             llm_provider=FailingLLM(),
             document_store=InMemoryDocumentStore(),
             vault_root=tmp_path,
+            extractors=_default_extractors(),
+            document_parser=SimpleStubParser(),
         )
 
         assert len(result.errors) > 0
         assert result.generated_file is None
 
-    def test_idempotency_same_source_overwrites_file(self, tmp_path: Path, monkeypatch):
-        """Scenario 7: running twice with same source → single .md file."""
-        from src.application.services.learn_from_source import LearnFromSource, SourceType
-
-        _mock_url_extractor(monkeypatch)
+    def test_idempotency_same_source_overwrites_file(self, tmp_path: Path):
+        """Scenario 7: running twice with same source -> single .md file."""
         store = InMemoryDocumentStore()
+        extractors = _default_extractors()
+        parser = SimpleStubParser()
 
         r1 = LearnFromSource.run(
             source="https://example.com/article",
@@ -239,6 +289,8 @@ class TestLearnFromSource:
             llm_provider=FakeLLM(),
             document_store=store,
             vault_root=tmp_path,
+            extractors=extractors,
+            document_parser=parser,
         )
         r2 = LearnFromSource.run(
             source="https://example.com/article",
@@ -246,49 +298,42 @@ class TestLearnFromSource:
             llm_provider=FakeLLM(),
             document_store=store,
             vault_root=tmp_path,
+            extractors=extractors,
+            document_parser=parser,
         )
 
         learned_files = list((tmp_path / "learned").glob("*.md"))
         assert len(learned_files) == 1
         assert r1.generated_file == r2.generated_file
 
-    def test_learn_result_has_zero_errors_on_success(self, tmp_path: Path, monkeypatch):
-        from src.application.services.learn_from_source import LearnFromSource, SourceType
-
-        _mock_url_extractor(monkeypatch)
-
+    def test_learn_result_has_zero_errors_on_success(self, tmp_path: Path):
         result = LearnFromSource.run(
             source="https://example.com",
             source_type=SourceType.URL,
             llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
             vault_root=tmp_path,
+            extractors=_default_extractors(),
+            document_parser=SimpleStubParser(),
         )
 
         assert result.errors == []
         assert result.source == "https://example.com"
 
-    def test_filename_contains_date_prefix(self, tmp_path: Path, monkeypatch):
-        from src.application.services.learn_from_source import LearnFromSource, SourceType
-        import re
-
-        _mock_url_extractor(monkeypatch)
-
+    def test_filename_contains_date_prefix(self, tmp_path: Path):
         result = LearnFromSource.run(
             source="https://example.com",
             source_type=SourceType.URL,
             llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
             vault_root=tmp_path,
+            extractors=_default_extractors(),
+            document_parser=SimpleStubParser(),
         )
 
-        # Filename must match YYYY-MM-DD_*.md
         assert re.match(r"\d{4}-\d{2}-\d{2}_", result.generated_file.name)
 
-    def test_learn_from_markdown_source(self, tmp_path: Path, monkeypatch):
-        from src.application.services.learn_from_source import LearnFromSource, SourceType
-        from src.infrastructure.learning.markdown_extractor import MarkdownExtractor
-
+    def test_learn_from_markdown_source(self, tmp_path: Path):
         md_file = tmp_path / "raw.md"
         md_file.write_text("# Raw notes\nContent", encoding="utf-8")
 
@@ -298,20 +343,17 @@ class TestLearnFromSource:
             llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
             vault_root=tmp_path,
+            extractors=_default_extractors(),
+            document_parser=SimpleStubParser(),
         )
 
         assert result.errors == []
         assert result.generated_file is not None
         assert result.generated_file.exists()
 
-    def test_learn_from_image_source(self, tmp_path: Path, monkeypatch):
-        from src.application.services.learn_from_source import LearnFromSource, SourceType
-        from src.infrastructure.learning.image_extractor import ImageExtractor
-
+    def test_learn_from_image_source(self, tmp_path: Path):
         img_file = tmp_path / "diag.png"
         img_file.write_bytes(b"fakebytes")
-
-        monkeypatch.setattr(ImageExtractor, "extract", lambda path, llm, **kwargs: "# Architecture\nComponent A -> B")
 
         result = LearnFromSource.run(
             source=str(img_file),
@@ -319,6 +361,8 @@ class TestLearnFromSource:
             llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
             vault_root=tmp_path,
+            extractors=_default_extractors(),
+            document_parser=SimpleStubParser(),
         )
 
         assert result.errors == []
@@ -326,28 +370,22 @@ class TestLearnFromSource:
         assert result.generated_file.exists()
 
     def test_learn_from_text_source(self, tmp_path: Path):
-        from src.application.services.learn_from_source import LearnFromSource, SourceType
-
         result = LearnFromSource.run(
             source="Aprende esto: El patrón CQRS separa comandos de consultas.",
             source_type=SourceType.TEXT,
             llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
             vault_root=tmp_path,
+            document_parser=SimpleStubParser(),
         )
 
         assert result.errors == []
         assert result.generated_file is not None
         assert result.generated_file.exists()
 
-    def test_learn_from_source_includes_filename_in_tags(self, tmp_path: Path, monkeypatch):
-        from src.application.services.learn_from_source import LearnFromSource, SourceType
-        from src.infrastructure.learning.markdown_extractor import MarkdownExtractor
-
+    def test_learn_from_source_includes_filename_in_tags(self, tmp_path: Path):
         md_file = tmp_path / "guia-arquitectura-distribuida.md"
         md_file.write_text("# Guía Técnica\nContenido detallado.", encoding="utf-8")
-
-        monkeypatch.setattr(MarkdownExtractor, "extract", lambda p: p.read_text(encoding="utf-8"))
 
         result = LearnFromSource.run(
             source=str(md_file),
@@ -355,19 +393,18 @@ class TestLearnFromSource:
             llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
             vault_root=tmp_path,
+            extractors=_default_extractors(),
+            document_parser=SimpleStubParser(),
         )
 
         assert result.errors == []
         assert result.generated_file is not None
         content = result.generated_file.read_text(encoding="utf-8")
 
-        # Verifica que el nombre del archivo y su stem estén en los tags
         assert "guia-arquitectura-distribuida.md" in content
         assert "guia-arquitectura-distribuida" in content
 
     def test_extract_clean_file_tags_filters_uuid(self):
-        from src.application.services.learn_from_source import _extract_clean_file_tags
-
         uuid_path = Path("/tmp/atenea_uploads/12535bde-9d79-4573-a805-05cd3812847e.jpg")
         assert _extract_clean_file_tags(uuid_path) == []
 
@@ -377,9 +414,6 @@ class TestLearnFromSource:
         assert "diagrama_arquitectura" in tags
 
     def test_learn_from_source_preserves_inferred_tags_and_user_tags(self, tmp_path: Path):
-        from src.application.services.learn_from_source import LearnFromSource, SourceType
-
-        # FakeLLM returns _SAMPLE_MD which has tags: [python, architecture]
         result = LearnFromSource.run(
             source="Texto sobre microservicios y mensajería.",
             source_type=SourceType.TEXT,
@@ -387,29 +421,25 @@ class TestLearnFromSource:
             document_store=InMemoryDocumentStore(),
             vault_root=tmp_path,
             tags=["#atenea", "proyecto", "tfm"],
+            document_parser=SimpleStubParser(),
         )
 
         assert result.errors == []
         assert result.generated_file is not None
         content = result.generated_file.read_text(encoding="utf-8")
 
-        # Inferred tags from LLM must be preserved
         assert "python" in content
         assert "architecture" in content
-        # User requested tags must also be included
         assert "atenea" in content
         assert "proyecto" in content
         assert "tfm" in content
 
     def test_learn_from_source_preserves_mermaid_diagrams(self, tmp_path: Path):
-        from src.application.services.learn_from_source import LearnFromSource, SourceType
-
         class MermaidLLM(ILLMProvider):
-            def list_models(self) -> list[dict[str, str]]:
+            def list_models(self, probe: bool = True) -> list[dict[str, str]]:
                 return [{"id": "test", "name": "Test"}]
 
             def complete(self, prompt: str, model_name: str) -> str:
-                # Check system prompt includes mermaid preservation rule
                 assert "mermaid" in prompt.lower()
                 return (
                     "---\ntype: note\ntags: [diagram, architecture]\n---\n\n"
@@ -423,6 +453,7 @@ class TestLearnFromSource:
             llm_provider=MermaidLLM(),
             document_store=InMemoryDocumentStore(),
             vault_root=tmp_path,
+            document_parser=SimpleStubParser(),
         )
 
         assert result.errors == []
@@ -432,10 +463,8 @@ class TestLearnFromSource:
         assert "A[Frontend] --> B[Backend]" in content
 
     def test_learn_from_source_with_custom_target_domain(self, tmp_path: Path):
-        from src.application.services.learn_from_source import LearnFromSource, SourceType
-
         class MockLLM(ILLMProvider):
-            def list_models(self) -> list[dict[str, str]]:
+            def list_models(self, probe: bool = True) -> list[dict[str, str]]:
                 return [{"id": "test", "name": "Test"}]
 
             def complete(self, prompt: str, model_name: str) -> str:
@@ -451,6 +480,7 @@ class TestLearnFromSource:
             document_store=InMemoryDocumentStore(),
             vault_root=tmp_path,
             target_domain="01_enterprise_architecture/guidelines",
+            document_parser=SimpleStubParser(),
         )
 
         assert result.errors == []
@@ -459,8 +489,3 @@ class TestLearnFromSource:
         assert result.generated_file.exists()
         content = result.generated_file.read_text(encoding="utf-8")
         assert "domain: 01_enterprise_architecture/guidelines" in content
-
-
-
-
-

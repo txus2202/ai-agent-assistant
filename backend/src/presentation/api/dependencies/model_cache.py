@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from src.domain.ports.model_cache_port import IModelCacheRepository
+from src.domain.ports.model_cache_repository import IModelCacheRepository
 from src.infrastructure.persistence.sqlite_model_cache_repository import SqliteModelCacheRepository
 from src.presentation.api.config import get_settings
 

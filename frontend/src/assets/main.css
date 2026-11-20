@@ -26,6 +26,10 @@
 @custom-variant dark (&:is(.dark *));
 
 @layer base {
+  html {
+    color-scheme: dark;
+  }
+
   html,
   body {
     height: 100%;
@@ -76,6 +80,7 @@
    A.T.E.N.E.A - High-Contrast Cyber Light Theme Design
    ========================================================================== */
 html.light {
+  color-scheme: light;
   --color-space-950: #edf3f6; /* Soft tech workspace background */
   --color-space-900: #f4f8fa; /* Sidebar / panel background */
   --color-space-850: #ffffff; /* Card / input elevated surfaces */
@@ -389,11 +394,17 @@ html.light [data-test="agent-description"] {
   color: #334155;
 }
 
-/* Technical Council Orchestration Container */
-html.light .bg-space-950\/60 {
-  background-color: #f8fafc;
+/* Technical Council Orchestration Container (matches left composer footer in Light Mode) */
+html.light [data-test="orchestration-footer"].bg-space-900 {
+  background-color: #f4f8fa;
+  border-top-color: #d1dfe6;
+}
+html.light .bg-space-950\/60,
+html.light [data-test="council-status-card"] {
+  background-color: #ffffff;
   border-color: #cbd5e1;
-  color: #334155;
+  color: #0f172a;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 /* Chat text input and search inputs */
@@ -465,3 +476,13 @@ html.light .glow-red    { box-shadow: 0 2px 10px -2px rgba(185,28,28,0.3); }
 html.light .glow-purple { box-shadow: 0 2px 10px -2px rgba(126,34,206,0.3); }
 html.light .glow-orange { box-shadow: 0 2px 10px -2px rgba(194,65,12,0.3); }
 html.light .glow-darkblue { box-shadow: 0 2px 10px -2px rgba(29,78,216,0.3); }
+
+/* Native top-layer modal dialogs: prevent background scroll chaining */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: transparent;
+}

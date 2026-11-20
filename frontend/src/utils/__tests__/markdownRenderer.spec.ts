@@ -52,7 +52,7 @@ describe('markdownRenderer.ts', () => {
     const md = '> Esta es una cita importante.\n\n```python\ndef saludo():\n    return "hola"\n```'
     const html = renderMarkdownToHtml(md)
     expect(html).toContain('<blockquote class="doc-blockquote">')
-    expect(html).toContain('<pre class="doc-code-block"><code class="language-python">def saludo():\n    return &quot;hola&quot;</code></pre>')
+    expect(html).toContain('<pre class="doc-code-block"><code class="language-python">def saludo():\n    return "hola"</code></pre>')
   })
 
   it('renders markdown tables correctly', () => {
@@ -77,21 +77,24 @@ describe('markdownRenderer.ts', () => {
     expect(removeSpy).toHaveBeenCalled()
   })
 
-  it('opens a print window when exporting to PDF', () => {
+  it('opens a print window and builds safe DOM when exporting to PDF', () => {
     const printMock = vi.fn()
     const focusMock = vi.fn()
+    const printDoc = document.implementation.createHTMLDocument('')
     const openMock = vi.spyOn(window, 'open').mockReturnValue({
-      document: {
-        documentElement: { innerHTML: '' },
-      },
+      document: printDoc,
       print: printMock,
       focus: focusMock,
     } as unknown as Window)
 
-    exportDocumentToPdf('# Reporte de Arquitectura\nTexto', 'Reporte de Arquitectura')
+    exportDocumentToPdf('# Reporte de Arquitectura\n<script>alert(1)</script>Texto', 'Título <script>xss</script>')
 
     expect(openMock).toHaveBeenCalled()
     expect(printMock).toHaveBeenCalled()
+    expect(printDoc.title).toBe('Título <script>xss</script>')
+    expect(printDoc.querySelector('main script')).toBeNull()
+    expect(printDoc.querySelector('h1.doc-h1')?.textContent).toBe('Reporte de Arquitectura')
+    expect(printDoc.querySelector('.doc-footer')).not.toBeNull()
   })
 })
 

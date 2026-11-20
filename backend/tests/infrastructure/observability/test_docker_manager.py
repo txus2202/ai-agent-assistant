@@ -3,7 +3,6 @@ Unit tests for DockerObservabilityManager.
 """
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-import pytest
 
 from src.infrastructure.observability.docker_manager import DockerObservabilityManager
 

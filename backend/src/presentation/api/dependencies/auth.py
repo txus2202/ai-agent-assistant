@@ -5,6 +5,7 @@ from src.application.services.auth_service import AuthService
 from src.domain.entities.user import User
 from src.domain.ports.agent_config_repository import IAgentConfigRepository
 from src.domain.ports.debate_repository import IDebateRepository
+from src.domain.ports.user_repository import IUserRepository
 from src.infrastructure.persistence.sqlite_agent_config_repository import SqliteAgentConfigRepository
 from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
 from src.infrastructure.persistence.sqlite_user_repository import SQLiteUserRepository
@@ -12,6 +13,7 @@ from src.infrastructure.persistence.postgres_user_repository import PostgreSQLUs
 from src.infrastructure.security.argon2_hasher import Argon2idPasswordHasher
 from src.infrastructure.security.jwt_token_service import JwtTokenService
 from src.presentation.api.config import Settings, get_settings
+from src.presentation.api.dependencies.agents import build_agent_catalog_repository
 
 from starlette.requests import HTTPConnection
 
@@ -27,7 +29,10 @@ def get_debate_repository(settings: Settings = Depends(get_settings)) -> IDebate
 
 def get_agent_config_repository(settings: Settings = Depends(get_settings)) -> IAgentConfigRepository:
     """Centralized dependency provider for IAgentConfigRepository."""
-    return SqliteAgentConfigRepository(db_path=str(settings.sqlite_db_path))
+    return SqliteAgentConfigRepository(
+        db_path=str(settings.sqlite_db_path),
+        agent_catalog=build_agent_catalog_repository(settings),
+    )
 
 
 def get_auth_service(connection: HTTPConnection) -> AuthService:
@@ -40,6 +45,7 @@ def get_auth_service(connection: HTTPConnection) -> AuthService:
     if _auth_service_instance is None:
         settings = get_settings()
         db_url = getattr(settings, "database_url", "")
+        user_repo: IUserRepository
         if db_url and db_url.startswith(("postgres://", "postgresql://")):
             # PostgreSQL pool injected from lifespan
             pg_pool = getattr(app_state, "db_pool", None)

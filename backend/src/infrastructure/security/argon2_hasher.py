@@ -1,6 +1,6 @@
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, InvalidHashError
-from src.domain.ports.password_hasher_port import IPasswordHasher
+from src.domain.ports.password_hasher import IPasswordHasher
 
 
 MAX_PASSWORD_LENGTH = 128

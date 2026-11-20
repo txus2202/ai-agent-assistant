@@ -11,14 +11,32 @@ API key resolution order:
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal
 
 from src.domain.exceptions import LLMProviderError
-from src.domain.ports.llm_provider import ILLMProvider
+from src.domain.ports.llm_provider import ILLMProvider, LLMCompletion
+from src.infrastructure.llm.usage_tracking import UsageTrackingMixin, build_usage
+
+if TYPE_CHECKING:
+    from anthropic.types import Base64ImageSourceParam, ImageBlockParam, MessageParam, TextBlockParam
 
 _DEFAULT_MAX_TOKENS = 4096
+_DEFAULT_IMAGE_MIME_TYPE: Literal["image/jpeg"] = "image/jpeg"
+_SUPPORTED_IMAGE_MIME_TYPES: dict[
+    str,
+    Literal["image/jpeg", "image/png", "image/gif", "image/webp"],
+] = {
+    _DEFAULT_IMAGE_MIME_TYPE: _DEFAULT_IMAGE_MIME_TYPE,
+    "image/jpg": _DEFAULT_IMAGE_MIME_TYPE,
+    "image/png": "image/png",
+    "image/gif": "image/gif",
+    "image/webp": "image/webp",
+}
 
 
-class AnthropicAdapter(ILLMProvider):
+class AnthropicAdapter(UsageTrackingMixin, ILLMProvider):
     """ILLMProvider backed by anthropic (Claude models)."""
 
     def __init__(self, api_key: str | None = None) -> None:
@@ -38,30 +56,90 @@ class AnthropicAdapter(ILLMProvider):
 
         self._client = _anthropic.Anthropic(api_key=key)
 
-    def complete(self, prompt: str, model_name: str) -> str:
+    def complete_with_usage(self, prompt: str, model_name: str) -> LLMCompletion:
         try:
             message = self._client.messages.create(
                 model=model_name,
                 max_tokens=_DEFAULT_MAX_TOKENS,
                 messages=[{"role": "user", "content": prompt}],
             )
-            if hasattr(message, "usage") and message.usage:
-                in_t = getattr(message.usage, "input_tokens", 0) or 0
-                out_t = getattr(message.usage, "output_tokens", 0) or 0
-                self._last_usage = {
-                    "input": in_t,
-                    "output": out_t,
-                    "total": in_t + out_t,
-                }
-            else:
-                self._last_usage = {}
-            return message.content[0].text
+            usage: dict[str, int] = {}
+            msg_usage = getattr(message, "usage", None)
+            if msg_usage:
+                usage = build_usage(
+                    getattr(msg_usage, "input_tokens", 0),
+                    getattr(msg_usage, "output_tokens", 0),
+                )
+            self._set_scoped_usage(usage)
+
+            text = self._extract_text(message)
+            return LLMCompletion(content=text, usage=usage)
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
 
-    def get_last_usage(self) -> dict[str, int]:
-        """Return the token usage of the most recent complete() call."""
-        return getattr(self, "_last_usage", {})
+    @staticmethod
+    def _extract_text(message: Any) -> str:
+        for block in message.content:
+            block_text = getattr(block, "text", None)
+            if isinstance(block_text, str):
+                return block_text
+        return ""
+
+    def complete(self, prompt: str, model_name: str) -> str:
+        return self.complete_with_usage(prompt, model_name).content
+
+    def complete_image(self, prompt: str, image_path: Path, model_name: str) -> str:
+        try:
+            import base64  # noqa: PLC0415
+            import mimetypes  # noqa: PLC0415
+
+            guessed_mime = mimetypes.guess_type(str(image_path))[0] or ""
+            media_type = _SUPPORTED_IMAGE_MIME_TYPES.get(guessed_mime, _DEFAULT_IMAGE_MIME_TYPE)
+            b64_data = base64.b64encode(image_path.read_bytes()).decode("utf-8")
+
+            image_source: Base64ImageSourceParam = {
+                "type": "base64",
+                "media_type": media_type,
+                "data": b64_data,
+            }
+            image_block: ImageBlockParam = {"type": "image", "source": image_source}
+            text_block: TextBlockParam = {"type": "text", "text": prompt}
+            user_message: MessageParam = {
+                "role": "user",
+                "content": [image_block, text_block],
+            }
+            message = self._client.messages.create(
+                model=model_name,
+                max_tokens=_DEFAULT_MAX_TOKENS,
+                messages=[user_message],
+            )
+            return self._extract_text(message)
+        except Exception as exc:  # noqa: BLE001
+            raise LLMProviderError(str(exc)) from exc
+
+    def complete_stream(self, prompt: str, model_name: str) -> Iterator[str]:
+        try:
+            with self._client.messages.stream(
+                model=model_name,
+                max_tokens=_DEFAULT_MAX_TOKENS,
+                messages=[{"role": "user", "content": prompt}],
+            ) as stream:
+                for text in stream.text_stream:
+                    if text:
+                        yield text
+                final_msg = stream.get_final_message() if hasattr(stream, "get_final_message") else None
+                usage_obj = getattr(final_msg, "usage", None) if final_msg is not None else None
+                if usage_obj:
+                    self._set_scoped_usage(
+                        build_usage(
+                            getattr(usage_obj, "input_tokens", 0),
+                            getattr(usage_obj, "output_tokens", 0),
+                        )
+                    )
+                else:
+                    self._set_scoped_usage({})
+        except Exception as exc:  # noqa: BLE001
+            raise LLMProviderError(f"Anthropic streaming error: {exc}") from exc
 
 
     @staticmethod

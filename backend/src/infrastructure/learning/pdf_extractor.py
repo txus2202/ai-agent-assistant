@@ -8,6 +8,7 @@ ExtractionError (not ImportError) when the package is missing.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from src.domain.exceptions import ExtractionError
 
@@ -16,7 +17,7 @@ class PDFExtractor:
     """Extracts text from PDF files via PyMuPDF."""
 
     @staticmethod
-    def extract(path: Path) -> str:
+    def extract(path: Path | str, **_kwargs: Any) -> str:
         """
         Read all pages of a PDF and return concatenated plain text.
 

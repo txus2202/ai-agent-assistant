@@ -13,9 +13,11 @@ global.fetch = vi.fn().mockResolvedValue({
 describe('AppShell.vue', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    window.innerWidth = 1024
   })
 
   afterEach(async () => {
+    window.innerWidth = 1024
     await flushPromises()
     vi.restoreAllMocks()
   })
@@ -37,7 +39,7 @@ describe('AppShell.vue', () => {
           ParticleOrb: {
             name: 'ParticleOrb',
             template: '<div data-test="particle-orb" :data-color="activeAgentColor"></div>',
-            props: ['activeAgentColor', 'isDebating', 'activeAgents'],
+            props: ['activeAgentColor', 'isDebating', 'activeAgents', 'isVisible'],
             methods: { resizeCanvas: resizeCanvasSpy, toggleRecording: toggleRecordingSpy }
           },
           ObservabilityPanel: {
@@ -61,6 +63,8 @@ describe('AppShell.vue', () => {
     expect(wrapper.find('[data-test="app-header"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="chat-panel"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="particle-orb"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="orchestration-footer"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="council-status-card"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Consejo en espera')
   })
 
@@ -176,21 +180,26 @@ describe('AppShell.vue', () => {
   })
 
   it('switches mobile tabs via bottom navigation bar and syncs with ChatPanel and ParticleOrb', async () => {
+    window.innerWidth = 375
     const wrapper = createWrapper()
+    const orb = wrapper.findComponent({ name: 'ParticleOrb' })
 
-    // Default mobile tab is 'chat'
+    // Default mobile tab is 'chat': orb animation should be paused
     expect(wrapper.find('[data-test="shell-left-column"]').classes()).toContain('flex')
     expect(wrapper.find('[data-test="mobile-sound-bar"]').exists()).toBe(true)
+    expect(orb.props('isVisible')).toBe(false)
 
-    // Switch to 'voice' (Voz 3D)
+    // Switch to 'voice' (Voz 3D): orb becomes visible
     await wrapper.find('[data-test="mobile-nav-voice"]').trigger('click')
     expect(wrapper.find('[data-test="shell-left-column"]').classes()).toContain('hidden')
     expect(wrapper.find('[data-test="shell-orb-column"]').classes()).toContain('flex')
+    expect(orb.props('isVisible')).toBe(true)
     expect(resizeCanvasSpy).toHaveBeenCalled()
 
-    // Switch to 'agents'
+    // Switch to 'agents': orb pauses again
     await wrapper.find('[data-test="mobile-nav-agents"]').trigger('click')
     expect(wrapper.find('[data-test="shell-agents-column"]').classes()).toContain('flex')
+    expect(orb.props('isVisible')).toBe(false)
 
     // Switch to 'telemetry'
     await wrapper.find('[data-test="mobile-nav-telemetry"]').trigger('click')
@@ -202,30 +211,25 @@ describe('AppShell.vue', () => {
     expect(setActiveTabSpy).toHaveBeenCalledWith('chat')
   })
 
-  it('renders mobile sound bar dock over the bottom navigation across all mobile tabs', async () => {
+  it('mounts only a single SoundBar conditionally based on viewport breakpoint', async () => {
+    window.innerWidth = 375
     const wrapper = createWrapper()
     const mobileSoundBarDock = wrapper.find('[data-test="mobile-sound-bar"]')
     expect(mobileSoundBarDock.exists()).toBe(true)
     expect(mobileSoundBarDock.classes()).toContain('md:hidden')
+    expect(wrapper.findAllComponents({ name: 'SoundBar' })).toHaveLength(1)
 
     const soundBar = mobileSoundBarDock.findComponent({ name: 'SoundBar' })
     expect(soundBar.exists()).toBe(true)
     expect(soundBar.props('collapsible')).toBe(true)
     expect(soundBar.props('showViewSwitch')).toBe(false)
 
-    // Mobile SoundBar is positioned directly above mobile-bottom-nav
-    const mobileNav = wrapper.find('[data-test="mobile-bottom-nav"]')
-    expect(mobileNav.exists()).toBe(true)
-
-    // When switching tabs, mobile-sound-bar dock remains present
-    await wrapper.find('[data-test="mobile-nav-voice"]').trigger('click')
-    expect(wrapper.find('[data-test="mobile-sound-bar"]').exists()).toBe(true)
-
-    await wrapper.find('[data-test="mobile-nav-agents"]').trigger('click')
-    expect(wrapper.find('[data-test="mobile-sound-bar"]').exists()).toBe(true)
-
-    await wrapper.find('[data-test="mobile-nav-telemetry"]').trigger('click')
-    expect(wrapper.find('[data-test="mobile-sound-bar"]').exists()).toBe(true)
+    // Switch to desktop breakpoint: mobile dock unmounts
+    window.innerWidth = 1280
+    window.dispatchEvent(new Event('resize'))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="mobile-sound-bar"]').exists()).toBe(false)
+    expect(wrapper.findAllComponents({ name: 'SoundBar' })).toHaveLength(0) // ParticleOrb is stubbed here
   })
 
   it('configures Hero Centerpiece layout on tablet with top full-width orb and split bottom chat and agents', () => {

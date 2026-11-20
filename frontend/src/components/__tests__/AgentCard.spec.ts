@@ -255,5 +255,41 @@ describe('AgentCard.vue', () => {
     expect(wrapper.find('[data-test="rag-top-k-value"]').text()).toBe('OFF')
     expect((minScoreSlider.element as HTMLInputElement).disabled).toBe(true)
   })
+
+  it('previews slider drag input locally and only persists config on change commit', async () => {
+    mockUpdateAgentConfig.mockClear()
+    const wrapper = mount(AgentCard, {
+      props: {
+        role: 'the_judge',
+        state: 'STANDBY',
+        usesRag: true,
+      }
+    })
+
+    const topKSlider = wrapper.find('[data-test="rag-top-k-slider"]')
+    const minScoreSlider = wrapper.find('[data-test="rag-min-score-slider"]')
+
+    // Simulate continuous drag inputs without committing
+    ;(topKSlider.element as HTMLInputElement).value = '9'
+    await topKSlider.trigger('input')
+    ;(topKSlider.element as HTMLInputElement).value = '14'
+    await topKSlider.trigger('input')
+    ;(minScoreSlider.element as HTMLInputElement).value = '0.75'
+    await minScoreSlider.trigger('input')
+
+    expect(wrapper.find('[data-test="rag-top-k-value"]').text()).toBe('14')
+    expect(wrapper.find('[data-test="rag-min-score-value"]').text()).toBe('0.75')
+    expect(topKSlider.attributes('aria-valuetext')).toBe('14 fragmentos')
+    expect(mockUpdateAgentConfig).not.toHaveBeenCalled()
+
+    // Commit on release (@change)
+    await topKSlider.trigger('change')
+    expect(mockUpdateAgentConfig).toHaveBeenCalledTimes(1)
+    expect(mockUpdateAgentConfig).toHaveBeenCalledWith('the_judge', 'gemini', 'gemini-1.5-flash', 14, 0.75)
+
+    await minScoreSlider.trigger('change')
+    expect(mockUpdateAgentConfig).toHaveBeenCalledTimes(2)
+    expect(mockUpdateAgentConfig).toHaveBeenLastCalledWith('the_judge', 'gemini', 'gemini-1.5-flash', 14, 0.75)
+  })
 })
 

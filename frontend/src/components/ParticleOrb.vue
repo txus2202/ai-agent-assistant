@@ -13,8 +13,10 @@ const props = withDefaults(defineProps<{
   isDebating: boolean
   activeAgentIndex?: number // Optional index (0 to 5) to identify the agent
   activeAgents?: ActiveAgentItem[]
+  isVisible?: boolean
 }>(), {
-  activeAgents: () => []
+  activeAgents: () => [],
+  isVisible: true
 })
 
 const resolvedActiveAgents = computed<ActiveAgentItem[]>(() => {
@@ -34,16 +36,23 @@ const emit = defineEmits<{
   (e: 'submit-draft'): void
 }>()
 
+const orbSectionRef = ref<HTMLElement | null>(null)
 const orbCanvasRef = ref<HTMLCanvasElement | null>(null)
 const soundBarRef = ref<InstanceType<typeof SoundBar> | null>(null)
 let ctx: CanvasRenderingContext2D | null = null
-let animationFrameId: number
+let animationFrameId = 0
 let isComponentUnmounted = false
+let isPageHidden = typeof document !== 'undefined' ? document.visibilityState === 'hidden' : false
+let isContentSkipped = false
 
 // Cosmic Neural Orb Web Particle logic
-const SPHERE_PARTICLE_COUNT = 800 // Reduced for Plexus performance
-const AMBIENT_DUST_COUNT = 80
+const SPHERE_PARTICLE_COUNT = 520 // Balanced density with spatial hash grid O(N) link lookup
+const AMBIENT_DUST_COUNT = 64
 const TOTAL_AGENTS = 6
+const LINK_MAX_DIST = 52
+const LINK_MAX_DIST_SQ = LINK_MAX_DIST * LINK_MAX_DIST
+const MAX_LINKS_PER_PARTICLE = 5
+const GRID_SHIFT = 32
 let BASE_RADIUS = 220
 let orbWidth = 800
 let orbHeight = 560
@@ -133,8 +142,8 @@ const getRgbFromHex = (hex: string): string => {
 let currentExpansion = 1.0
 
 const FAR_Z = -700
-const getIdleParticleRgb = (groupId?: number) => {
-  if (typeof document !== 'undefined' && document.documentElement.classList.contains('light')) {
+const getIdleParticleRgb = (isLight: boolean, groupId?: number) => {
+  if (isLight) {
     // Crisp constellation ink dots in light mode, with subtle teal accents
     return (groupId !== undefined && groupId % 2 === 0) ? '15, 118, 110' : '15, 23, 42'
   }
@@ -150,6 +159,7 @@ interface AgentRgbItem {
 interface FrameState {
   cx: number
   cy: number
+  isLight: boolean
   speedMultiplier: number
   activeColorRGB: string
   currentAgentIndex: number
@@ -170,7 +180,7 @@ const getParticleActiveAgent = (
 ): ParticleAgentInfo => {
   const agents = frame.activeAgentsRgb
   if (!props.isDebating || agents.length === 0) {
-    return { isActive: false, rgb: getIdleParticleRgb(p.groupId), hex: '' }
+    return { isActive: false, rgb: getIdleParticleRgb(frame.isLight, p.groupId), hex: '' }
   }
 
   // Case 1: Single agent active (alternating plexus or index)
@@ -179,7 +189,7 @@ const getParticleActiveAgent = (
     const isActive = p.groupId % 2 === 0 || p.groupId === (props.activeAgentIndex ?? 0)
     return {
       isActive,
-      rgb: isActive ? a.rgb : getIdleParticleRgb(p.groupId),
+      rgb: isActive ? a.rgb : getIdleParticleRgb(frame.isLight, p.groupId),
       hex: a.hex
     }
   }
@@ -240,7 +250,7 @@ const drawLink = (
 ) => {
   const persp1 = project(p1.z)
   const persp2 = project(p2.z)
-  const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
+  const isLight = frame.isLight
   const alphaMultiplier = isLight ? 0.35 : 0.3
   const isBothActive = a1.isActive && a2.isActive
   const isSameAgent = a1.rgb === a2.rgb
@@ -257,7 +267,7 @@ const drawLink = (
   } else if (isLight) {
     linkAlphaFactor = 0.45
   }
-  const alpha = (1 - Math.sqrt(distSq) / 50) * alphaMultiplier * linkAlphaFactor
+  const alpha = (1 - Math.sqrt(distSq) / LINK_MAX_DIST) * alphaMultiplier * linkAlphaFactor
   c.beginPath()
   c.moveTo(frame.cx + p1.x * persp1, frame.cy + p1.y * persp1)
   c.lineTo(frame.cx + p2.x * persp2, frame.cy + p2.y * persp2)
@@ -265,31 +275,107 @@ const drawLink = (
   c.stroke()
 }
 
-const drawConnectionsFor = (
-  c: CanvasRenderingContext2D, i: number, frame: FrameState
-) => {
-  const p1 = particles[i]!
-  const a1 = getParticleActiveAgent(p1, frame)
+const spatialGrid = new Map<number, number[]>()
+const bucketPool: number[][] = []
+const activeBucketKeys: number[] = []
 
-  // Only check connections for a subset to save performance
-  for (let j = i + 1; j < particles.length; j += 2) {
-    const p2 = particles[j]!
-    if (p2.z < FAR_Z) continue
-    const dx = p1.x - p2.x
-    const dy = p1.y - p2.y
-    const dz = p1.z - p2.z
-    const distSq = dx * dx + dy * dy + dz * dz
-    if (distSq < 2500) {
-      const a2 = getParticleActiveAgent(p2, frame)
-      drawLink(c, p1, p2, distSq, a1, a2, frame)
+const gridCellCoord = (val: number) => Math.floor(val / LINK_MAX_DIST) + GRID_SHIFT
+const packCellKey = (gx: number, gy: number, gz: number) => gx + (gy << 6) + (gz << 12)
+
+const resetSpatialGrid = () => {
+  for (const key of activeBucketKeys) {
+    const bucket = spatialGrid.get(key)
+    if (bucket) {
+      bucket.length = 0
+      bucketPool.push(bucket)
     }
+  }
+  spatialGrid.clear()
+  activeBucketKeys.length = 0
+}
+
+const populateSpatialGrid = () => {
+  resetSpatialGrid()
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i]
+    if (!p || p.z < FAR_Z) continue
+    const key = packCellKey(gridCellCoord(p.x), gridCellCoord(p.y), gridCellCoord(p.z))
+    let bucket = spatialGrid.get(key)
+    if (!bucket) {
+      bucket = bucketPool.pop() ?? []
+      spatialGrid.set(key, bucket)
+      activeBucketKeys.push(key)
+    }
+    bucket.push(i)
+  }
+}
+
+const NEIGHBOR_OFFSETS: ReadonlyArray<readonly [number, number, number]> = (() => {
+  const offsets: Array<readonly [number, number, number]> = []
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        offsets.push([dx, dy, dz])
+      }
+    }
+  }
+  return offsets
+})()
+
+const drawBucketLinks = (
+  c: CanvasRenderingContext2D,
+  p1: Particle3D,
+  i: number,
+  a1: ParticleAgentInfo,
+  bucket: number[],
+  frame: FrameState,
+  linksDrawn: number
+): number => {
+  let count = linksDrawn
+  for (const j of bucket) {
+    if (j <= i) continue
+    const p2 = particles[j]
+    if (!p2 || p2.z < FAR_Z) continue
+    const ddx = p1.x - p2.x
+    const ddy = p1.y - p2.y
+    const ddz = p1.z - p2.z
+    const distSq = ddx * ddx + ddy * ddy + ddz * ddz
+    if (distSq >= LINK_MAX_DIST_SQ) continue
+    const a2 = getParticleActiveAgent(p2, frame)
+    drawLink(c, p1, p2, distSq, a1, a2, frame)
+    count++
+    if (count >= MAX_LINKS_PER_PARTICLE) return count
+  }
+  return count
+}
+
+const drawConnectionsFor = (
+  c: CanvasRenderingContext2D,
+  i: number,
+  frame: FrameState
+) => {
+  const p1 = particles[i]
+  if (!p1) return
+  const a1 = getParticleActiveAgent(p1, frame)
+  const gx = gridCellCoord(p1.x)
+  const gy = gridCellCoord(p1.y)
+  const gz = gridCellCoord(p1.z)
+  let linksDrawn = 0
+
+  for (const [dx, dy, dz] of NEIGHBOR_OFFSETS) {
+    const bucket = spatialGrid.get(packCellKey(gx + dx, gy + dy, gz + dz))
+    if (!bucket) continue
+    linksDrawn = drawBucketLinks(c, p1, i, a1, bucket, frame, linksDrawn)
+    if (linksDrawn >= MAX_LINKS_PER_PARTICLE) return
   }
 }
 
 const drawConnections = (c: CanvasRenderingContext2D, frame: FrameState) => {
   c.lineWidth = 0.5
+  populateSpatialGrid()
   for (let i = 0; i < particles.length; i++) {
-    if (particles[i]!.z < FAR_Z) continue // Skip far particles for performance
+    const p = particles[i]
+    if (!p || p.z < FAR_Z) continue // Skip far particles for performance
     drawConnectionsFor(c, i, frame)
   }
 }
@@ -304,7 +390,7 @@ const drawParticle = (c: CanvasRenderingContext2D, p: Particle3D, frame: FrameSt
 
   const projSize = (isActive ? p.size * 1.5 : p.size) * perspective
   const depthAlpha = Math.max(0.08, Math.min(1, (p.z + BASE_RADIUS) / (BASE_RADIUS * 2.5)))
-  const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
+  const isLight = frame.isLight
   let finalAlpha: number
   if (isActive) {
     finalAlpha = Math.min(1, p.alpha * depthAlpha * 2.2)
@@ -350,9 +436,8 @@ const getAmbientDustColor = (isDebating: boolean, isLight: boolean, primaryColor
 }
 
 const drawAmbientDust = (c: CanvasRenderingContext2D, frame: FrameState) => {
-  const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
   const primaryColor = frame.activeAgentsRgb.length > 0 ? frame.activeAgentsRgb[0]!.rgb : frame.activeColorRGB
-  const color = getAmbientDustColor(props.isDebating, isLight, primaryColor)
+  const color = getAmbientDustColor(props.isDebating, frame.isLight, primaryColor)
   for (const d of ambientDust) {
     d.x = wrap(d.x + d.vx * frame.speedMultiplier, orbWidth)
     d.y = wrap(d.y + d.vy * frame.speedMultiplier, orbHeight)
@@ -367,8 +452,22 @@ const drawAmbientDust = (c: CanvasRenderingContext2D, frame: FrameState) => {
   }
 }
 
+const canAnimate = () => {
+  return !isComponentUnmounted && props.isVisible && !isPageHidden && !isContentSkipped && Boolean(ctx) && Boolean(orbCanvasRef.value)
+}
+
+const stopAnimationLoop = () => {
+  if (animationFrameId !== 0) {
+    cancelAnimationFrame(animationFrameId)
+    animationFrameId = 0
+  }
+}
+
 const animateOrb = () => {
-  if (isComponentUnmounted || !ctx || !orbCanvasRef.value) return
+  if (!canAnimate() || !ctx) {
+    animationFrameId = 0
+    return
+  }
 
   ctx.clearRect(0, 0, orbWidth, orbHeight)
 
@@ -388,9 +487,11 @@ const animateOrb = () => {
     rgb: getRgbFromHex(a.color)
   }))
 
+  const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
   const frame: FrameState = {
     cx: orbWidth / 2,
     cy: orbHeight / 2,
+    isLight,
     speedMultiplier,
     activeColorRGB: getRgbFromHex(props.activeAgentColor),
     currentAgentIndex: props.activeAgentIndex ?? 0,
@@ -402,8 +503,37 @@ const animateOrb = () => {
   drawParticles(ctx, frame)
   drawAmbientDust(ctx, frame)
 
-  animationFrameId = requestAnimationFrame(animateOrb)
+  if (canAnimate()) {
+    animationFrameId = requestAnimationFrame(animateOrb)
+  } else {
+    animationFrameId = 0
+  }
 }
+
+const syncAnimationState = () => {
+  if (canAnimate()) {
+    if (animationFrameId === 0) {
+      animateOrb()
+    }
+  } else {
+    stopAnimationLoop()
+  }
+}
+
+const handleDocumentVisibilityChange = () => {
+  if (typeof document === 'undefined') return
+  isPageHidden = document.visibilityState === 'hidden'
+  syncAnimationState()
+}
+
+const handleContentVisibilityChange = (event: Event) => {
+  isContentSkipped = 'skipped' in event && typeof event.skipped === 'boolean' ? event.skipped : false
+  syncAnimationState()
+}
+
+watch(() => props.isVisible, () => {
+  syncAnimationState()
+})
 
 let resizeObserver: ResizeObserver | null = null
 
@@ -439,6 +569,13 @@ onMounted(() => {
   checkTabletCollapsible()
   initParticles()
   window.addEventListener('resize', handleWindowResize)
+  if (typeof document !== 'undefined') {
+    isPageHidden = document.visibilityState === 'hidden'
+    document.addEventListener('visibilitychange', handleDocumentVisibilityChange)
+  }
+  if (orbSectionRef.value) {
+    orbSectionRef.value.addEventListener('contentvisibilityautostatechange', handleContentVisibilityChange)
+  }
   if (typeof ResizeObserver !== 'undefined' && orbCanvasRef.value?.parentElement) {
     resizeObserver = new ResizeObserver(() => {
       resizeCanvas()
@@ -446,17 +583,23 @@ onMounted(() => {
     })
     resizeObserver.observe(orbCanvasRef.value.parentElement)
   }
-  animateOrb()
+  syncAnimationState()
 })
 
 onUnmounted(() => {
   isComponentUnmounted = true
   window.removeEventListener('resize', handleWindowResize)
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', handleDocumentVisibilityChange)
+  }
+  if (orbSectionRef.value) {
+    orbSectionRef.value.removeEventListener('contentvisibilityautostatechange', handleContentVisibilityChange)
+  }
   if (resizeObserver) {
     resizeObserver.disconnect()
     resizeObserver = null
   }
-  cancelAnimationFrame(animationFrameId)
+  stopAnimationLoop()
 })
 
 const toggleRecording = () => {
@@ -538,7 +681,11 @@ const ring3Style = computed(() => {
 
 <template>
   <!-- CenterOrbCanvasCore -->
-  <section class="flex flex-col relative w-full h-full border-x border-slate-800/80 overflow-hidden" data-purpose="neural-orb-centerpiece">
+  <section
+    ref="orbSectionRef"
+    class="orb-canvas-section flex flex-col relative w-full h-full border-x border-slate-800/80 overflow-hidden"
+    data-purpose="neural-orb-centerpiece"
+  >
     
     <!-- Interactive Cosmic Neural Orb Web Canvas (Centered in screen on mobile, flex-1 min-h-0 on tablet/desktop) -->
     <div class="relative w-full h-full flex-1 flex items-center justify-center min-h-0 xl:min-h-[300px] overflow-hidden" id="orbContainer">
@@ -574,8 +721,9 @@ const ring3Style = computed(() => {
       <canvas ref="orbCanvasRef" class="w-full h-full absolute inset-0 z-10"></canvas>
     </div>
 
-    <!-- Waveform Audio Visualizer, Voice State Controller & Microphone HUD Deck via SoundBar (Hidden on mobile; on tablet collapsible at bottom dock; on desktop always visible) -->
+    <!-- Waveform Audio Visualizer, Voice State Controller & Microphone HUD Deck via SoundBar (Mounted conditionally for tablet/desktop viewports) -->
     <div
+      v-if="isDesktopOrTablet"
       data-test="soundbar-tablet-wrapper"
       :class="[
         'hidden md:block w-full z-30 shrink-0 pointer-events-auto',
@@ -597,3 +745,10 @@ const ring3Style = computed(() => {
     
   </section>
 </template>
+
+<style scoped>
+.orb-canvas-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 400px;
+}
+</style>

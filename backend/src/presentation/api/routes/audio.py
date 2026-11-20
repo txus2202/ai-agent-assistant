@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from src.domain.entities.user import User
 from src.infrastructure.audio.local_audio_service import LocalAudioService
 from src.presentation.api.config import get_settings
+from src.presentation.api.dependencies.agents import build_agent_catalog_repository
 from src.presentation.api.dependencies.auth import get_current_user
 
 router = APIRouter(prefix="/audio", tags=["audio"])
@@ -28,6 +29,7 @@ def get_audio_service() -> LocalAudioService:
             whisper_beam_size=settings.whisper_beam_size,
             whisper_threads=settings.whisper_threads,
             kokoro_omp_num_threads=settings.kokoro_omp_num_threads,
+            agent_catalog=build_agent_catalog_repository(settings),
         )
     return _audio_service
 

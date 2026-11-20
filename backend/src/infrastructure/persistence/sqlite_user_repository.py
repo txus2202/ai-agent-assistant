@@ -1,9 +1,11 @@
-from datetime import datetime, timezone
+import asyncio
+from datetime import datetime
 import sqlite3
 from typing import Optional
 from src.domain.entities.user import User
 from src.domain.exceptions import RepositoryError, UserAlreadyExistsError
-from src.domain.ports.user_repository_port import IUserRepository
+from src.domain.ports.user_repository import IUserRepository
+from src.infrastructure.persistence.sqlite_base import SqliteConnectionManager
 
 _CREATE_USERS_TABLE = """
     CREATE TABLE IF NOT EXISTS users (
@@ -15,25 +17,29 @@ _CREATE_USERS_TABLE = """
         token_version INTEGER NOT NULL DEFAULT 1,
         deleted_at    TEXT,
         created_at    TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+    )
+"""
+
+_CREATE_USERS_INDEX = """
+    CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)
 """
 
 
-class SQLiteUserRepository(IUserRepository):
+class SQLiteUserRepository(IUserRepository, SqliteConnectionManager):
     """
     SQLite adapter for IUserRepository.
-    Uses Python standard library sqlite3.
+    Uses Python standard library sqlite3 via SqliteConnectionManager.
     """
 
     def __init__(self, db_path: str) -> None:
-        self._db_path = db_path
+        SqliteConnectionManager.__init__(self, db_path)
         self._init_schema()
 
     def _init_schema(self) -> None:
         try:
-            with sqlite3.connect(self._db_path) as conn:
-                conn.executescript(_CREATE_USERS_TABLE)
+            with self._connection() as conn:
+                conn.execute(_CREATE_USERS_TABLE)
+                conn.execute(_CREATE_USERS_INDEX)
                 cursor = conn.cursor()
                 cursor.execute("PRAGMA table_info(users)")
                 columns = [row[1] for row in cursor.fetchall()]
@@ -41,7 +47,6 @@ class SQLiteUserRepository(IUserRepository):
                     cursor.execute("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 1")
                 if "deleted_at" not in columns:
                     cursor.execute("ALTER TABLE users ADD COLUMN deleted_at TEXT")
-                conn.commit()
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to initialize users schema: {exc}") from exc
 
@@ -66,9 +71,9 @@ class SQLiteUserRepository(IUserRepository):
             created_at=created_at,
         )
 
-    async def get_by_id(self, user_id: str) -> Optional[User]:
+    def _sync_get_by_id(self, user_id: str) -> Optional[User]:
         try:
-            with sqlite3.connect(self._db_path) as conn:
+            with self._connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT id, username, password_hash, is_admin, is_active, token_version, deleted_at, created_at FROM users WHERE id = ?",
@@ -79,10 +84,12 @@ class SQLiteUserRepository(IUserRepository):
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to fetch user by id '{user_id}': {exc}") from exc
 
-    async def get_by_username(self, username: str) -> Optional[User]:
-        normalized = username.strip().lower()
+    async def get_by_id(self, user_id: str) -> Optional[User]:
+        return await asyncio.to_thread(self._sync_get_by_id, user_id)
+
+    def _sync_get_by_username(self, normalized: str) -> Optional[User]:
         try:
-            with sqlite3.connect(self._db_path) as conn:
+            with self._connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT id, username, password_hash, is_admin, is_active, token_version, deleted_at, created_at FROM users WHERE username = ?",
@@ -93,9 +100,12 @@ class SQLiteUserRepository(IUserRepository):
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to fetch user by username '{normalized}': {exc}") from exc
 
-    async def save(self, user: User) -> None:
+    async def get_by_username(self, username: str) -> Optional[User]:
+        return await asyncio.to_thread(self._sync_get_by_username, username.strip().lower())
+
+    def _sync_save(self, user: User) -> None:
         try:
-            with sqlite3.connect(self._db_path) as conn:
+            with self._connection() as conn:
                 conn.execute(
                     """
                     INSERT INTO users (id, username, password_hash, is_admin, is_active, token_version, deleted_at, created_at)
@@ -126,9 +136,12 @@ class SQLiteUserRepository(IUserRepository):
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to save user: {exc}") from exc
 
-    async def count_users(self) -> int:
+    async def save(self, user: User) -> None:
+        await asyncio.to_thread(self._sync_save, user)
+
+    def _sync_count_users(self) -> int:
         try:
-            with sqlite3.connect(self._db_path) as conn:
+            with self._connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT COUNT(*) FROM users")
                 row = cursor.fetchone()
@@ -136,9 +149,12 @@ class SQLiteUserRepository(IUserRepository):
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to count users: {exc}") from exc
 
-    async def list_users(self) -> list[User]:
+    async def count_users(self) -> int:
+        return await asyncio.to_thread(self._sync_count_users)
+
+    def _sync_list_users(self) -> list[User]:
         try:
-            with sqlite3.connect(self._db_path) as conn:
+            with self._connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT id, username, password_hash, is_admin, is_active, token_version, deleted_at, created_at FROM users ORDER BY created_at ASC"
@@ -148,11 +164,16 @@ class SQLiteUserRepository(IUserRepository):
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to list users: {exc}") from exc
 
-    async def delete(self, user_id: str) -> None:
+    async def list_users(self) -> list[User]:
+        return await asyncio.to_thread(self._sync_list_users)
+
+    def _sync_delete(self, user_id: str) -> None:
         try:
-            with sqlite3.connect(self._db_path) as conn:
+            with self._connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
-                conn.commit()
         except sqlite3.Error as exc:
             raise RepositoryError(f"Failed to delete user '{user_id}': {exc}") from exc
+
+    async def delete(self, user_id: str) -> None:
+        await asyncio.to_thread(self._sync_delete, user_id)

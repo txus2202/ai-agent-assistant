@@ -17,7 +17,6 @@ Scenarios:
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -103,9 +102,14 @@ class TestPDFExtractor:
 class TestURLExtractor:
     @pytest.fixture(autouse=True)
     def mock_httpx(self, monkeypatch):
-        """Mock httpx to avoid real HTTP calls."""
+        """Mock httpx and socket DNS resolution to avoid real network calls."""
+        import socket
+
         mock_httpx = MagicMock()
         mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {}
+        mock_response.content = b"<html><body><h1>Title</h1></body></html>"
         mock_response.text = (
             "<html><body><h1>Title</h1>"
             "<p>Main content here.</p>"
@@ -121,6 +125,16 @@ class TestURLExtractor:
         mock_soup_instance.get_text.return_value = "Title\nMain content here.\nNav garbage"
         mock_bs4.BeautifulSoup.return_value = mock_soup_instance
 
+        def fake_getaddrinfo(host, port, *args, **kwargs):
+            import ipaddress
+            try:
+                ipaddress.ip_address(host.split("%", 1)[0])
+                ip = host
+            except ValueError:
+                ip = "93.184.216.34"
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, int(port or 80)))]
+
+        monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
         monkeypatch.setitem(sys.modules, "httpx", mock_httpx)
         monkeypatch.setitem(sys.modules, "bs4", mock_bs4)
         self._mock_httpx = mock_httpx
@@ -134,7 +148,7 @@ class TestURLExtractor:
         assert isinstance(result, str)
         assert len(result) > 0
 
-    def test_extract_calls_get_with_url(self):
+    def test_extract_calls_get_with_url_and_no_redirects(self):
         from src.infrastructure.learning.url_extractor import URLExtractor
 
         URLExtractor.extract("https://example.com/article")
@@ -142,6 +156,7 @@ class TestURLExtractor:
         self._mock_httpx.get.assert_called_once()
         call_args = self._mock_httpx.get.call_args
         assert "https://example.com/article" in str(call_args)
+        assert call_args.kwargs.get("follow_redirects") is False
 
     def test_extract_raises_extraction_error_on_http_failure(self):
         from src.infrastructure.learning.url_extractor import URLExtractor
@@ -158,6 +173,90 @@ class TestURLExtractor:
 
         with pytest.raises(ExtractionError):
             URLExtractor.extract("https://example.com/gone")
+
+    @pytest.mark.parametrize(
+        "blocked_url",
+        [
+            "http://127.0.0.1/admin",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://10.0.0.1/internal",
+            "http://172.16.0.12:8080/metrics",
+            "http://192.168.1.10/router",
+            "http://100.64.0.1/cgnat",
+            "http://0.0.0.0:8000/health",
+            "http://[::1]/loopback",
+            "http://[::ffff:127.0.0.1]/mapped",
+            "http://localhost:3000/",
+            "http://langfuse.internal/api",
+            "file:///etc/passwd",
+            "ftp://example.com/resource",
+            "gopher://127.0.0.1:6379/_INFO",
+            "https://user:pass@example.com/secret",
+        ],
+    )
+    def test_extract_blocks_ssrf_targets_and_disallowed_schemes(self, blocked_url):
+        from src.infrastructure.learning.url_extractor import URLExtractor
+
+        with pytest.raises(ExtractionError):
+            URLExtractor.extract(blocked_url)
+
+        self._mock_httpx.get.assert_not_called()
+
+    @pytest.mark.parametrize("internal_ip", ["127.0.0.1", "169.254.169.254", "10.0.0.1", "fe80::1"])
+    def test_extract_blocks_dns_resolution_to_internal_ips(self, monkeypatch, internal_ip):
+        import socket
+        from src.infrastructure.learning.url_extractor import URLExtractor
+
+        monkeypatch.setattr(
+            socket,
+            "getaddrinfo",
+            lambda host, port, *a, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (internal_ip, 80))],
+        )
+
+        with pytest.raises(ExtractionError, match="Blocked SSRF"):
+            URLExtractor.extract("https://internal-service.example.com/api")
+
+        self._mock_httpx.get.assert_not_called()
+
+    def test_extract_blocks_redirect_to_internal_ip(self):
+        from src.infrastructure.learning.url_extractor import URLExtractor
+
+        redirect_resp = MagicMock()
+        redirect_resp.status_code = 302
+        redirect_resp.headers = {"location": "http://169.254.169.254/latest/meta-data/"}
+        self._mock_httpx.get.return_value = redirect_resp
+
+        with pytest.raises(ExtractionError, match="Blocked SSRF"):
+            URLExtractor.extract("https://example.com/redirect")
+
+        self._mock_httpx.get.assert_called_once_with(
+            "https://example.com/redirect", follow_redirects=False, timeout=30
+        )
+
+    def test_extract_blocks_excessive_redirects(self):
+        from src.infrastructure.learning.url_extractor import MAX_REDIRECTS, URLExtractor
+
+        redirect_resp = MagicMock()
+        redirect_resp.status_code = 302
+        redirect_resp.headers = {"location": "https://example.com/next"}
+        self._mock_httpx.get.return_value = redirect_resp
+
+        with pytest.raises(ExtractionError, match="Too many|maximum number of redirects"):
+            URLExtractor.extract("https://example.com/loop")
+
+        assert self._mock_httpx.get.call_count == MAX_REDIRECTS + 1
+
+    def test_extract_blocks_oversized_content_length_and_body(self):
+        from src.infrastructure.learning.url_extractor import URLExtractor
+
+        self._mock_httpx.get.return_value.headers = {"content-length": "2048"}
+        with pytest.raises(ExtractionError, match="maximum allowed limit"):
+            URLExtractor.extract("https://example.com/large", max_bytes=1024)
+
+        self._mock_httpx.get.return_value.headers = {}
+        self._mock_httpx.get.return_value.content = b"x" * 2048
+        with pytest.raises(ExtractionError, match="maximum allowed limit"):
+            URLExtractor.extract("https://example.com/large-body", max_bytes=1024)
 
 
 # ===========================================================================

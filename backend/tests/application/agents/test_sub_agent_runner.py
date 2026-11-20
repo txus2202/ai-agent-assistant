@@ -4,34 +4,25 @@ Tests — SubAgentRunner (Feature: feature_sub_agents.md)
 Layer: Application
 
 ADR-016: SubAgentRunner.run() is now async. Tests use @pytest.mark.anyio.
-
-Scenarios:
-  1. NL_INTERPRETER ("Interpreter") returns response without calling RAG
-  2. SENIOR_ARCHITECT ("PropTwo") retrieves RAG filtered by status=implemented
-  3. SubAgentRunner builds prompt including context block
-  + additional edge cases
 """
 from __future__ import annotations
 
 import pytest
 
 from src.application.agents.sub_agent_runner import SubAgentRunner
-from src.domain.agents.sub_agent_profiles import get_profile
+from src.domain.agents.sub_agent_profiles import SubAgentProfile
 from src.domain.ports.llm_provider import ILLMProvider
 from src.domain.value_objects.document_chunk import DocumentChunk
+from src.infrastructure.config.yaml_agent_catalog import InMemoryAgentCatalogRepository
 from src.infrastructure.rag.in_memory_document_store import InMemoryDocumentStore
 
-
-# ---------------------------------------------------------------------------
-# Test doubles
-# ---------------------------------------------------------------------------
 
 class FakeLLM(ILLMProvider):
     def __init__(self, response: str = "LLM response"):
         self._response = response
         self.received_prompts: list[str] = []
 
-    def list_models(self) -> list[dict[str, str]]:
+    def list_models(self, probe: bool = True) -> list[dict[str, str]]:
         return [{"id": "test", "name": "Test"}]
 
     def complete(self, prompt: str, model_name: str) -> str:
@@ -50,13 +41,22 @@ def _chunk(chunk_id: str, content: str, metadata: dict | None = None) -> Documen
     )
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
 class TestSubAgentRunner:
     @pytest.mark.anyio
-    async def test_nl_interpreter_returns_response(self):
+    async def test_requires_injected_agent_catalog(self):
+        llm = FakeLLM()
+        store = InMemoryDocumentStore()
+        with pytest.raises(ValueError, match="agent_catalog"):
+            await SubAgentRunner.run(
+                role="Interpreter",
+                user_request="hello",
+                llm_provider=llm,
+                document_store=store,
+                model_name="gemini-3.6-flash",
+            )
+
+    @pytest.mark.anyio
+    async def test_nl_interpreter_returns_response(self, generic_catalog):
         llm = FakeLLM("Formalized: use hexagonal architecture")
         store = InMemoryDocumentStore()
 
@@ -66,12 +66,13 @@ class TestSubAgentRunner:
             llm_provider=llm,
             document_store=store,
             model_name="gemini-3.6-flash",
+            agent_catalog=generic_catalog,
         )
 
         assert response.content == "Formalized: use hexagonal architecture"
 
     @pytest.mark.anyio
-    async def test_nl_interpreter_does_not_call_rag(self):
+    async def test_nl_interpreter_does_not_call_rag(self, generic_catalog):
         llm = FakeLLM()
         store = InMemoryDocumentStore()
         store.upsert([_chunk("doc#s", "some content")])
@@ -82,12 +83,13 @@ class TestSubAgentRunner:
             llm_provider=llm,
             document_store=store,
             model_name="gemini-3.6-flash",
+            agent_catalog=generic_catalog,
         )
 
         assert response.context_chunks == []
 
     @pytest.mark.anyio
-    async def test_senior_architect_retrieves_rag_with_implemented_filter(self):
+    async def test_senior_architect_retrieves_rag_with_implemented_filter(self, generic_catalog):
         store = InMemoryDocumentStore()
         store.upsert([
             _chunk("spec#impl", "implemented feature A", metadata={"status": "implemented"}),
@@ -100,6 +102,7 @@ class TestSubAgentRunner:
             llm_provider=FakeLLM(),
             document_store=store,
             model_name="gemini-3.6-flash",
+            agent_catalog=generic_catalog,
         )
 
         assert len(response.context_chunks) >= 1
@@ -107,7 +110,7 @@ class TestSubAgentRunner:
             assert chunk.metadata.get("status") == "implemented"
 
     @pytest.mark.anyio
-    async def test_innovator_retrieves_rag_with_spec_filter(self):
+    async def test_innovator_retrieves_rag_with_spec_filter(self, generic_catalog):
         store = InMemoryDocumentStore()
         store.upsert([
             _chunk("spec#s", "architecture spec content", metadata={"type": "spec"}),
@@ -120,6 +123,7 @@ class TestSubAgentRunner:
             llm_provider=FakeLLM(),
             document_store=store,
             model_name="gemini-3.6-flash",
+            agent_catalog=generic_catalog,
         )
 
         assert len(response.context_chunks) >= 1
@@ -127,9 +131,9 @@ class TestSubAgentRunner:
             assert chunk.metadata.get("type") == "spec"
 
     @pytest.mark.anyio
-    async def test_prompt_includes_system_prompt(self):
+    async def test_prompt_includes_system_prompt(self, generic_catalog):
         llm = FakeLLM()
-        profile = get_profile("Interpreter")
+        profile = generic_catalog.get_profile("Interpreter")
 
         await SubAgentRunner.run(
             role="Interpreter",
@@ -137,13 +141,14 @@ class TestSubAgentRunner:
             llm_provider=llm,
             document_store=InMemoryDocumentStore(),
             model_name="gemini-3.6-flash",
+            agent_catalog=generic_catalog,
         )
 
         sent_prompt = llm.received_prompts[0]
         assert profile.system_prompt[:30] in sent_prompt
 
     @pytest.mark.anyio
-    async def test_prompt_includes_context_when_rag_used(self):
+    async def test_prompt_includes_context_when_rag_used(self, generic_catalog):
         llm = FakeLLM()
         store = InMemoryDocumentStore()
         store.upsert([
@@ -156,13 +161,14 @@ class TestSubAgentRunner:
             llm_provider=llm,
             document_store=store,
             model_name="gemini-3.6-flash",
+            agent_catalog=generic_catalog,
         )
 
         sent_prompt = llm.received_prompts[0]
         assert "unique_rag_content_xyz" in sent_prompt
 
     @pytest.mark.anyio
-    async def test_rag_top_k_zero_skips_rag_retrieval_for_rag_agent(self):
+    async def test_rag_top_k_zero_skips_rag_retrieval_for_rag_agent(self, generic_catalog):
         llm = FakeLLM()
         store = InMemoryDocumentStore()
         store.upsert([
@@ -177,6 +183,7 @@ class TestSubAgentRunner:
             model_name="gemini-3.6-flash",
             rag_top_k=0,
             rag_min_score=0.3,
+            agent_catalog=generic_catalog,
         )
 
         assert response.context_chunks == []
@@ -184,7 +191,7 @@ class TestSubAgentRunner:
         assert "should_not_be_retrieved_xyz" not in sent_prompt
 
     @pytest.mark.anyio
-    async def test_rag_top_k_limits_returned_chunks(self):
+    async def test_rag_top_k_limits_returned_chunks(self, generic_catalog):
         llm = FakeLLM()
         store = InMemoryDocumentStore()
         store.upsert([
@@ -201,12 +208,13 @@ class TestSubAgentRunner:
             model_name="gemini-3.6-flash",
             rag_top_k=1,
             rag_min_score=0.0,
+            agent_catalog=generic_catalog,
         )
 
         assert len(response.context_chunks) == 1
 
     @pytest.mark.anyio
-    async def test_prompt_includes_chat_history_context(self):
+    async def test_prompt_includes_chat_history_context(self, generic_catalog):
         llm = FakeLLM()
         history = [
             {"role": "user", "content": "¿Cómo desplegamos esto?"},
@@ -220,6 +228,7 @@ class TestSubAgentRunner:
             document_store=InMemoryDocumentStore(),
             model_name="gemini-3.6-flash",
             chat_history=history,
+            agent_catalog=generic_catalog,
         )
 
         sent_prompt = llm.received_prompts[0]
@@ -229,37 +238,33 @@ class TestSubAgentRunner:
         assert "## User Request\n¿Qué opinas de esa propuesta?" in sent_prompt
 
     @pytest.mark.anyio
-    async def test_response_role_matches_requested_role(self):
+    async def test_response_role_matches_requested_role(self, generic_catalog):
         response = await SubAgentRunner.run(
             role="ImplOne",
             user_request="draw a diagram",
             llm_provider=FakeLLM(),
             document_store=InMemoryDocumentStore(),
             model_name="gemini-3.6-flash",
+            agent_catalog=generic_catalog,
         )
 
         assert response.role == "ImplOne"
 
     @pytest.mark.anyio
-    async def test_response_content_is_llm_output(self):
+    async def test_response_content_is_llm_output(self, generic_catalog):
         response = await SubAgentRunner.run(
             role="Auditor",
             user_request="critique this",
             llm_provider=FakeLLM("This is flawed because..."),
             document_store=InMemoryDocumentStore(),
             model_name="gemini-3.6-flash",
+            agent_catalog=generic_catalog,
         )
 
         assert response.content == "This is flawed because..."
 
     @pytest.mark.anyio
     async def test_supervisor_profile_injects_team_roster(self):
-        from src.domain.agents.sub_agent_profiles import (
-            SubAgentProfile,
-            register_profile,
-            unregister_profile,
-        )
-
         sup_profile = SubAgentProfile(
             id="test_sup",
             display_name="TestSup",
@@ -268,134 +273,207 @@ class TestSubAgentRunner:
             system_prompt="You are TestSup.",
             is_supervisor=True,
         )
-        register_profile(sup_profile)
-        try:
-            llm = FakeLLM("I am the supervisor.")
-            await SubAgentRunner.run(
-                role="TestSup",
-                user_request="Preséntate y al equipo",
-                llm_provider=llm,
-                document_store=InMemoryDocumentStore(),
-                model_name="gemini-3.6-flash",
-            )
-            assert any("MIEMBROS OFICIALES DEL CONSEJO TÉCNICO" in p for p in llm.received_prompts)
-        finally:
-            unregister_profile("test_sup")
+        worker_profile = SubAgentProfile(
+            id="test_worker",
+            display_name="TestWorker",
+            description="Worker for testing",
+            color_hex="#654321",
+            system_prompt="You are TestWorker.",
+        )
+        catalog = InMemoryAgentCatalogRepository(profiles=[sup_profile, worker_profile])
+
+        llm = FakeLLM("I am the supervisor.")
+        await SubAgentRunner.run(
+            role="TestSup",
+            user_request="Preséntate y al equipo",
+            llm_provider=llm,
+            document_store=InMemoryDocumentStore(),
+            model_name="gemini-3.6-flash",
+            agent_catalog=catalog,
+        )
+        assert any("MIEMBROS OFICIALES DEL CONSEJO TÉCNICO" in p for p in llm.received_prompts)
+        assert any("TestWorker" in p for p in llm.received_prompts)
 
     @pytest.mark.anyio
-    async def test_fidias_without_image_provider_injects_html5_directive(self, monkeypatch):
-        from src.domain.agents.sub_agent_profiles import SubAgentProfile, register_profile, unregister_profile
+    async def test_visual_designer_without_image_provider_injects_html5_directive(self):
+        class DisabledImageGenerator:
+            def get_provider_name(self) -> str | None:
+                return None
 
-        fidias_profile = SubAgentProfile(
-            id="fidias",
-            display_name="Fídias",
+            def is_enabled(self) -> bool:
+                return False
+
+            async def generate_and_save(self, prompt: str, provider: str | None = None) -> tuple[str, str]:
+                raise AssertionError("Should not generate images when disabled")
+
+            def get_image_path(self, filename: str):
+                return None
+
+        designer_profile = SubAgentProfile(
+            id="designer",
+            display_name="VisualDesigner",
             description="UX/UI designer",
             color_hex="#ffe600",
-            system_prompt="You are Fidias.",
+            system_prompt="You are VisualDesigner.",
+            tools=("code_viewer", "image_viewer"),
         )
-        register_profile(fidias_profile)
-        try:
-            monkeypatch.setenv("IMAGE_GENERATION_PROVIDER", "")
-            monkeypatch.delenv("IMAGE_PROVIDER", raising=False)
-            try:
-                from src.presentation.api.config import get_settings
-                monkeypatch.setattr(get_settings(), "image_generation_provider", "")
-            except Exception:
-                pass
+        catalog = InMemoryAgentCatalogRepository(profiles=[designer_profile])
 
-            llm = FakeLLM("```html\n<!DOCTYPE html><html><body><h1>Mockup</h1></body></html>\n```")
-            response = await SubAgentRunner.run(
-                role="Fídias",
-                user_request="Diseña un dashboard oscuro",
-                llm_provider=llm,
-                document_store=InMemoryDocumentStore(),
-                model_name="gemini-3.6-flash",
-            )
+        llm = FakeLLM("```html\n<!DOCTYPE html><html><body><h1>Mockup</h1></body></html>\n```")
+        response = await SubAgentRunner.run(
+            role="VisualDesigner",
+            user_request="Diseña un dashboard oscuro",
+            llm_provider=llm,
+            document_store=InMemoryDocumentStore(),
+            model_name="gemini-3.6-flash",
+            agent_catalog=catalog,
+            image_generator=DisabledImageGenerator(),
+        )
 
-            assert any("DIRECTIVA DE MAQUETACIÓN VISUAL (MODO SIN GENERADOR DE IMÁGENES)" in p for p in llm.received_prompts)
-            assert "<!DOCTYPE html>" in response.content
-        finally:
-            unregister_profile("fidias")
+        assert any("DIRECTIVA DE MAQUETACIÓN VISUAL (MODO SIN GENERADOR DE IMÁGENES)" in p for p in llm.received_prompts)
+        assert "<!DOCTYPE html>" in response.content
 
     @pytest.mark.anyio
-    async def test_fidias_with_image_provider_generates_image_and_replaces_directive(self, monkeypatch):
-        from src.domain.agents.sub_agent_profiles import SubAgentProfile, register_profile, unregister_profile
-        from src.infrastructure.image_generation.service import ImageGenerationService
+    async def test_visual_designer_with_image_provider_generates_image_and_replaces_directive(self):
+        class StubImageGenerator:
+            def get_provider_name(self) -> str | None:
+                return "imagen"
 
-        fidias_profile = SubAgentProfile(
-            id="fidias",
-            display_name="Fídias",
+            def is_enabled(self) -> bool:
+                return True
+
+            async def generate_and_save(self, prompt: str, provider: str | None = None) -> tuple[str, str]:
+                return "design_test123.png", "/api/images/design_test123.png"
+
+            def get_image_path(self, filename: str):
+                return None
+
+        designer_profile = SubAgentProfile(
+            id="designer",
+            display_name="VisualDesigner",
             description="UX/UI designer",
             color_hex="#ffe600",
-            system_prompt="You are Fidias.",
+            system_prompt="You are VisualDesigner.",
+            tools=("code_viewer", "image_viewer"),
         )
-        register_profile(fidias_profile)
-        try:
-            monkeypatch.setenv("IMAGE_GENERATION_PROVIDER", "imagen")
+        catalog = InMemoryAgentCatalogRepository(profiles=[designer_profile])
 
-            async def fake_generate_and_save(prompt, provider=None):
-                return "fidias_test123.png", "/api/images/fidias_test123.png"
+        llm = FakeLLM(
+            "Aquí tienes el concepto visual del dashboard.\n\n"
+            "[GENERATE_IMAGE: Futuristic dark cybersecurity dashboard with cyan neon glowing cards, 8k]\n\n"
+            "He priorizado el contraste y la claridad de métricas."
+        )
 
-            monkeypatch.setattr(ImageGenerationService, "generate_and_save", fake_generate_and_save)
+        response = await SubAgentRunner.run(
+            role="VisualDesigner",
+            user_request="Genera una imagen para un dashboard",
+            llm_provider=llm,
+            document_store=InMemoryDocumentStore(),
+            model_name="gemini-3.6-flash",
+            agent_catalog=catalog,
+            image_generator=StubImageGenerator(),
+        )
 
-            llm = FakeLLM(
-                "Aquí tienes el concepto visual del dashboard.\n\n"
-                "[GENERATE_IMAGE: Futuristic dark cybersecurity dashboard with cyan neon glowing cards, 8k]\n\n"
-                "He priorizado el contraste y la claridad de métricas."
-            )
-
-            response = await SubAgentRunner.run(
-                role="Fídias",
-                user_request="Genera una imagen para un dashboard",
-                llm_provider=llm,
-                document_store=InMemoryDocumentStore(),
-                model_name="gemini-3.6-flash",
-            )
-
-            assert any("DIRECTIVA DE GENERACIÓN VISUAL (MOTOR IMAGEN ACTIVO)" in p for p in llm.received_prompts)
-            assert "![Futuristic dark cybersecurity dashboard" in response.content
-            assert "/api/images/fidias_test123.png" in response.content
-            assert "[GENERATE_IMAGE:" not in response.content
-        finally:
-            unregister_profile("fidias")
+        assert any("DIRECTIVA DE GENERACIÓN VISUAL (MOTOR IMAGEN ACTIVO)" in p for p in llm.received_prompts)
+        assert "![Futuristic dark cybersecurity dashboard" in response.content
+        assert "/api/images/design_test123.png" in response.content
+        assert "[GENERATE_IMAGE:" not in response.content
 
     @pytest.mark.anyio
-    async def test_fidias_with_image_provider_failure_replaces_with_warning(self, monkeypatch):
-        from src.domain.agents.sub_agent_profiles import SubAgentProfile, register_profile, unregister_profile
-        from src.infrastructure.image_generation.service import ImageGenerationService
+    async def test_visual_designer_with_image_provider_failure_replaces_with_warning(self):
+        class FailingImageGenerator:
+            def get_provider_name(self) -> str | None:
+                return "imagen"
 
-        fidias_profile = SubAgentProfile(
-            id="fidias",
-            display_name="Fídias",
-            description="UX/UI designer",
-            color_hex="#ffe600",
-            system_prompt="You are Fidias.",
-        )
-        register_profile(fidias_profile)
-        try:
-            monkeypatch.setenv("IMAGE_GENERATION_PROVIDER", "imagen")
+            def is_enabled(self) -> bool:
+                return True
 
-            async def fake_fail(prompt, provider=None):
+            async def generate_and_save(self, prompt: str, provider: str | None = None) -> tuple[str, str]:
                 raise RuntimeError("API quota exceeded")
 
-            monkeypatch.setattr(ImageGenerationService, "generate_and_save", fake_fail)
+            def get_image_path(self, filename: str):
+                return None
 
-            llm = FakeLLM(
-                "Propuesta visual:\n"
-                "[GENERATE_IMAGE: Neon login page, minimalist]\n"
-                "Listo para revisión."
-            )
+        designer_profile = SubAgentProfile(
+            id="designer",
+            display_name="VisualDesigner",
+            description="UX/UI designer",
+            color_hex="#ffe600",
+            system_prompt="You are VisualDesigner.",
+            tools=("code_viewer", "image_viewer"),
+        )
+        catalog = InMemoryAgentCatalogRepository(profiles=[designer_profile])
 
-            response = await SubAgentRunner.run(
-                role="Fídias",
-                user_request="Crea una imagen de login",
-                llm_provider=llm,
-                document_store=InMemoryDocumentStore(),
-                model_name="gemini-3.6-flash",
-            )
+        llm = FakeLLM(
+            "Propuesta visual:\n"
+            "[GENERATE_IMAGE: Neon login page, minimalist]\n"
+            "Listo para revisión."
+        )
 
-            assert "No se pudo generar la imagen con imagen: API quota exceeded" in response.content
-            assert "[GENERATE_IMAGE:" not in response.content
-        finally:
-            unregister_profile("fidias")
+        response = await SubAgentRunner.run(
+            role="VisualDesigner",
+            user_request="Crea una imagen de login",
+            llm_provider=llm,
+            document_store=InMemoryDocumentStore(),
+            model_name="gemini-3.6-flash",
+            agent_catalog=catalog,
+            image_generator=FailingImageGenerator(),
+        )
 
+        assert "No se pudo generar la imagen con imagen: API quota exceeded" in response.content
+        assert "[GENERATE_IMAGE:" not in response.content
+
+    @pytest.mark.anyio
+    async def test_parallel_sub_agents_isolate_token_usage_on_shared_provider(self, generic_catalog):
+        import asyncio
+        import threading
+        from src.domain.ports.llm_provider import LLMCompletion
+
+        barrier = threading.Barrier(2, timeout=2.0)
+
+        class ConcurrentSharedProvider(ILLMProvider):
+            def list_models(self, probe: bool = True) -> list[dict[str, str]]:
+                return [{"id": "shared", "name": "Shared"}]
+
+            def complete(self, prompt: str, model_name: str) -> str:
+                return self.complete_with_usage(prompt, model_name).content
+
+            def complete_with_usage(self, prompt: str, model_name: str) -> LLMCompletion:
+                is_first = "REQ_ALPHA" in prompt
+                barrier.wait()
+                if is_first:
+                    return LLMCompletion(
+                        content="answer-alpha",
+                        usage={"input": 111, "output": 22, "total": 133},
+                    )
+                return LLMCompletion(
+                    content="answer-beta",
+                    usage={"input": 999, "output": 88, "total": 1087},
+                )
+
+        shared_provider = ConcurrentSharedProvider()
+        store = InMemoryDocumentStore()
+
+        res_a, res_b = await asyncio.gather(
+            SubAgentRunner.run(
+                role="Interpreter",
+                user_request="REQ_ALPHA",
+                llm_provider=shared_provider,
+                document_store=store,
+                model_name="gemini-2.5-flash",
+                agent_catalog=generic_catalog,
+            ),
+            SubAgentRunner.run(
+                role="Interpreter",
+                user_request="REQ_BETA",
+                llm_provider=shared_provider,
+                document_store=store,
+                model_name="gemini-2.5-flash",
+                agent_catalog=generic_catalog,
+            ),
+        )
+
+        assert res_a.content == "answer-alpha"
+        assert res_a.tokens == {"input": 111, "output": 22, "total": 133}
+        assert res_b.content == "answer-beta"
+        assert res_b.tokens == {"input": 999, "output": 88, "total": 1087}

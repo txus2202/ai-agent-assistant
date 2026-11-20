@@ -4,3 +4,11 @@ coverage/
 .eslintcache
 .vscode/
 .DS_Store
+.env
+.env.*
+!.env.example
+e2e/
+playwright-report/
+test-results/
+test_history*.js
+*.tsbuildinfo

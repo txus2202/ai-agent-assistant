@@ -79,6 +79,10 @@ describe('presentationExporter.ts', () => {
     expect(html).toContain('Redis')
     expect(html).toContain('@media print')
     expect(html).toContain('addEventListener')
+    expect(html).not.toContain('cdn.jsdelivr.net')
+    expect(html).not.toMatch(/<script[^>]+src=/i)
+    expect(html).toContain('<style>')
+    expect(html).toContain('.pres-card')
   })
 
   it('triggers download for HTML presentation file', () => {

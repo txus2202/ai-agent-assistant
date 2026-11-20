@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.presentation.api.app import create_app
-from src.domain.ports.observability_port import SystemMetrics
+from src.domain.ports.observability_service import SystemMetrics
 
 
 from src.domain.entities.user import User

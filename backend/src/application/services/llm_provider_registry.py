@@ -1,11 +1,11 @@
 """
 Application Service: LLMProviderRegistry
 
-Maps provider name strings (e.g. "gemini", "openai") to ILLMProvider instances.
-Configured at application startup (e.g. in main.py or a DI container).
+Maps normalized provider names (e.g. "gemini", "openai", "anthropic") to shared
+ILLMProvider adapter instances configured in the composition root (ADR-013).
 
 This registry lives in the Application layer (not Infrastructure) because it
-orchestrates domain ports — it must not depend on any specific SDK (ADR-013).
+orchestrates only the ILLMProvider domain port without depending on any SDK.
 """
 from __future__ import annotations
 
@@ -15,13 +15,13 @@ from src.domain.ports.llm_provider import ILLMProvider
 
 class LLMProviderRegistry:
     """
-    Runtime registry of ILLMProvider adapters keyed by provider name.
+    Runtime registry of ILLMProvider adapters keyed by normalized provider name.
 
     Usage::
 
         registry = LLMProviderRegistry()
-        registry.register("gemini", GeminiAdapter())
-        registry.register("openai", OpenAIAdapter())
+        registry.register("gemini", GeminiAdapter(...))
+        registry.register("openai", OpenAIAdapter(...))
 
         provider = registry.get("gemini")   # → GeminiAdapter
         provider.complete(prompt, model)
@@ -30,9 +30,25 @@ class LLMProviderRegistry:
     def __init__(self) -> None:
         self._providers: dict[str, ILLMProvider] = {}
 
+    @staticmethod
+    def _normalize_name(name: str) -> str:
+        return name.lower().strip()
+
     def register(self, name: str, adapter: ILLMProvider) -> None:
-        """Register (or replace) an adapter under ``name``."""
-        self._providers[name] = adapter
+        """Register (or replace) an adapter under the normalized ``name``."""
+        key = self._normalize_name(name)
+        if not key:
+            raise ValueError("Provider name must not be empty.")
+        self._providers[key] = adapter
+
+    def is_registered(self, name: str) -> bool:
+        """Return True if an adapter is registered for ``name``."""
+        return self._normalize_name(name) in self._providers
+
+    def __contains__(self, name: object) -> bool:
+        if not isinstance(name, str):
+            return False
+        return self.is_registered(name)
 
     def get(self, name: str) -> ILLMProvider:
         """
@@ -41,36 +57,14 @@ class LLMProviderRegistry:
         Raises:
             ProviderNotRegisteredError: if no adapter is registered for ``name``.
         """
-        if name not in self._providers:
+        key = self._normalize_name(name)
+        if key not in self._providers:
             raise ProviderNotRegisteredError(
                 provider=name,
                 available=self.available(),
             )
-        return self._providers[name]
+        return self._providers[key]
 
     def available(self) -> list[str]:
-        """Return a list of all registered provider names."""
+        """Return a list of all registered provider names in registration order."""
         return list(self._providers.keys())
-
-    def list_all_models(self) -> list[dict]:
-        """
-        Aggregate models from all registered providers.
-        Returns a list of dicts: {"id": "provider_name", "name": "PROVIDER_NAME", "models": [...]}
-        """
-        result = []
-        for name, provider in self._providers.items():
-            try:
-                models = provider.list_models()
-                result.append({
-                    "id": name.lower(),
-                    "name": name.upper(),
-                    "models": models
-                })
-            except Exception:
-                # If a provider fails to list models (e.g. invalid API key), skip it or return empty list
-                result.append({
-                    "id": name.lower(),
-                    "name": name.upper(),
-                    "models": []
-                })
-        return result

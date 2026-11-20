@@ -112,4 +112,47 @@ async def test_save_and_fetch_token_version_and_deleted_at(user_repo):
     assert fetched.deleted_at is not None
 
 
+@pytest.mark.asyncio
+async def test_user_repository_enables_wal_and_closes_every_connection(tmp_path, monkeypatch):
+    import src.infrastructure.persistence.sqlite_base as sqlite_base_mod
+
+    db_file = str(tmp_path / "tracked_users.db")
+    repo = SQLiteUserRepository(db_path=db_file)
+
+    with sqlite3.connect(db_file) as check_conn:
+        mode = check_conn.execute("PRAGMA journal_mode").fetchone()[0]
+    check_conn.close()
+    assert str(mode).lower() == "wal"
+
+    open_count = 0
+    close_count = 0
+    orig_connect = sqlite3.connect
+
+    def _tracking_connect(*args, **kwargs):
+        nonlocal open_count
+        open_count += 1
+        real_conn = orig_connect(*args, **kwargs)
+
+        class _TrackedConn:
+            def __getattr__(self, name):
+                return getattr(real_conn, name)
+
+            def close(self):
+                nonlocal close_count
+                close_count += 1
+                return real_conn.close()
+
+        return _TrackedConn()
+
+    monkeypatch.setattr(sqlite_base_mod.sqlite3, "connect", _tracking_connect)
+
+    await repo.save(User(id="u-wal-1", username="wal_user", password_hash="h1"))
+    assert await repo.get_by_id("u-wal-1") is not None
+    with pytest.raises(UserAlreadyExistsError):
+        await repo.save(User(id="u-wal-2", username="wal_user", password_hash="h2"))
+
+    assert open_count == 3
+    assert close_count == 3
+
+
 

@@ -1,6 +1,5 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
-from src.domain.entities.user import User
 from src.infrastructure.persistence.sqlite_user_repository import SQLiteUserRepository
 from src.infrastructure.security.argon2_hasher import Argon2idPasswordHasher
 from src.infrastructure.security.jwt_token_service import JwtTokenService

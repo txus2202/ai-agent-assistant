@@ -4,8 +4,8 @@ Infrastructure Service: ImageGenerationService
 Coordinates image generation via:
 1. Google Imagen 3 (via google-genai SDK, enterprise grade and private)
 
-Configured via environment variable:
-IMAGE_GENERATION_PROVIDER: "imagen" | "" / "none"
+Configured via constructor injection from the composition root
+(IMAGE_GENERATION_PROVIDER: "imagen" | "" / "none").
 """
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import ClassVar
+
+from src.domain.ports.image_generator import IImageGenerator
 
 
 class ImagenGenerator:
@@ -61,89 +63,91 @@ class ImagenGenerator:
         return result.generated_images[0].image.image_bytes
 
 
-class ImageGenerationService:
-    """Service to generate and serve images based on active provider."""
+class ImageGenerationService(IImageGenerator):
+    """Service to generate and serve images based on injected provider configuration."""
 
     STORAGE_DIR: ClassVar[Path] = Path(tempfile.gettempdir()) / "atenea_images"
 
-    @classmethod
-    def get_provider_name(cls) -> str | None:
-        """
-        Return the normalized active image generation provider name, or None if disabled.
-        Checks explicit OS environment variable first, then pydantic Settings (which loads .env).
-        """
-        # Explicit process environment variable has highest precedence
-        env_val = os.getenv("IMAGE_GENERATION_PROVIDER")
-        if env_val is None:
-            env_val = os.getenv("IMAGE_PROVIDER")
+    def __init__(
+        self,
+        provider_name: str | None = None,
+        *,
+        api_key: str | None = None,
+        project: str | None = None,
+        storage_dir: Path | None = None,
+    ) -> None:
+        self._provider_name = provider_name
+        self._api_key = api_key
+        self._project = project
+        self._storage_dir = storage_dir
 
-        if env_val is not None:
-            raw = env_val
-        else:
-            # Fallback to pydantic Settings (which loads .env file) only if env is unset
-            try:
-                from src.presentation.api.config import get_settings
-                raw = get_settings().image_generation_provider
-            except Exception:
-                raw = ""
+    def _effective_storage_dir(self) -> Path:
+        return self._storage_dir if self._storage_dir is not None else type(self).STORAGE_DIR
 
-        val = str(raw).strip().lower()
-
+    @staticmethod
+    def normalize_provider_name(raw: str | None) -> str | None:
+        """Normalize raw provider configuration to canonical provider id or None."""
+        val = (raw or "").strip().lower()
         if val in ("imagen", "google", "imagen3", "imagen-3", "imagen-3.0"):
             return "imagen"
         return None
 
-    @classmethod
-    def is_enabled(cls) -> bool:
-        """Return True if an image generation provider is actively configured."""
-        return cls.get_provider_name() is not None
+    def get_provider_name(self) -> str | None:
+        """Return normalized active image generation provider name, or None if disabled."""
+        if self._provider_name is not None:
+            raw = self._provider_name
+        else:
+            env_val = os.getenv("IMAGE_GENERATION_PROVIDER")
+            if env_val is None:
+                env_val = os.getenv("IMAGE_PROVIDER")
+            raw = env_val or ""
+        return self.normalize_provider_name(raw)
 
-    @classmethod
-    def generate_bytes(cls, prompt: str, provider: str | None = None) -> bytes:
+    def is_enabled(self) -> bool:
+        """Return True if an image generation provider is actively configured."""
+        return self.get_provider_name() is not None
+
+    def generate_bytes(self, prompt: str, provider: str | None = None) -> bytes:
         """Synchronously generate image bytes using the specified or active provider."""
-        prov = provider or cls.get_provider_name()
+        prov = self.normalize_provider_name(provider) if provider is not None else self.get_provider_name()
         if not prov:
             raise ValueError(
                 "No image generation provider configured. Set IMAGE_GENERATION_PROVIDER to 'imagen'."
             )
 
         if prov == "imagen":
-            return ImagenGenerator.generate(prompt)
-        else:
-            raise ValueError(f"Unknown image generation provider: {prov}")
+            return ImagenGenerator.generate(
+                prompt,
+                api_key=self._api_key,
+                project=self._project,
+            )
+        raise ValueError(f"Unknown image generation provider: {prov}")
 
-    @classmethod
-    async def generate_and_save(cls, prompt: str, provider: str | None = None) -> tuple[str, str]:
-        """
-        Generate image asynchronously in a thread pool, save it to disk, and return (filename, web_url).
-        """
-        cls.STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+    async def generate_and_save(self, prompt: str, provider: str | None = None) -> tuple[str, str]:
+        """Generate image asynchronously in a thread pool, save it to disk, and return (filename, web_url)."""
+        storage_dir = self._effective_storage_dir()
+        storage_dir.mkdir(parents=True, exist_ok=True)
 
-        image_bytes = await asyncio.to_thread(cls.generate_bytes, prompt, provider)
+        image_bytes = await asyncio.to_thread(self.generate_bytes, prompt, provider)
 
         filename = f"fidias_{uuid.uuid4().hex[:10]}.png"
-        file_path = cls.STORAGE_DIR / filename
+        file_path = storage_dir / filename
         await asyncio.to_thread(file_path.write_bytes, image_bytes)
 
         web_url = f"/api/images/{filename}"
         return filename, web_url
 
-    @classmethod
-    def get_image_path(cls, filename: str) -> Path | None:
-        """
-        Resolve and validate the path to an image file.
-        Returns Path if exists and is safe, else None.
-        """
+    def get_image_path(self, filename: str) -> Path | None:
+        """Resolve and validate the path to an image file safely, preventing path traversal."""
         if not re.match(r"^[a-zA-Z0-9_\-\.]+$", filename):
             return None
 
-        file_path = (cls.STORAGE_DIR / filename).resolve()
-        # Prevent directory traversal: must start with STORAGE_DIR
-        storage_resolved = cls.STORAGE_DIR.resolve()
+        storage_dir = self._effective_storage_dir()
+        file_path = (storage_dir / filename).resolve()
+        storage_resolved = storage_dir.resolve()
         try:
             file_path.relative_to(storage_resolved)
         except ValueError:
             return None
 
         return file_path if file_path.is_file() else None
-

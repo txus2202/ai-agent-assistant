@@ -1,4 +1,3 @@
-import time
 import pytest
 from src.infrastructure.security.jwt_token_service import JwtTokenService, INSECURE_DEFAULT_SECRETS
 

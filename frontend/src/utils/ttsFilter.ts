@@ -1,7 +1,7 @@
 /**
  * Utility for sanitizing agent text before Kokoro TTS / Web Audio speech synthesis.
  * Strips technical tools (code blocks, Mermaid diagrams, Markdown documents, image tags and directives)
- * to ensure that only conversational speech is read aloud and no tool syntax/code is ever spoken.
+ * and agent/role header prefixes so only conversational speech is read aloud.
  */
 
 // Matches any fenced code/document/diagram block (```lang ... ``` or ``` ... ```)
@@ -12,8 +12,81 @@ const UNCLOSED_FENCE_REGEX = /```[^`]*$/i
 const IMAGE_DIRECTIVE_REGEX = /(?:\[GENERATE_IMAGE:[^\]]*\]|<!--\s*generate_image:[\s\S]*?-->)/gi
 // Matches Markdown images ![alt](url)
 const IMAGE_TAG_REGEX = /!\[[^\]]*\]\([^)]+\)/g
+// Matches bracketed agent prefixes like "[nl_interpreter] "
+const BRACKET_PREFIX_REGEX = /^\[[\w\s.-]+\]\s*/i
+// Matches single-token agent headings like "## Hermes\n" or "## the_judge\n" without touching numbered sections ("## 1. ...")
+const SINGLE_TOKEN_HEADER_REGEX = /^##\s+(?:[a-záéíóúüñ_][a-záéíóúüñ0-9_-]{1,31})\s*\n+/i
 
-export function cleanTextForTts(text: string): string {
+function escapeRegexLiteral(value: string): string {
+  return value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)
+}
+
+export function stripAgentHeaderPrefixes(
+  rawContent: string,
+  knownAgentNames?: Iterable<string>
+): string {
+  if (!rawContent) return ''
+  let clean = rawContent.trim()
+
+  const dynamicNames = new Set<string>(['Interpretation'])
+  if (knownAgentNames) {
+    for (const candidate of knownAgentNames) {
+      const trimmed = candidate?.trim()
+      if (trimmed) {
+        dynamicNames.add(trimmed)
+      }
+    }
+  }
+  const escapedAlternation = Array.from(dynamicNames).map(escapeRegexLiteral).join('|')
+  const knownHeaderRegex = new RegExp(String.raw`^##\s+(?:${escapedAlternation})\s*\n+`, 'i')
+
+  let changed = true
+  while (changed) {
+    changed = false
+    if (BRACKET_PREFIX_REGEX.test(clean)) {
+      clean = clean.replace(BRACKET_PREFIX_REGEX, '').trim()
+      changed = true
+    }
+    if (knownHeaderRegex.test(clean)) {
+      clean = clean.replace(knownHeaderRegex, '').trim()
+      changed = true
+    } else if (SINGLE_TOKEN_HEADER_REGEX.test(clean)) {
+      clean = clean.replace(SINGLE_TOKEN_HEADER_REGEX, '').trim()
+      changed = true
+    }
+  }
+  return clean
+}
+
+export function getToolSpokenFallback(fenceType: string): string {
+  const lower = fenceType.toLowerCase()
+  if (/mermaid|diagram/.test(lower)) {
+    return 'He generado el diagrama arquitectónico en pantalla.'
+  }
+  if (/markdown|md|doc/.test(lower)) {
+    return 'He generado el documento técnico en pantalla.'
+  }
+  return 'He generado el código en pantalla.'
+}
+
+export function findSentenceSplitIndex(buffer: string): number {
+  const terminalMatch = /[.!?\n]/.exec(buffer)
+  if (terminalMatch) {
+    return terminalMatch.index
+  }
+  if (buffer.length >= 20) {
+    const clauseMatch = /[,:;]/.exec(buffer.slice(20))
+    if (clauseMatch) {
+      return 20 + clauseMatch.index
+    }
+  }
+  return -1
+}
+
+export function cleanTextForTts(
+  text: string,
+  options?: { agentNames?: Iterable<string> }
+): string {
   if (!text?.trim()) {
     return ''
   }
@@ -50,10 +123,7 @@ export function cleanTextForTts(text: string): string {
   }
 
   // Strip leading agent bracket tags or initial headers if present
-  const cleanTtsText = textWithoutTools
-    .replace(/^\[[\w\s.-]+\]\s*/i, '')
-    .replace(/^##\s+(?:Interpretation|Ícaro|Icaro|Hermes|Hestia|Sphinx|the_judge|nl_interpreter|innovator_architect|senior_architect|atenea|supervisor|fidias|fídias|dedalo|dédalo|caliope|calíope)\s*\n+/i, '')
-    .trim()
+  const cleanTtsText = stripAgentHeaderPrefixes(textWithoutTools, options?.agentNames)
 
   // Clean Markdown formatting:
   // 1. Markdown links [text](url) -> text

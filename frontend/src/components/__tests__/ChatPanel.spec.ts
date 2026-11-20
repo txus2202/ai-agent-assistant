@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { reactive } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import ChatPanel from '../ChatPanel.vue'
+import * as messageParser from '../../utils/messageParser'
 
 import { useDebateStore, type ChatMessage, type SupervisorEvent } from '../../stores/debate'
 
@@ -10,16 +12,18 @@ const mockStartDebate = vi.fn()
 const mockCancelDebate = vi.fn()
 const mockUploadFile = vi.fn().mockResolvedValue('/uploads/test.pdf')
 const mockSubmitHitlDecision = vi.fn()
-const mockStore = {
+const mockStore = reactive({
   isDebating: false,
   isHitlRequired: false,
   submitHitlDecision: mockSubmitHitlDecision,
   messages: [] as ChatMessage[],
   rawEvents: [] as SupervisorEvent[],
   agents: [
+    { role: 'supervisor', name: 'Atenea', state: 'STANDBY', color_hex: '#f59e0b' },
     { role: 'nl_interpreter', name: 'NL Interpreter', state: 'STANDBY', color_hex: '#00e5ff' },
     { role: 'learning', name: 'Learning Agent', state: 'STANDBY', color_hex: '#1d4ed8' },
-    { role: 'diagrammer', name: 'Aracne', state: 'STANDBY', color_hex: '#ec4899' }
+    { role: 'diagrammer', name: 'Aracne', state: 'STANDBY', color_hex: '#ec4899' },
+    { role: 'caliope', name: 'Calíope', state: 'STANDBY', color_hex: '#f472b6', tools: ['document_viewer'] }
   ],
   startDebate: mockStartDebate,
   cancelDebate: mockCancelDebate,
@@ -44,6 +48,7 @@ const mockStore = {
   selectedAgents: ['supervisor'] as string[],
   playTtsAudioChunk: vi.fn(),
   stopTts: vi.fn(),
+  onTtsChunkReady: vi.fn(),
   onTtsStop: vi.fn(),
   unlockAudioContext: vi.fn(),
   clearSession: vi.fn(() => {
@@ -54,7 +59,7 @@ const mockStore = {
   learningStatusMessage: null as string | null,
   currentSessionId: 'session-test-id',
   learnSession: vi.fn()
-}
+})
 
 vi.mock('../../stores/debate', () => ({
   useDebateStore: () => mockStore
@@ -68,6 +73,13 @@ describe('ChatPanel.vue', () => {
     mockStore.isHitlRequired = false
     mockStore.isDebating = false
     Element.prototype.scrollIntoView = vi.fn()
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([
+        { id: '01_enterprise_architecture', name: 'Arquitectura Empresarial' },
+        { id: 'learned', name: 'Investigación Externa' }
+      ])
+    })
   })
 
   afterEach(() => {
@@ -205,6 +217,7 @@ describe('ChatPanel.vue', () => {
     const wrapper = mount(ChatPanel, {
       props: { messages: [], isDebating: false }
     })
+    await flushPromises()
 
     // Select Metis
     await wrapper.find('[data-test="agent-dropdown-btn"]').trigger('click')
@@ -1014,7 +1027,7 @@ describe('ChatPanel.vue', () => {
     })
     await flushPromises()
 
-    const scrollEl = wrapper.find({ ref: 'chatScroll' }).element as HTMLElement
+    const scrollEl = wrapper.find('[data-test="chat-messages-scroll"]').element as HTMLElement
     const scrollToMock = vi.fn()
     scrollEl.scrollTo = scrollToMock
 
@@ -1023,7 +1036,7 @@ describe('ChatPanel.vue', () => {
     Object.defineProperty(scrollEl, 'clientHeight', { value: 400, configurable: true })
     Object.defineProperty(scrollEl, 'scrollTop', { value: 100, configurable: true, writable: true })
 
-    await wrapper.find({ ref: 'chatScroll' }).trigger('scroll')
+    await wrapper.find('[data-test="chat-messages-scroll"]').trigger('scroll')
     await flushPromises()
 
     const btn = wrapper.find('[data-test="chat-scroll-toggle-btn"]')
@@ -1037,7 +1050,7 @@ describe('ChatPanel.vue', () => {
 
     // Case 2: User in lower half (scrollTop = 450, halfway = 300)
     scrollEl.scrollTop = 450
-    await wrapper.find({ ref: 'chatScroll' }).trigger('scroll')
+    await wrapper.find('[data-test="chat-messages-scroll"]').trigger('scroll')
     await flushPromises()
 
     expect(btn.attributes('title')).toBe('Subir al inicio del chat')
@@ -1046,6 +1059,73 @@ describe('ChatPanel.vue', () => {
     // Clicking when in lower half scrolls to the top
     await btn.trigger('click')
     expect(scrollToMock).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' })
+  })
+
+  it('unsubscribes TTS callbacks and detaches DOM/window listeners on unmount', () => {
+    const unsubChunk = vi.fn()
+    const unsubStop = vi.fn()
+    const prevChunk = mockStore.onTtsChunkReady
+    const prevStop = mockStore.onTtsStop
+    mockStore.onTtsChunkReady = vi.fn(() => unsubChunk)
+    mockStore.onTtsStop = vi.fn(() => unsubStop)
+
+    const docRemoveSpy = vi.spyOn(document, 'removeEventListener')
+    const winRemoveSpy = vi.spyOn(window, 'removeEventListener')
+
+    try {
+      const wrapper = mount(ChatPanel, {
+        props: {
+          messages: [],
+          isDebating: false
+        }
+      })
+
+      expect(mockStore.onTtsChunkReady).toHaveBeenCalledTimes(1)
+      expect(mockStore.onTtsStop).toHaveBeenCalledTimes(1)
+      expect(unsubChunk).not.toHaveBeenCalled()
+      expect(unsubStop).not.toHaveBeenCalled()
+
+      wrapper.unmount()
+
+      expect(unsubChunk).toHaveBeenCalledTimes(1)
+      expect(unsubStop).toHaveBeenCalledTimes(1)
+      expect(docRemoveSpy).toHaveBeenCalledWith('click', expect.any(Function))
+      expect(winRemoveSpy).toHaveBeenCalledWith('resize', expect.any(Function))
+    } finally {
+      mockStore.onTtsChunkReady = prevChunk
+      mockStore.onTtsStop = prevStop
+      docRemoveSpy.mockRestore()
+      winRemoveSpy.mockRestore()
+    }
+  })
+
+  it('memoizes parsed blocks so streaming a new message does not re-parse unchanged history', async () => {
+    const parseSpy = vi.spyOn(messageParser, 'parseMessageContent')
+    const store = useDebateStore()
+    store.messages = [
+      { id: 'msg-hist-1', role: 'assistant', agentName: 'Atenea', content: 'Finalized message 1' },
+      { id: 'msg-stream-2', role: 'assistant', agentName: 'Atenea', content: 'Chunk 1', isStreaming: true }
+    ]
+
+    const wrapper = mount(ChatPanel, {
+      props: {
+        messages: store.messages,
+        isDebating: true
+      }
+    })
+
+    // Initial mount parses both assistant messages once
+    expect(parseSpy).toHaveBeenCalledTimes(2)
+    parseSpy.mockClear()
+
+    // Simulate streaming update on msg-stream-2 only
+    store.messages[1]!.content = 'Chunk 1 Chunk 2'
+    await wrapper.setProps({ messages: [...store.messages] })
+
+    // Only msg-stream-2 should be re-parsed; msg-hist-1 hits memoization cache
+    expect(parseSpy).toHaveBeenCalledTimes(1)
+    expect(parseSpy).toHaveBeenCalledWith('Chunk 1 Chunk 2', expect.any(Object))
+    parseSpy.mockRestore()
   })
 })
 

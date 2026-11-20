@@ -1,14 +1,17 @@
-import pytest
 import time
-from unittest.mock import MagicMock
+
+import pytest
 from fastapi.testclient import TestClient
-from src.presentation.api.app import create_app
+
+from src.application.services.llm_provider_registry import LLMProviderRegistry
 from src.domain.entities.user import User
-from src.domain.ports.model_cache_port import CachedModelCatalog
+from src.domain.ports.model_cache_repository import CachedModelCatalog
 from src.infrastructure.persistence.sqlite_model_cache_repository import SqliteModelCacheRepository
+from src.presentation.api.app import create_app
 from src.presentation.api.dependencies.auth import get_current_user
+from src.presentation.api.dependencies.llm import get_llm_registry
 from src.presentation.api.dependencies.model_cache import get_model_cache_repository
-import src.presentation.api.routes.models as models_module
+
 
 @pytest.fixture
 def test_user():
@@ -20,28 +23,34 @@ def test_user():
         is_active=True,
     )
 
+
 @pytest.fixture
 def shared_cache_repo(tmp_path):
     db_path = str(tmp_path / "test_shared_models.db")
     return SqliteModelCacheRepository(db_path, app_version="0.4.0")
 
+
 @pytest.fixture
 def client(test_user, shared_cache_repo):
-    app = create_app()
+    app = create_app(llm_registry=LLMProviderRegistry())
     app.dependency_overrides[get_current_user] = lambda: test_user
     app.dependency_overrides[get_model_cache_repository] = lambda: shared_cache_repo
     return TestClient(app)
 
 
-@pytest.fixture(autouse=True)
-def mock_gemini_configured(monkeypatch):
-    monkeypatch.setattr(models_module, "is_provider_configured", lambda name: name == "gemini")
+def _registry_with(name: str, adapter) -> LLMProviderRegistry:
+    registry = LLMProviderRegistry()
+    registry.register(name, adapter)
+    return registry
 
 
-def test_cold_start_swr_returns_preliminary_and_executes_probe(client, shared_cache_repo, monkeypatch):
+def test_cold_start_swr_returns_preliminary_and_executes_probe(client, shared_cache_repo):
     calls = []
 
     class FakeGemini:
+        def complete(self, prompt: str, model_name: str) -> str:
+            return "ok"
+
         def list_models(self, probe: bool = True):
             calls.append(probe)
             if not probe:
@@ -51,11 +60,7 @@ def test_cold_start_swr_returns_preliminary_and_executes_probe(client, shared_ca
                 ]
             return [{"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash"}]
 
-    monkeypatch.setattr(
-        models_module,
-        "get_llm_provider",
-        lambda name: FakeGemini() if name == "gemini" else (_ for _ in ()).throw(RuntimeError("N/A")),
-    )
+    client.app.dependency_overrides[get_llm_registry] = lambda: _registry_with("gemini", FakeGemini())
 
     # 1. Cold start request returns preliminary list immediately and runs background probe
     res = client.get("/models")
@@ -82,35 +87,29 @@ def test_cold_start_swr_returns_preliminary_and_executes_probe(client, shared_ca
     assert calls == []  # No adapter calls, served purely from shared DB!
 
 
-def test_multi_pod_simulation_avoids_duplicate_probing(test_user, shared_cache_repo, monkeypatch):
+def test_multi_pod_simulation_avoids_duplicate_probing(test_user, shared_cache_repo):
     """
     Simulates Pod 1 and Pod 2 sharing the same database.
     When Pod 1 acquires the probe lock, Pod 2 serves the existing catalog without firing a duplicate probe.
     """
-    app1 = create_app()
-    app1.dependency_overrides[get_current_user] = lambda: test_user
-    app1.dependency_overrides[get_model_cache_repository] = lambda: shared_cache_repo
-    client1 = TestClient(app1)
-
-    app2 = create_app()
-    app2.dependency_overrides[get_current_user] = lambda: test_user
-    app2.dependency_overrides[get_model_cache_repository] = lambda: shared_cache_repo
-    client2 = TestClient(app2)
-
     gemini_probes = 0
 
     class FakeGemini:
+        def complete(self, prompt: str, model_name: str) -> str:
+            return "ok"
+
         def list_models(self, probe: bool = True):
             nonlocal gemini_probes
             if probe:
                 gemini_probes += 1
             return [{"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash"}]
 
-    monkeypatch.setattr(
-        models_module,
-        "get_llm_provider",
-        lambda name: FakeGemini() if name == "gemini" else (_ for _ in ()).throw(RuntimeError("N/A")),
-    )
+    registry = _registry_with("gemini", FakeGemini())
+
+    app2 = create_app(llm_registry=registry)
+    app2.dependency_overrides[get_current_user] = lambda: test_user
+    app2.dependency_overrides[get_model_cache_repository] = lambda: shared_cache_repo
+    client2 = TestClient(app2)
 
     # Seed shared DB with lock held by another pod
     shared_cache_repo.save(CachedModelCatalog(
@@ -130,7 +129,7 @@ def test_multi_pod_simulation_avoids_duplicate_probing(test_user, shared_cache_r
     assert gemini_probes == 0
 
 
-def test_refresh_query_param_invalidates_shared_cache(client, shared_cache_repo, monkeypatch):
+def test_refresh_query_param_invalidates_shared_cache(client, shared_cache_repo):
     shared_cache_repo.save(CachedModelCatalog(
         provider="gemini",
         models=[{"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash"}],
@@ -142,39 +141,34 @@ def test_refresh_query_param_invalidates_shared_cache(client, shared_cache_repo,
     probe_called = False
 
     class FakeGemini:
+        def complete(self, prompt: str, model_name: str) -> str:
+            return "ok"
+
         def list_models(self, probe: bool = True):
             nonlocal probe_called
             if probe:
                 probe_called = True
             return [{"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash"}]
 
-    monkeypatch.setattr(
-        models_module,
-        "get_llm_provider",
-        lambda name: FakeGemini() if name == "gemini" else (_ for _ in ()).throw(RuntimeError("N/A")),
-    )
+    client.app.dependency_overrides[get_llm_registry] = lambda: _registry_with("gemini", FakeGemini())
 
     res = client.get("/models?refresh=true")
     assert res.status_code == 200
     assert probe_called is True
 
 
-def test_unconfigured_providers_are_never_attempted_or_probed(client, monkeypatch):
-    """Verifies that providers without configured environment variables are skipped completely."""
-    attempted_providers = []
+def test_unconfigured_providers_are_never_attempted_or_probed(client):
+    """Verifies that providers absent from LLMProviderRegistry are skipped completely."""
 
     class FakeGemini:
+        def complete(self, prompt: str, model_name: str) -> str:
+            return "ok"
+
         def list_models(self, probe: bool = True):
             return [{"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash"}]
 
-    def fake_get_provider(name: str):
-        attempted_providers.append(name)
-        if name == "gemini":
-            return FakeGemini()
-        raise AssertionError(f"Provider {name} should not have been attempted!")
-
-    monkeypatch.setattr(models_module, "is_provider_configured", lambda name: name == "gemini")
-    monkeypatch.setattr(models_module, "get_llm_provider", fake_get_provider)
+    registry = _registry_with("gemini", FakeGemini())
+    client.app.dependency_overrides[get_llm_registry] = lambda: registry
 
     res = client.get("/models")
     assert res.status_code == 200
@@ -182,5 +176,4 @@ def test_unconfigured_providers_are_never_attempted_or_probed(client, monkeypatc
 
     assert len(data) == 1
     assert data[0]["id"] == "gemini"
-    assert "openai" not in attempted_providers
-    assert "anthropic" not in attempted_providers
+    assert registry.available() == ["gemini"]

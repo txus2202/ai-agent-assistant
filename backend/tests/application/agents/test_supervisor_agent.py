@@ -89,7 +89,21 @@ def _roles_for_type(events: list[SupervisorEvent], event_type: EventType) -> lis
 
 class TestSupervisorAgentEventOrder:
     @pytest.mark.anyio
-    async def test_full_approve_flow_starts_with_nl_interpreter(self, monkeypatch):
+    async def test_requires_agent_catalog_and_topology(self):
+        from src.application.agents.supervisor_agent import SupervisorAgent
+
+        stream = SupervisorAgent.run(
+            user_request="Design",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_approve_always,
+        )
+        with pytest.raises(ValueError, match="agent_catalog"):
+            await _collect(stream)
+
+    @pytest.mark.anyio
+    async def test_full_approve_flow_starts_with_nl_interpreter(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -101,6 +115,8 @@ class TestSupervisorAgentEventOrder:
             agent_config_repo=FakeAgentConfigRepo(),
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_approve_always,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         types = _event_types(events)
@@ -108,7 +124,7 @@ class TestSupervisorAgentEventOrder:
         assert events[0].role in ("Interpreter", "interpreter")
 
     @pytest.mark.anyio
-    async def test_full_approve_flow_ends_with_done(self, monkeypatch):
+    async def test_full_approve_flow_ends_with_done(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -120,12 +136,14 @@ class TestSupervisorAgentEventOrder:
             agent_config_repo=FakeAgentConfigRepo(),
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_approve_always,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         assert events[-1].type == EventType.DONE
 
     @pytest.mark.anyio
-    async def test_full_approve_flow_emits_at_least_12_events(self, monkeypatch):
+    async def test_full_approve_flow_emits_at_least_12_events(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -137,12 +155,14 @@ class TestSupervisorAgentEventOrder:
             agent_config_repo=FakeAgentConfigRepo(),
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_approve_always,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         assert len(events) >= 12
 
     @pytest.mark.anyio
-    async def test_all_six_roles_appear_as_agent_started(self, monkeypatch):
+    async def test_all_six_roles_appear_as_agent_started(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -154,6 +174,8 @@ class TestSupervisorAgentEventOrder:
             agent_config_repo=FakeAgentConfigRepo(),
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_approve_always,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         started_roles = {r.value if hasattr(r, "value") else str(r) for r in _roles_for_type(events, EventType.AGENT_STARTED)}
@@ -161,7 +183,7 @@ class TestSupervisorAgentEventOrder:
         assert expected.issubset(started_roles)
 
     @pytest.mark.anyio
-    async def test_two_hitl_required_events_in_full_approve_flow(self, monkeypatch):
+    async def test_two_hitl_required_events_in_full_approve_flow(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -173,6 +195,8 @@ class TestSupervisorAgentEventOrder:
             agent_config_repo=FakeAgentConfigRepo(),
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_approve_always,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         hitl_events = [e for e in events if e.type == EventType.HITL_REQUIRED]
@@ -181,7 +205,7 @@ class TestSupervisorAgentEventOrder:
 
 class TestSupervisorAgentHITL:
     @pytest.mark.anyio
-    async def test_hitl2_and_hitl3_content_includes_proposals(self, monkeypatch):
+    async def test_hitl2_and_hitl3_content_includes_proposals(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -199,6 +223,8 @@ class TestSupervisorAgentHITL:
             agent_config_repo=FakeAgentConfigRepo(),
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_capture_all,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         assert len(hitl_events) == 3
@@ -215,7 +241,7 @@ class TestSupervisorAgentHITL:
         assert hitl3.metadata.get("checkpoint") == "after_Auditor"
 
     @pytest.mark.anyio
-    async def test_reject_at_hitl2_reruns_architects(self, monkeypatch):
+    async def test_reject_at_hitl2_reruns_architects(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -247,13 +273,15 @@ class TestSupervisorAgentHITL:
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_sequential_callback,
             review_rounds=0,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         assert call_counts.get("PropOne", 0) == 2
         assert call_counts.get("PropTwo", 0) == 2
 
     @pytest.mark.anyio
-    async def test_refine_at_hitl2_does_not_rerun_architects(self, monkeypatch):
+    async def test_refine_at_hitl2_does_not_rerun_architects(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -285,13 +313,15 @@ class TestSupervisorAgentHITL:
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_sequential_callback,
             review_rounds=0,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         assert call_counts.get("PropOne", 0) == 2
         assert call_counts.get("PropTwo", 0) == 2
 
     @pytest.mark.anyio
-    async def test_refine_feedback_appears_in_judge_request(self, monkeypatch):
+    async def test_refine_feedback_appears_in_judge_request(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -322,12 +352,14 @@ class TestSupervisorAgentHITL:
             agent_config_repo=FakeAgentConfigRepo(),
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_sequential_callback,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         assert "focus on latency" in received_requests.get("Auditor", "")
 
     @pytest.mark.anyio
-    async def test_done_event_has_non_empty_content(self, monkeypatch):
+    async def test_done_event_has_non_empty_content(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -339,6 +371,8 @@ class TestSupervisorAgentHITL:
             agent_config_repo=FakeAgentConfigRepo(),
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_approve_always,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         done = events[-1]
@@ -346,7 +380,7 @@ class TestSupervisorAgentHITL:
         assert len(done.content) > 0
 
     @pytest.mark.anyio
-    async def test_reject_at_hitl3_reruns_judge(self, monkeypatch):
+    async def test_reject_at_hitl3_reruns_judge(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -378,12 +412,14 @@ class TestSupervisorAgentHITL:
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_sequential_callback,
             review_rounds=0,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         assert call_counts.get("Auditor", 0) == 2
 
     @pytest.mark.anyio
-    async def test_architects_internal_review_with_auditor_before_hitl(self, monkeypatch):
+    async def test_architects_internal_review_with_auditor_before_hitl(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
         from src.application.agents.sub_agent_runner import SubAgentResponse
@@ -407,6 +443,8 @@ class TestSupervisorAgentHITL:
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_cb,
             review_rounds=1,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         types_and_roles = [(e.type, e.role) for e in collected]
@@ -425,21 +463,26 @@ class TestSupervisorAgentHITL:
             assert t != EventType.HITL_REQUIRED
 
     @pytest.mark.anyio
-    async def test_review_rounds_env_setting_is_respected(self, monkeypatch):
-        from src.presentation.api import config as config_mod
+    async def test_review_rounds_and_defaults_are_injected_without_settings(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
-        from src.application.agents.supervisor_agent import SupervisorAgent
+        from src.application.agents.supervisor_agent import DebateRunOptions, SupervisorAgent
         from src.application.agents.sub_agent_runner import SubAgentResponse
 
-        settings = config_mod.get_settings()
-        assert hasattr(settings, "review_rounds")
-
-        monkeypatch.setattr(settings, "review_rounds", 0)
-
         call_counts: dict[str, int] = {}
+        seen_providers: list[str] = []
+        seen_models: list[str] = []
+        sentinel_img_gen = object()
+        seen_img_gens: list[object] = []
+
+        def _capturing_factory(provider_name: str):
+            seen_providers.append(provider_name)
+            return FakeLLM()
+
         async def _counting_runner(role, user_request, llm_provider, document_store, model_name, **kwargs):
             key = role.value if hasattr(role, "value") else str(role)
             call_counts[key] = call_counts.get(key, 0) + 1
+            seen_models.append(model_name)
+            seen_img_gens.append(kwargs.get("image_generator"))
             return SubAgentResponse(role=role, content=f"{key} response", context_chunks=[])
 
         monkeypatch.setattr(_mod.SubAgentRunner, "run", _counting_runner)
@@ -451,25 +494,36 @@ class TestSupervisorAgentHITL:
             user_request="Design something",
             document_store=InMemoryDocumentStore(),
             agent_config_repo=FakeAgentConfigRepo(),
-            llm_factory=lambda _: FakeLLM(),
+            llm_factory=_capturing_factory,
             hitl_callback=_cb,
+            review_rounds=0,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
+            options=DebateRunOptions(
+                default_provider="openai",
+                default_model="gpt-4o-mini",
+                image_generator=sentinel_img_gen,  # type: ignore[arg-type]
+            ),
         ))
 
         # When review_rounds is 0, PropOne and PropTwo run once in phase 2, Auditor runs once in phase 3
         assert call_counts.get("PropOne", 0) == 1
         assert call_counts.get("PropTwo", 0) == 1
         assert call_counts.get("Auditor", 0) == 1
+        assert all(p == "openai" for p in seen_providers)
+        assert all(m == "gpt-4o-mini" for m in seen_models)
+        assert all(g is sentinel_img_gen for g in seen_img_gens)
 
 
 class TestAdaptiveSupervisorRouting:
     @pytest.mark.anyio
-    async def test_direct_chat_greeting_responds_as_supervisor_without_council(self, monkeypatch):
+    async def test_direct_chat_greeting_responds_as_supervisor_without_council(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
         runner_called = False
 
-        async def _mock_runner(role, user_request, llm_provider, document_store, model_name):
+        async def _mock_runner(role, user_request, llm_provider, document_store, model_name, **kwargs):
             nonlocal runner_called
             runner_called = True
             from src.application.agents.sub_agent_runner import SubAgentResponse
@@ -492,6 +546,8 @@ class TestAdaptiveSupervisorRouting:
             agent_config_repo=FakeAgentConfigRepo(),
             llm_factory=lambda _: GreetingLLM(),
             hitl_callback=_approve_always,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         types = _event_types(events)
@@ -504,7 +560,7 @@ class TestAdaptiveSupervisorRouting:
         assert runner_called is False
         assert any("MIEMBROS OFICIALES DEL CONSEJO TÉCNICO" in p for p in recorded_prompts)
 
-    def test_classify_intent_presentation_triggers_direct_chat(self):
+    def test_classify_intent_presentation_triggers_direct_chat(self, generic_catalog):
         from src.application.agents.supervisor_agent import classify_intent
 
         decision = classify_intent(
@@ -513,11 +569,12 @@ class TestAdaptiveSupervisorRouting:
             model_name="default",
             supervisor_name="Coordinator",
             interpreter_name="Interpreter",
+            agent_catalog=generic_catalog,
         )
         assert decision.mode == "direct_chat"
 
     @pytest.mark.anyio
-    async def test_single_agent_mode_delegates_directly_to_impl_one(self, monkeypatch):
+    async def test_single_agent_mode_delegates_directly_to_impl_one(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -526,7 +583,6 @@ class TestAdaptiveSupervisorRouting:
         from src.application.agents.sub_agent_runner import SubAgentResponse
 
         async def _mock_runner(role, user_request, llm_provider, document_store, model_name, **kwargs):
-            role_str = role.value if hasattr(role, "value") else str(role)
             called_roles.append(role)
             return SubAgentResponse(role=role, content="```mermaid\nflowchart TD\nA-->B\n```", context_chunks=[])
 
@@ -544,6 +600,8 @@ class TestAdaptiveSupervisorRouting:
             agent_config_repo=FakeAgentConfigRepo(),
             llm_factory=lambda _: DiagramLLM(),
             hitl_callback=_approve_always,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         assert called_roles == ["ImplOne"]
@@ -552,7 +610,7 @@ class TestAdaptiveSupervisorRouting:
         assert "mermaid" in events[-1].content
 
     @pytest.mark.anyio
-    async def test_adaptive_debate_skips_interpreter_when_requirements_are_defined(self, monkeypatch):
+    async def test_adaptive_debate_skips_interpreter_when_requirements_are_defined(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -573,12 +631,14 @@ class TestAdaptiveSupervisorRouting:
                     return '{"mode": "adaptive_debate", "target_agent": null, "skip_interpreter": true, "reasoning": "Requisitos ya estructurados"}'
                 return "Consolidación final de Coordinator"
 
-        events = await _collect(SupervisorAgent.run(
+        await _collect(SupervisorAgent.run(
             user_request="Necesito un SSO con Keycloak, 10 sesiones concurrentes, OAuth2 y TLS 1.3",
             document_store=InMemoryDocumentStore(),
             agent_config_repo=FakeAgentConfigRepo(),
             llm_factory=lambda _: StructuredLLM(),
             hitl_callback=_approve_always,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         # Interpreter was skipped!
@@ -587,7 +647,7 @@ class TestAdaptiveSupervisorRouting:
         assert "PropTwo" in called_roles
 
     @pytest.mark.anyio
-    async def test_hitl_redirects_to_selected_target_agents(self, monkeypatch):
+    async def test_hitl_redirects_to_selected_target_agents(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -610,12 +670,14 @@ class TestAdaptiveSupervisorRouting:
         async def _redirect_callback(_event: SupervisorEvent) -> HITLResponse:
             return next(decisions)
 
-        events = await _collect(SupervisorAgent.run(
+        await _collect(SupervisorAgent.run(
             user_request="Diseñar arquitectura de pagos",
             document_store=InMemoryDocumentStore(),
             agent_config_repo=FakeAgentConfigRepo(),
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_redirect_callback,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         # After Interpreter, user redirected specifically to diagrammer
@@ -633,9 +695,8 @@ class TestAdaptiveSupervisorRouting:
         assert "{implementers_str}" in _CONSOLIDATION_PROMPT
 
     @pytest.mark.anyio
-    async def test_consolidation_prompt_uses_topology_participants_and_is_domain_neutral(self):
+    async def test_consolidation_prompt_uses_topology_participants_and_is_domain_neutral(self, generic_topology):
         from src.application.agents.supervisor_agent import DebateState, _run_consolidation
-        from src.domain.agents.debate_topology import load_topology
 
         captured: list[str] = []
 
@@ -644,7 +705,7 @@ class TestAdaptiveSupervisorRouting:
                 captured.append(prompt)
                 return "final"
 
-        top = load_topology()
+        top = generic_topology
         state = DebateState()
         state.agent_outputs["PropOne"] = "proposal"
         event = await _run_consolidation(
@@ -666,9 +727,8 @@ class TestAdaptiveSupervisorRouting:
         assert decision.skip_interpreter is True
         assert not hasattr(decision, "skip_hermes")
 
-    def test_classify_intent_lists_only_registered_specialists_and_dynamic_names(self):
+    def test_classify_intent_lists_only_registered_specialists_and_dynamic_names(self, generic_catalog):
         from src.application.agents.supervisor_agent import classify_intent
-        from src.domain.agents.sub_agent_profiles import get_all_profiles
 
         captured: list[str] = []
 
@@ -683,13 +743,14 @@ class TestAdaptiveSupervisorRouting:
             "m",
             supervisor_name="Coordinator",
             interpreter_name="Interpreter",
+            agent_catalog=generic_catalog,
         )
 
         prompt = captured[0]
         assert "Eres Coordinator" in prompt
         assert "skip_interpreter" in prompt
         specialists = [
-            p for p in get_all_profiles()
+            p for p in generic_catalog.get_all_profiles()
             if not p.is_supervisor and p.display_name != "Interpreter"
         ]
         assert specialists
@@ -724,7 +785,7 @@ class TestAdaptiveSupervisorRouting:
             assert default is inspect.Parameter.empty, f"{fn_name}.{param} has a default"
 
     @pytest.mark.anyio
-    async def test_auditor_evaluation_includes_prior_critiques_and_consistency_rule(self, monkeypatch):
+    async def test_auditor_evaluation_includes_prior_critiques_and_consistency_rule(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
         from src.application.agents.sub_agent_runner import SubAgentResponse
@@ -755,6 +816,8 @@ class TestAdaptiveSupervisorRouting:
             hitl_callback=_cb,
             chat_history=test_history,
             review_rounds=2,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         # With review_rounds=2, Auditor runs twice in Phase 2, and once in Phase 3 -> 3 total calls
@@ -793,7 +856,7 @@ class TestAdaptiveSupervisorRouting:
         assert not {n for n in public if "judge" in n or "sphinx" in n or "auditor" in n}
 
     @pytest.mark.anyio
-    async def test_supervisor_agent_runs_with_custom_debate_topology(self, monkeypatch):
+    async def test_supervisor_agent_runs_with_custom_debate_topology(self, monkeypatch, generic_catalog):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
         from src.application.agents.sub_agent_runner import SubAgentResponse
@@ -824,6 +887,7 @@ class TestAdaptiveSupervisorRouting:
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_approve_always,
             topology=custom_topology,
+            agent_catalog=generic_catalog,
         ))
 
         # In Phase 2, only PropTwo ran (PropOne never called!)
@@ -841,7 +905,7 @@ class TestAdaptiveSupervisorRouting:
         assert done_events[0].role == "Coordinator"
 
     @pytest.mark.anyio
-    async def test_topology_skips_empty_phases(self, monkeypatch):
+    async def test_topology_skips_empty_phases(self, monkeypatch, generic_catalog):
         """When optional roles are empty tuples, those phases and their checkpoints are skipped."""
         import src.application.agents.supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
@@ -874,6 +938,7 @@ class TestAdaptiveSupervisorRouting:
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_approve_always,
             topology=sparse_topology,
+            agent_catalog=generic_catalog,
         ))
 
         # Interpreter never called (Phase 1 skipped)
@@ -890,7 +955,7 @@ class TestAdaptiveSupervisorRouting:
         assert any(e.type == EventType.DONE for e in events)
 
     @pytest.mark.anyio
-    async def test_hitl_finish_decision_terminates_debate_early(self, monkeypatch):
+    async def test_hitl_finish_decision_terminates_debate_early(self, monkeypatch, generic_catalog):
         """User choosing FINISH at HITL checkpoint immediately exits remaining phases and consolidates."""
         import src.application.agents.supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
@@ -925,6 +990,7 @@ class TestAdaptiveSupervisorRouting:
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_finish_at_first_hitl,
             topology=custom_topology,
+            agent_catalog=generic_catalog,
         ))
 
         # Phase 1 Interpreter ran
@@ -940,7 +1006,7 @@ class TestAdaptiveSupervisorRouting:
         assert done_events[0].role == "Coordinator"
 
     @pytest.mark.anyio
-    async def test_supervisor_agent_executes_dynamic_plan_omitting_unplanned_stages(self, monkeypatch):
+    async def test_supervisor_agent_executes_dynamic_plan_omitting_unplanned_stages(self, monkeypatch, generic_catalog):
         """
         When Atenea plans a dynamic route (e.g. ['interpreters', 'implementers']),
         the orchestrator follows only the planned stages, omitting proposers and evaluators.
@@ -989,6 +1055,7 @@ class TestAdaptiveSupervisorRouting:
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_approve_hitl,
             topology=custom_topology,
+            agent_catalog=generic_catalog,
         ))
 
         # Interpreters and Implementers ran
@@ -1004,7 +1071,7 @@ class TestAdaptiveSupervisorRouting:
         assert len(done_events) == 1
 
     @pytest.mark.anyio
-    async def test_supervisor_forwards_rag_top_k_and_min_score_from_agent_config_repo(self, monkeypatch):
+    async def test_supervisor_forwards_rag_top_k_and_min_score_from_agent_config_repo(self, monkeypatch, generic_catalog):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.sub_agent_runner import SubAgentResponse
         from src.application.agents.supervisor_agent import SupervisorAgent, TriageDecision
@@ -1057,6 +1124,7 @@ class TestAdaptiveSupervisorRouting:
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_approve_always,
             topology=custom_topology,
+            agent_catalog=generic_catalog,
         ))
 
         assert "ImplOne" in captured_kwargs
@@ -1066,7 +1134,7 @@ class TestAdaptiveSupervisorRouting:
 
 class TestSupervisorAgentFaultTolerance:
     @pytest.mark.anyio
-    async def test_parallel_proposers_round_tolerates_single_agent_failure(self, monkeypatch):
+    async def test_parallel_proposers_round_tolerates_single_agent_failure(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
         from src.application.agents.sub_agent_runner import SubAgentResponse
@@ -1092,6 +1160,8 @@ class TestSupervisorAgentFaultTolerance:
             agent_config_repo=FakeAgentConfigRepo(),
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_approve_always,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         types = _event_types(events)
@@ -1108,7 +1178,7 @@ class TestSupervisorAgentFaultTolerance:
         assert any(any(k in (r or "").lower() for k in ("hestia", "senior", "conservative", "proptwo")) for r in completed_roles)
 
     @pytest.mark.anyio
-    async def test_sequential_agent_failure_emits_recovery_hitl(self, monkeypatch):
+    async def test_sequential_agent_failure_emits_recovery_hitl(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -1139,6 +1209,8 @@ class TestSupervisorAgentFaultTolerance:
             agent_config_repo=FakeAgentConfigRepo(),
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_finish_on_recovery,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         # Check that a recovery HITL was emitted for the interpreter
@@ -1150,7 +1222,7 @@ class TestSupervisorAgentFaultTolerance:
         assert events[-1].type == EventType.DONE
 
     @pytest.mark.anyio
-    async def test_hitl_consolidate_triggers_consolidation(self, monkeypatch):
+    async def test_hitl_consolidate_triggers_consolidation(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -1165,6 +1237,8 @@ class TestSupervisorAgentFaultTolerance:
             agent_config_repo=FakeAgentConfigRepo(),
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_consolidate_at_hitl1,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         assert events[-1].type == EventType.DONE
@@ -1172,7 +1246,7 @@ class TestSupervisorAgentFaultTolerance:
         assert events[-1].metadata.get("skip_consolidation") is None
 
     @pytest.mark.anyio
-    async def test_hitl_finish_halts_without_consolidation(self, monkeypatch):
+    async def test_hitl_finish_halts_without_consolidation(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
 
@@ -1187,6 +1261,8 @@ class TestSupervisorAgentFaultTolerance:
             agent_config_repo=FakeAgentConfigRepo(),
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_finish_at_hitl1,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
         ))
 
         assert events[-1].type == EventType.DONE
@@ -1194,7 +1270,7 @@ class TestSupervisorAgentFaultTolerance:
         assert events[-1].metadata.get("skip_consolidation") == "true"
 
     @pytest.mark.anyio
-    async def test_hitl_retry_reexecutes_only_failed_agents(self, monkeypatch):
+    async def test_hitl_retry_reexecutes_only_failed_agents(self, monkeypatch, generic_catalog):
         """Option C: When RETRY is chosen without target agents, re-run only the failed agents."""
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
@@ -1243,13 +1319,14 @@ class TestSupervisorAgentFaultTolerance:
             # Second HITL after retry: both succeeded. Finish debate.
             return HITLResponse(decision=HITLDecision.FINISH)
 
-        events = await _collect(SupervisorAgent.run(
+        await _collect(SupervisorAgent.run(
             user_request="Build resilient microservices",
             document_store=InMemoryDocumentStore(),
             agent_config_repo=FakeAgentConfigRepo(),
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_hitl_cb,
             topology=test_topology,
+            agent_catalog=generic_catalog,
         ))
 
         # PropOne failed on attempt 1, retried on attempt 2 -> called 2 times
@@ -1265,7 +1342,7 @@ class TestSupervisorAgentFaultTolerance:
         assert hitl_events[1].metadata.get("error_recovery") is None
 
     @pytest.mark.anyio
-    async def test_hitl_retry_with_explicit_target_agents(self, monkeypatch):
+    async def test_hitl_retry_with_explicit_target_agents(self, monkeypatch, generic_catalog):
         """Option C: When RETRY is chosen with target agents, re-run only the specified agents."""
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
@@ -1307,19 +1384,110 @@ class TestSupervisorAgentFaultTolerance:
                 return HITLResponse(decision=HITLDecision.RETRY, target_agents=["PropTwo"])
             return HITLResponse(decision=HITLDecision.FINISH)
 
-        events = await _collect(SupervisorAgent.run(
+        await _collect(SupervisorAgent.run(
             user_request="Build high performance system",
             document_store=InMemoryDocumentStore(),
             agent_config_repo=FakeAgentConfigRepo(),
             llm_factory=lambda _: FakeLLM(),
             hitl_callback=_hitl_cb,
             topology=test_topology,
+            agent_catalog=generic_catalog,
         ))
 
         # PropOne was called only once initially
         assert call_counts["PropOne"] == 1
         # PropTwo was called twice (initial + explicit retry)
         assert call_counts["PropTwo"] == 2
+
+    @pytest.mark.anyio
+    async def test_phase_4_emits_message_and_no_token_double_count_in_direct_modes(self, monkeypatch, generic_catalog):
+        from src.application.agents import supervisor_agent as _mod
+        from src.application.agents.supervisor_agent import SupervisorAgent
+        from src.domain.agents.debate_topology import DebateTopology
+        from src.application.agents.sub_agent_runner import SubAgentResponse
+
+        test_topology = DebateTopology(
+            project_name="Test",
+            project_description="Test",
+            supervisor="Coordinator",
+            interpreters=(),
+            proposers=(),
+            evaluators=(),
+            implementers=("ImplOne",),
+        )
+
+        monkeypatch.setattr(
+            _mod,
+            "classify_intent",
+            lambda *args, **kwargs: _mod.TriageDecision(mode="adaptive_debate", skip_interpreter=True),
+        )
+
+        async def _mock_run(role, user_request, llm_provider, document_store, model_name, **kwargs):
+            return SubAgentResponse(
+                role=role,
+                content=f"Deliverable from {role}",
+                context_chunks=[],
+                tokens={"input": 30, "output": 20, "total": 50},
+                latency=0.2,
+                model_name="test-model",
+            )
+
+        monkeypatch.setattr(_mod.SubAgentRunner, "run", _mock_run)
+
+        events = await _collect(SupervisorAgent.run(
+            user_request="Implement the feature",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_approve_always,
+            topology=test_topology,
+            agent_catalog=generic_catalog,
+        ))
+        impl_messages = [e for e in events if e.type == EventType.MESSAGE and e.role == "ImplOne"]
+        assert len(impl_messages) == 1
+        assert "Deliverable from ImplOne" in impl_messages[0].content
+
+        # Direct-chat and single-agent DONE must mark metrics_reported="true" without duplicate tokens
+        monkeypatch.setattr(
+            _mod,
+            "classify_intent",
+            lambda *args, **kwargs: _mod.TriageDecision(mode="direct_chat"),
+        )
+        direct_events = await _collect(SupervisorAgent.run(
+            user_request="Hola",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_approve_always,
+            topology=test_topology,
+            agent_catalog=generic_catalog,
+        ))
+        comp = next(e for e in direct_events if e.type == EventType.AGENT_COMPLETED)
+        done = next(e for e in direct_events if e.type == EventType.DONE)
+        assert int(comp.metadata["total_tokens"]) > 0
+        assert done.metadata.get("metrics_reported") == "true"
+        assert "total_tokens" not in done.metadata
+        assert "tokens" not in done.metadata
+
+        monkeypatch.setattr(
+            _mod,
+            "classify_intent",
+            lambda *args, **kwargs: _mod.TriageDecision(mode="single_agent", target_agent="ImplOne"),
+        )
+        single_events = await _collect(SupervisorAgent.run(
+            user_request="Haz el código",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_approve_always,
+            topology=test_topology,
+            agent_catalog=generic_catalog,
+        ))
+        s_comp = next(e for e in single_events if e.type == EventType.AGENT_COMPLETED)
+        s_done = next(e for e in single_events if e.type == EventType.DONE)
+        assert s_comp.role == "ImplOne"
+        assert s_done.metadata.get("metrics_reported") == "true"
+        assert "total_tokens" not in s_done.metadata
 
 
 

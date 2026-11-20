@@ -17,7 +17,6 @@ from fastapi.testclient import TestClient
 
 from src.domain.agents.supervisor_events import (
     EventType,
-    HITLDecision,
     SupervisorEvent,
 )
 
@@ -52,7 +51,7 @@ async def _fake_debate_generator(*args, **kwargs):
         metadata={"checkpoint": "after_Hermes", "agent": "Hermes"}
     )
     yield hitl1_event
-    hitl1_resp = await hitl_callback(hitl1_event)
+    await hitl_callback(hitl1_event)
     
     # Event 3: HITL 2
     hitl2_event = SupervisorEvent(
@@ -89,29 +88,29 @@ async def _fake_debate_generator(*args, **kwargs):
 @pytest.fixture
 def ws_client(monkeypatch):
     """Provides a TestClient connected to a fresh app with mocked SupervisorAgent."""
-    # Mock the LLM registry so we don't need real keys
+    from unittest.mock import AsyncMock, MagicMock
+    from src.application.services.auth_service import AuthService
+    from src.application.services.llm_provider_registry import LLMProviderRegistry
+    from src.domain.entities.user import User
     from src.presentation.api.ws import debate
-    monkeypatch.setattr(debate, "get_llm_provider", lambda _: None)
-    
+
     # Mock the ChromaDB store init to avoid creating directories
     from src.infrastructure.rag.chroma_document_store import ChromaDBDocumentStore
     monkeypatch.setattr(ChromaDBDocumentStore, "__init__", lambda self, *a, **kw: None)
 
     # Mock the debate runner
-    from src.presentation.api.ws import debate
     monkeypatch.setattr(debate.SupervisorAgent, "run", _fake_debate_generator)
-
-    from unittest.mock import AsyncMock, MagicMock
-    from src.application.services.auth_service import AuthService
-    from src.domain.entities.user import User
 
     mock_auth = MagicMock(spec=AuthService)
     mock_auth.is_initialized = AsyncMock(return_value=True)
     test_user = User(id="usr-test-ws", username="architect", password_hash="h", is_admin=True, is_active=True)
     mock_auth.validate_token = AsyncMock(return_value=test_user)
 
+    mock_registry = LLMProviderRegistry()
+    mock_registry.register("gemini", MagicMock())
+
     from src.presentation.api.app import create_app
-    app = create_app(auth_service=mock_auth)
+    app = create_app(auth_service=mock_auth, llm_registry=mock_registry)
     return TestClient(app, cookies={"atenea_session": "mock_valid_ws_token"})
 
 
@@ -200,7 +199,7 @@ class TestDebateWebSocket:
     def test_debate_records_observability_traces(self, ws_client, monkeypatch):
         """Verifies start_trace, spans, and end_trace are emitted to observability service."""
         from unittest.mock import MagicMock
-        from src.domain.ports.observability_port import TraceContext, SpanContext
+        from src.domain.ports.observability_service import TraceContext, SpanContext
         from src.presentation.api.ws import debate
 
         mock_obs = MagicMock()
@@ -263,9 +262,13 @@ class TestDebateWebSocket:
             ev_completed = websocket.receive_json()
             assert ev_completed["type"] == EventType.AGENT_COMPLETED.value
             assert ev_completed["content"] == "Sphinx review"
+            assert ev_completed["metadata"]["total_tokens"] == "30"
 
             ev_done = websocket.receive_json()
             assert ev_done["type"] == EventType.DONE.value
+            assert ev_done["metadata"].get("metrics_reported") == "true"
+            assert "total_tokens" not in ev_done["metadata"]
+            assert "tokens" not in ev_done["metadata"]
 
         mock_runner.assert_awaited_once()
         _, kwargs = mock_runner.call_args
@@ -428,11 +431,18 @@ def test_debate_learning_explicit_directive_with_tags(ws_client, monkeypatch):
     assert captured["source_type"] == SourceType.TEXT
     assert "El patrón Outbox" in captured["source"]
     assert captured["tags"] == ["mensajeria"]
+    assert captured["document_parser"] is not None
+    assert set(captured["extractors"].keys()) == {
+        SourceType.PDF,
+        SourceType.URL,
+        SourceType.MARKDOWN,
+        SourceType.IMAGE,
+    }
 
 
 def test_debate_learning_interactive_tag_flow(ws_client, monkeypatch):
     """Metis asks for tags when none are provided, and completes upon user response."""
-    from src.application.services.learn_from_source import LearnFromSource, SourceType, LearnResult
+    from src.application.services.learn_from_source import LearnFromSource, LearnResult
     from src.application.services.ingest_vault import IngestResult
     from pathlib import Path
 
@@ -492,11 +502,23 @@ def test_debate_learning_interactive_tag_flow(ws_client, monkeypatch):
     assert captured["tags"] == ["atenea", "arquitectura"]
 
 
-def test_debate_learning_multisource_attachments(ws_client, monkeypatch):
+def test_debate_learning_multisource_attachments(ws_client, monkeypatch, tmp_path):
     """Metis processes different attachment file extensions with explicit tags."""
     from src.application.services.learn_from_source import LearnFromSource, SourceType, LearnResult
     from src.application.services.ingest_vault import IngestResult
+    from src.presentation.api.routes import upload
     from pathlib import Path
+
+    monkeypatch.setattr(upload, "TEMP_UPLOAD_DIR", str(tmp_path / "uploads"))
+    user_dir = upload.get_user_upload_dir("usr-test-ws")
+    user_dir.mkdir(parents=True, exist_ok=True)
+
+    pdf_file = user_dir / "guide.pdf"
+    md_file = user_dir / "architecture.md"
+    img_file = user_dir / "diagram.png"
+    pdf_file.write_bytes(b"%PDF-1.4")
+    md_file.write_text("# Arch", encoding="utf-8")
+    img_file.write_bytes(b"\x89PNG")
 
     captured_types = []
 
@@ -518,9 +540,9 @@ def test_debate_learning_multisource_attachments(ws_client, monkeypatch):
             "target_agent": "learning",
             "user_request": "Metis aprende estos documentos #docs #arquitectura",
             "attachments": [
-                "/tmp/guide.pdf",
-                "/tmp/architecture.md",
-                "/tmp/diagram.png",
+                str(pdf_file),
+                str(md_file),
+                str(img_file),
                 "https://example.com/spec",
             ],
         })
@@ -540,6 +562,9 @@ def test_debate_learning_multisource_attachments(ws_client, monkeypatch):
         SourceType.IMAGE,
         SourceType.URL,
     ]
+    assert not pdf_file.exists()
+    assert not md_file.exists()
+    assert not img_file.exists()
 
 
 def test_multi_agent_sequential_dispatch_in_arrival_order(ws_client, monkeypatch):
@@ -621,7 +646,7 @@ def test_multi_agent_sequential_dispatch_in_arrival_order(ws_client, monkeypatch
 def test_debate_observability_enriched_trace_and_hitl_scoring(ws_client, monkeypatch):
     from unittest.mock import MagicMock
     from src.presentation.api.ws import debate
-    from src.domain.ports.observability_port import TraceContext
+    from src.domain.ports.observability_service import TraceContext
 
     mock_obs = MagicMock()
     mock_trace = TraceContext(
@@ -722,8 +747,7 @@ def test_cancel_message_aborts_and_acknowledges(ws_client):
 
 def test_debate_learning_explicit_target_domain_skips_prompting(ws_client, monkeypatch):
     """When target_domain is passed in the start message, Metis ingests immediately without interactive tag/domain question."""
-    from src.application.services.learn_from_source import LearnResult
-    from src.presentation.api.ws import debate
+    from src.application.services.learn_from_source import LearnFromSource, LearnResult
     from pathlib import Path
 
     captured_kwargs = {}
@@ -736,7 +760,7 @@ def test_debate_learning_explicit_target_domain_skips_prompting(ws_client, monke
             errors=[],
         )
 
-    monkeypatch.setattr(debate.LearnFromSource, "run", fake_learn_run)
+    monkeypatch.setattr(LearnFromSource, "run", fake_learn_run)
 
     with ws_client.websocket_connect("/ws/debate") as websocket:
         websocket.send_json({
@@ -753,6 +777,236 @@ def test_debate_learning_explicit_target_domain_skips_prompting(ws_client, monke
         ev2 = websocket.receive_json()
         assert ev2["type"] == EventType.AGENT_COMPLETED.value
         assert captured_kwargs.get("target_domain") == "01_enterprise_architecture"
+
+
+@pytest.mark.parametrize(
+    "malicious_path",
+    [
+        "../../../app/.env",
+        "../../atenea.db",
+        "/etc/passwd",
+        "/app/data/atenea.db",
+        "../other_user/secret.pdf",
+        "/tmp/atenea_uploads/other_user/secret.pdf",
+        "file:///etc/passwd",
+    ],
+)
+def test_debate_rejects_path_traversal_attachments(ws_client, monkeypatch, tmp_path, malicious_path):
+    """WebSocket rejects arbitrary filesystem paths outside the authenticated user's upload directory."""
+    from src.application.services.learn_from_source import LearnFromSource
+    from src.presentation.api.routes import upload
+
+    monkeypatch.setattr(upload, "TEMP_UPLOAD_DIR", str(tmp_path / "uploads"))
+    called = False
+
+    def spy_learn_run(**kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("LearnFromSource.run must never execute for blocked paths")
+
+    monkeypatch.setattr(LearnFromSource, "run", spy_learn_run)
+
+    with ws_client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({
+            "type": "start",
+            "session_id": str(uuid.uuid4()),
+            "target_agent": "learning",
+            "user_request": "Aprende esto #sec",
+            "attachments": [malicious_path],
+        })
+
+        err = websocket.receive_json()
+        assert err["type"] == "error"
+        assert "attachment" in err["content"].lower()
+
+    assert not called
+
+
+def test_debate_rejects_symlink_escape_attachment(ws_client, monkeypatch, tmp_path):
+    """A symlink inside the user upload folder pointing outside must be rejected."""
+    from src.application.services.learn_from_source import LearnFromSource
+    from src.presentation.api.routes import upload
+
+    monkeypatch.setattr(upload, "TEMP_UPLOAD_DIR", str(tmp_path / "uploads"))
+    user_dir = upload.get_user_upload_dir("usr-test-ws")
+    user_dir.mkdir(parents=True, exist_ok=True)
+
+    secret_file = tmp_path / "host_secret.txt"
+    secret_file.write_text("SECRET_TOKEN=123", encoding="utf-8")
+    symlink_path = user_dir / "leak.md"
+    symlink_path.symlink_to(secret_file)
+
+    called = False
+
+    def spy_learn_run(**kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(LearnFromSource, "run", spy_learn_run)
+
+    with ws_client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({
+            "type": "start",
+            "session_id": str(uuid.uuid4()),
+            "target_agent": "learning",
+            "user_request": "Aprende esto #sec",
+            "attachments": [str(symlink_path)],
+        })
+
+        err = websocket.receive_json()
+        assert err["type"] == "error"
+        assert "attachment" in err["content"].lower()
+
+    assert not called
+
+
+def test_debate_learning_accepts_opaque_attachment_id_and_deletes_temp_file(ws_client, monkeypatch, tmp_path):
+    """Clients can pass the opaque attachment_id returned by /upload and the temp file is purged afterwards."""
+    from pathlib import Path
+    from src.application.services.learn_from_source import LearnFromSource, LearnResult
+    from src.application.services.ingest_vault import IngestResult
+    from src.presentation.api.routes import upload
+
+    monkeypatch.setattr(upload, "TEMP_UPLOAD_DIR", str(tmp_path / "uploads"))
+    user_dir = upload.get_user_upload_dir("usr-test-ws")
+    user_dir.mkdir(parents=True, exist_ok=True)
+    uploaded = user_dir / "abc12345_notes.md"
+    uploaded.write_text("# Clean Arch", encoding="utf-8")
+
+    seen_sources = []
+
+    def fake_learn_run(**kwargs):
+        seen_sources.append(kwargs["source"])
+        return LearnResult(
+            source=kwargs["source"],
+            generated_file=Path("/vault/learned/notes.md"),
+            ingest_result=IngestResult(files_processed=1, chunks_upserted=1),
+            errors=[],
+        )
+
+    monkeypatch.setattr(LearnFromSource, "run", fake_learn_run)
+
+    with ws_client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({
+            "type": "start",
+            "session_id": str(uuid.uuid4()),
+            "target_agent": "learning",
+            "user_request": "Aprende esto #arch",
+            "attachments": ["abc12345_notes.md"],
+        })
+
+        assert websocket.receive_json()["type"] == EventType.AGENT_STARTED.value
+        assert websocket.receive_json()["type"] == EventType.AGENT_COMPLETED.value
+        assert websocket.receive_json()["type"] == EventType.DONE.value
+
+    assert seen_sources == [str(uploaded.resolve())]
+    assert not uploaded.exists()
+
+
+def test_dict_to_hitl_response_rejects_cancel_payload():
+    from src.presentation.api.ws.serializers import dict_to_hitl_response
+
+    with pytest.raises(ValueError, match="Cancellation"):
+        dict_to_hitl_response({"type": "cancel"})
+
+    with pytest.raises(ValueError, match="Cancellation"):
+        dict_to_hitl_response({"type": "hitl_response", "decision": "abort"})
+
+
+def test_cancel_during_hitl_aborts_without_approving_next_phase(ws_client):
+    """Sending {type: 'cancel'} while paused at HITL must abort cleanly instead of defaulting to APPROVE."""
+    from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
+    from src.presentation.api.config import get_settings
+
+    session_id = f"cancel-hitl-{uuid.uuid4()}"
+
+    with ws_client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({
+            "type": "start",
+            "session_id": session_id,
+            "user_request": "Diseñar arquitectura multi-región",
+        })
+
+        ev1 = websocket.receive_json()
+        assert ev1["type"] == EventType.AGENT_STARTED.value
+
+        ev_hitl1 = websocket.receive_json()
+        assert ev_hitl1["type"] == EventType.HITL_REQUIRED.value
+
+        # Cancel mid-HITL instead of responding with hitl_response
+        websocket.send_json({"type": "cancel"})
+
+        ev_done = websocket.receive_json()
+        assert ev_done["type"] == EventType.DONE.value
+        assert "cancelado" in ev_done["content"].lower()
+        assert ev_done["metadata"].get("cancelled") == "true"
+
+    repo = SqliteDebateRepository(str(get_settings().sqlite_db_path))
+    record = repo.find_by_id(session_id, allow_unscoped=True)
+    assert record is not None
+    assert record.status == "aborted"
+
+
+def test_debate_ws_forwards_injected_settings_and_image_generator_to_supervisor(monkeypatch, tmp_path):
+    """Composition root WS handler passes default_provider, default_model, review_rounds and IImageGenerator explicitly."""
+    from unittest.mock import AsyncMock, MagicMock
+    from src.application.services.auth_service import AuthService
+    from src.domain.entities.user import User
+    from src.domain.ports.image_generator import IImageGenerator
+    from src.presentation.api.app import create_app
+    from src.presentation.api.config import Settings
+    from src.presentation.api.ws import debate
+
+    captured_kwargs: dict = {}
+
+    async def _capturing_supervisor_run(**kwargs):
+        captured_kwargs.update(kwargs)
+        yield SupervisorEvent(type=EventType.DONE, role="Supervisor", content="ok")
+
+    from src.application.services.llm_provider_registry import LLMProviderRegistry
+
+    monkeypatch.delenv("IMAGE_GENERATION_PROVIDER", raising=False)
+    monkeypatch.delenv("IMAGE_PROVIDER", raising=False)
+    monkeypatch.setattr(debate.SupervisorAgent, "run", _capturing_supervisor_run)
+
+    mock_registry = LLMProviderRegistry()
+    mock_registry.register("openai", MagicMock())
+
+    mock_auth = MagicMock(spec=AuthService)
+    mock_auth.is_initialized = AsyncMock(return_value=True)
+    mock_auth.validate_token = AsyncMock(
+        return_value=User(id="usr-dip", username="tester", password_hash="h", is_admin=True, is_active=True)
+    )
+    settings = Settings(
+        sqlite_db_path=tmp_path / "ws_dip.db",
+        auth_secret_key="test_secret_key_32_bytes_minimum_length",
+        default_provider="openai",
+        default_model="gpt-4o",
+        review_rounds=3,
+        image_generation_provider="imagen",
+    )
+    fake_store = MagicMock()
+    app = create_app(
+        settings=settings,
+        auth_service=mock_auth,
+        document_store=fake_store,
+        llm_registry=mock_registry,
+    )
+    client = TestClient(app, cookies={"atenea_session": "tok"})
+
+    with client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({"type": "start", "user_request": "Diseña una arquitectura"})
+        ev = websocket.receive_json()
+        assert ev["type"] == EventType.DONE.value
+
+    opts = captured_kwargs["options"]
+    assert opts.default_provider == "openai"
+    assert opts.default_model == "gpt-4o"
+    assert captured_kwargs["review_rounds"] == 3
+    assert isinstance(opts.image_generator, IImageGenerator)
+    assert opts.image_generator.get_provider_name() == "imagen"
+
+
 
 
 

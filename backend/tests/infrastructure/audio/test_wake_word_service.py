@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import patch, MagicMock
 from src.infrastructure.audio.wake_word_service import WakeWordService
 import json
@@ -218,6 +217,32 @@ def test_wake_word_service_detects_silence_commands(mock_kaldi, mock_model_class
         det = service.process_chunk(audio_chunk)
         assert bool(det) is True, f"Failed for phrase: {phrase}"
         assert det.command == "silence", f"Failed command for phrase: {phrase}"
+
+
+@patch("src.infrastructure.audio.wake_word_service.Model")
+@patch("src.infrastructure.audio.wake_word_service.KaldiRecognizer")
+def test_wake_word_model_initialization_is_thread_safe(mock_kaldi, mock_model_class):
+    import concurrent.futures
+    import threading
+
+    mock_recognizer_instance = MagicMock()
+    mock_recognizer_instance.AcceptWaveform.return_value = False
+    mock_recognizer_instance.PartialResult.return_value = json.dumps({"partial": ""})
+    mock_kaldi.return_value = mock_recognizer_instance
+
+    service = WakeWordService()
+    barrier = threading.Barrier(4)
+
+    def _run(_i: int):
+        barrier.wait(timeout=2.0)
+        return service.process_chunk(b"\x00" * 512)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(_run, range(4)))
+
+    assert len(results) == 4
+    assert mock_model_class.call_count == 1
+    assert mock_kaldi.call_count == 1
 
 
 

@@ -2,7 +2,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 import uuid
 import jwt
-from src.domain.ports.token_service_port import ITokenService
+from src.domain.ports.token_service import ITokenService
 
 INSECURE_DEFAULT_SECRETS = frozenset({
     "atenea_super_secret_auth_key_must_be_overridden_in_production_32_bytes",

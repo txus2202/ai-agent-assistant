@@ -1,25 +1,76 @@
 name: Build and Publish Docker Images
 
 on:
+  workflow_call:
   push:
-    branches:
-      - main
     tags:
       - 'v*.*.*'
-    paths:
-      - 'backend/**'
-      - 'frontend/**'
-      - '.github/workflows/docker-publish.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
+  security-scan:
+    name: Build & Trivy Vulnerability Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build Backend image for Trivy scan (amd64)
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: atenea-backend:trivy
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Scan Backend image with Trivy
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          image-ref: atenea-backend:trivy
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      - name: Build Frontend image for Trivy scan (amd64)
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: atenea-frontend:trivy
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Scan Frontend image with Trivy
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          image-ref: atenea-frontend:trivy
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
   build-and-push:
     name: Build & Push Images to GHCR
+    needs: [security-scan]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout repository
@@ -47,7 +98,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}/backend
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref_name == 'main' || startsWith(github.ref, 'refs/tags/') }}
             type=ref,event=tag
             type=sha,format=short
 
@@ -72,7 +123,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}/frontend
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref_name == 'main' || startsWith(github.ref, 'refs/tags/') }}
             type=ref,event=tag
             type=sha,format=short
 

@@ -3,6 +3,8 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ChevronDown } from '@lucide/vue'
 import { useDebateStore } from '../stores/debate'
 import { useTouchSwipe } from '../utils/touchSwipe'
+import { audioService } from '../services/audioService'
+import { HttpError } from '../services/httpClient'
 
 const props = withDefaults(defineProps<{
   activeAgentColor?: string
@@ -34,6 +36,7 @@ const waveformCanvasRef = ref<HTMLCanvasElement | null>(null)
 
 let waveAnimationFrameId = 0
 let isComponentUnmounted = false
+let isPageHidden = typeof document !== 'undefined' ? document.visibilityState === 'hidden' : false
 let waveOffset = 0
 
 // Silence detection references
@@ -162,26 +165,18 @@ const toggleRecording = async () => {
 }
 
 const uploadAudioForTranscription = async (blob: Blob) => {
-  const formData = new FormData()
-  formData.append('file', blob, 'recording.webm')
-
   try {
-    const response = await fetch('/api/audio/transcribe', {
-      method: 'POST',
-      body: formData
-    })
-
-    if (response.ok) {
-      const data = await response.json()
-      if (data.text) {
-        store.draftMessage += (store.draftMessage ? ' ' : '') + data.text
-        emit('submit-draft')
-      }
-    } else {
-      console.error("Transcription failed")
+    const data = await audioService.transcribeAudio(blob)
+    if (data.text) {
+      store.draftMessage += (store.draftMessage ? ' ' : '') + data.text
+      emit('submit-draft')
     }
   } catch (e) {
-    console.error("Transcription error:", e)
+    if (e instanceof HttpError) {
+      console.error("Transcription failed")
+    } else {
+      console.error("Transcription error:", e)
+    }
   }
 }
 
@@ -318,14 +313,27 @@ const drawIdleWaveform = (
   waveOffset += 0.08
 }
 
+const stopWaveformLoop = () => {
+  if (waveAnimationFrameId !== 0) {
+    cancelAnimationFrame(waveAnimationFrameId)
+    waveAnimationFrameId = 0
+  }
+}
+
 const animateWaveform = () => {
-  if (!waveformCanvasRef.value) return
+  if (isComponentUnmounted || isPageHidden || !waveformCanvasRef.value) {
+    waveAnimationFrameId = 0
+    return
+  }
   const wCanvas = waveformCanvasRef.value
   if (wCanvas.clientWidth > 0 && wCanvas.width !== wCanvas.clientWidth) {
     wCanvas.width = wCanvas.clientWidth
   }
   const wCtx = wCanvas.getContext('2d')
-  if (!wCtx) return
+  if (!wCtx) {
+    waveAnimationFrameId = 0
+    return
+  }
 
   wCtx.clearRect(0, 0, wCanvas.width, wCanvas.height)
   const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
@@ -337,7 +345,21 @@ const animateWaveform = () => {
     drawIdleWaveform(wCtx, wCanvas.width, wCanvas.height / 2, isLight)
   }
 
-  waveAnimationFrameId = requestAnimationFrame(animateWaveform)
+  if (!isComponentUnmounted && !isPageHidden) {
+    waveAnimationFrameId = requestAnimationFrame(animateWaveform)
+  } else {
+    waveAnimationFrameId = 0
+  }
+}
+
+const handleDocumentVisibilityChange = () => {
+  if (typeof document === 'undefined') return
+  isPageHidden = document.visibilityState === 'hidden'
+  if (isPageHidden) {
+    stopWaveformLoop()
+  } else if (!isComponentUnmounted && waveAnimationFrameId === 0) {
+    animateWaveform()
+  }
 }
 
 watch(() => store.isWakeWordTriggered, (triggered) => {
@@ -387,12 +409,21 @@ const voiceDotStyle = computed(() => {
 })
 
 onMounted(() => {
-  animateWaveform()
+  if (typeof document !== 'undefined') {
+    isPageHidden = document.visibilityState === 'hidden'
+    document.addEventListener('visibilitychange', handleDocumentVisibilityChange)
+  }
+  if (!isPageHidden) {
+    animateWaveform()
+  }
 })
 
 onUnmounted(() => {
   isComponentUnmounted = true
-  cancelAnimationFrame(waveAnimationFrameId)
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', handleDocumentVisibilityChange)
+  }
+  stopWaveformLoop()
   stopSilenceDetection()
   if (mediaRecorder.value && isRecording.value) {
     mediaRecorder.value.stop()

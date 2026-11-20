@@ -1,4 +1,4 @@
-import pytest
+import time
 from unittest.mock import patch, AsyncMock, MagicMock
 from fastapi.testclient import TestClient
 from src.presentation.api.app import create_app
@@ -35,8 +35,6 @@ def test_wake_word_websocket_detected(mock_process_chunk):
         
         mock_process_chunk.assert_called_once()
 
-
-import time
 
 @patch("src.presentation.api.ws.wake_word.wake_word_service.process_chunk")
 def test_wake_word_websocket_not_detected(mock_process_chunk):

@@ -121,3 +121,34 @@ async def test_kokoro_default_threads_when_env_unset(mock_kokoro, monkeypatch):
         _ = service._get_kokoro()
 
         mock_kokoro_class.assert_called_once_with("dummy.onnx", "dummy.bin")
+
+
+def test_lazy_model_initialization_is_thread_safe(mock_whisper, mock_kokoro):
+    import concurrent.futures
+    import threading
+
+    mock_whisper_class, _ = mock_whisper
+    mock_kokoro_class, _ = mock_kokoro
+
+    whisper_gate = threading.Barrier(4)
+    kokoro_gate = threading.Barrier(4)
+
+    with patch("pathlib.Path.exists", return_value=True):
+        service = LocalAudioService("base", Path("dummy.onnx"), Path("dummy.bin"), "ef_dora")
+
+        def _load_whisper(_i: int):
+            whisper_gate.wait(timeout=2.0)
+            return service._get_whisper_model()
+
+        def _load_kokoro(_i: int):
+            kokoro_gate.wait(timeout=2.0)
+            return service._get_kokoro()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            whisper_results = list(pool.map(_load_whisper, range(4)))
+            kokoro_results = list(pool.map(_load_kokoro, range(4)))
+
+    assert mock_whisper_class.call_count == 1
+    assert mock_kokoro_class.call_count == 1
+    assert len({id(obj) for obj in whisper_results}) == 1
+    assert len({id(obj) for obj in kokoro_results}) == 1

@@ -10,7 +10,6 @@ State machine:
 """
 from __future__ import annotations
 
-import os
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -49,8 +48,8 @@ class Task:
     Core domain entity representing a unit of work executed by an Agent.
 
     Invariant validations enforced at construction time:
-    - ``prompt``       : non-empty, non-whitespace; max length from
-                         ``TASK_PROMPT_MAX_LENGTH`` env var (default 10 000).
+    - ``prompt``       : non-empty, non-whitespace; bounded by ``max_length``
+                         (default 10 000).
     - ``agent_id``     : must be a valid ``uuid.UUID`` instance.
     - ``dependencies`` : list of ``uuid.UUID``; defaults to ``[]``.
     - ``status``       : initialised to ``TaskStatus.PENDING``; mutated only
@@ -58,14 +57,17 @@ class Task:
     - ``created_at``   : auto-assigned UTC-aware datetime; immutable.
     """
 
+    DEFAULT_PROMPT_MAX_LENGTH = 10_000
+
     def __init__(
         self,
         prompt: str,
         agent_id: uuid.UUID,
         dependencies: list[uuid.UUID] | None = None,
         task_id: uuid.UUID | None = None,
+        max_length: int = DEFAULT_PROMPT_MAX_LENGTH,
     ) -> None:
-        self._validate_prompt(prompt)
+        self._validate_prompt(prompt, max_length=max_length)
 
         self.id: uuid.UUID = task_id if task_id is not None else uuid.uuid4()
         self.prompt: str = prompt
@@ -107,9 +109,9 @@ class Task:
         self.status = target
 
     @classmethod
-    def _validate_prompt(cls, prompt: str) -> None:
-        # Read at validation time so tests can override the env var dynamically.
-        max_length = int(os.getenv("TASK_PROMPT_MAX_LENGTH", 10_000))
+    def _validate_prompt(cls, prompt: str, max_length: int = DEFAULT_PROMPT_MAX_LENGTH) -> None:
+        if not isinstance(max_length, int) or isinstance(max_length, bool) or max_length <= 0:
+            raise ValueError("max_length must be a positive integer.")
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("Prompt cannot be empty.")
         if len(prompt) > max_length:

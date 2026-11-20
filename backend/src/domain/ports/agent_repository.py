@@ -8,12 +8,13 @@ SQLiteAgentRepository, etc.) must implement this contract.
 from __future__ import annotations
 
 import uuid
-from abc import ABC, abstractmethod
+from typing import Protocol, runtime_checkable
 
 from src.domain.entities.agent import Agent
 
 
-class IAgentRepository(ABC):
+@runtime_checkable
+class IAgentRepository(Protocol):
     """
     Port (output) for Agent persistence.
 
@@ -21,7 +22,6 @@ class IAgentRepository(ABC):
     exceptions and re-raise them as ``src.domain.exceptions.RepositoryError``.
     """
 
-    @abstractmethod
     def save(self, agent: Agent) -> None:
         """
         Persist a new Agent or update an existing one (upsert semantics).
@@ -32,8 +32,8 @@ class IAgentRepository(ABC):
         Raises:
             RepositoryError: On storage failure.
         """
+        ...
 
-    @abstractmethod
     def find_by_id(self, agent_id: uuid.UUID) -> Agent | None:
         """
         Retrieve an Agent by its unique identifier.
@@ -47,8 +47,8 @@ class IAgentRepository(ABC):
         Raises:
             RepositoryError: On storage failure.
         """
+        ...
 
-    @abstractmethod
     def find_all(self) -> list[Agent]:
         """
         Return all stored Agents.
@@ -59,8 +59,8 @@ class IAgentRepository(ABC):
         Raises:
             RepositoryError: On storage failure.
         """
+        ...
 
-    @abstractmethod
     def delete(self, agent_id: uuid.UUID) -> None:
         """
         Remove an Agent by ID. Idempotent — no error if ID does not exist.
@@ -71,3 +71,4 @@ class IAgentRepository(ABC):
         Raises:
             RepositoryError: On storage failure.
         """
+        ...

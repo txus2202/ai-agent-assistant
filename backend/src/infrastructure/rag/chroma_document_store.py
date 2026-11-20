@@ -10,11 +10,12 @@ Distance metric:  cosine (score = 1 - cosine_distance ∈ [0, 1]).
 Configuration:
     - ``ephemeral=True``      → in-memory ChromaDB (for tests, fast, no disk I/O).
     - ``persist_directory``   → path to ChromaDB storage directory.
-    - Env var ``CHROMA_PATH`` → overrides default ``~/.ai-agent-assistant/chroma``.
+    - Env var ``CHROMA_PERSIST_DIR`` (or legacy ``CHROMA_PATH``) → overrides default ``~/.ai-agent-assistant/chroma``.
 """
 from __future__ import annotations
 
 import os
+from typing import Any
 
 import chromadb
 from chromadb.utils import embedding_functions
@@ -34,8 +35,8 @@ class ChromaDBDocumentStore(IDocumentStore):
 
     Args:
         persist_directory: Path to the ChromaDB storage directory.
-                           Falls back to ``CHROMA_PATH`` env var or
-                           ``~/.ai-agent-assistant/chroma``.
+                           Falls back to ``CHROMA_PERSIST_DIR``, legacy ``CHROMA_PATH``,
+                           or ``~/.ai-agent-assistant/chroma``.
         ephemeral:         If ``True``, use an in-memory (ephemeral) client.
                            Intended for tests — data is lost when the object
                            is garbage-collected.
@@ -53,15 +54,20 @@ class ChromaDBDocumentStore(IDocumentStore):
         if ephemeral:
             self._client: chromadb.ClientAPI = chromadb.EphemeralClient()
         elif host or os.getenv("CHROMA_HOST"):
-            chroma_host = host or os.getenv("CHROMA_HOST", "localhost")
-            raw_port = port or os.getenv("CHROMA_PORT", "8000")
+            chroma_host = host or os.getenv("CHROMA_HOST") or "localhost"
+            raw_port: int | str = port if port is not None else os.getenv("CHROMA_PORT", "8000")
             chroma_port = int(raw_port)
             self._client = chromadb.HttpClient(host=chroma_host, port=chroma_port)
         else:
-            path = persist_directory or os.getenv("CHROMA_PATH", _DEFAULT_CHROMA_PATH)
+            path = (
+                persist_directory
+                or os.getenv("CHROMA_PERSIST_DIR")
+                or os.getenv("CHROMA_PATH")
+                or _DEFAULT_CHROMA_PATH
+            )
             self._client = chromadb.PersistentClient(path=path)
 
-        ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+        ef: Any = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name=_EMBEDDING_MODEL
         )
         self._collection = self._client.get_or_create_collection(
@@ -80,7 +86,7 @@ class ChromaDBDocumentStore(IDocumentStore):
         # ChromaDB requires non-empty metadata dicts.
         # We always include _file_path for provenance tracking and to
         # guarantee at least one field even on files with no frontmatter.
-        metadatas = [{"_file_path": c.file_path, **c.metadata} for c in chunks]
+        metadatas: Any = [{"_file_path": c.file_path, **c.metadata} for c in chunks]
         self._collection.upsert(
             ids=[c.id for c in chunks],
             documents=[c.content for c in chunks],
@@ -111,18 +117,22 @@ class ChromaDBDocumentStore(IDocumentStore):
             kwargs["where"] = where
 
         results = self._collection.query(**kwargs)
+        ids_batch = results.get("ids") or [[]]
+        metadatas_batch = results.get("metadatas") or [[]]
+        distances_batch = results.get("distances") or [[]]
+        documents_batch = results.get("documents") or [[]]
 
         chunks: list[DocumentChunk] = []
-        for i, doc_id in enumerate(results["ids"][0]):
-            raw_meta: dict = results["metadatas"][0][i]
-            distance: float = results["distances"][0][i]
+        for i, doc_id in enumerate(ids_batch[0]):
+            raw_meta = dict(metadatas_batch[0][i])
+            distance = float(distances_batch[0][i])
             score = max(0.0, 1.0 - distance)  # cosine distance → similarity
 
             file_path, _, heading = doc_id.partition("#")
             chunks.append(
                 DocumentChunk(
                     id=doc_id,
-                    content=results["documents"][0][i],
+                    content=documents_batch[0][i],
                     file_path=file_path,
                     heading=heading,
                     metadata={k: str(v) for k, v in raw_meta.items()},

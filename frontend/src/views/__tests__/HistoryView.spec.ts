@@ -4,6 +4,7 @@ import HistoryView from '../HistoryView.vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import { createPinia } from 'pinia'
 import { useDebateStore } from '../../stores/debate'
+import { historyService, type ListDebatesParams } from '../../services/historyService'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -24,7 +25,7 @@ describe('HistoryView.vue', () => {
   })
 
   it('renders loading state initially', () => {
-    global.fetch = vi.fn().mockImplementation(() => new Promise(() => {}))
+    vi.spyOn(historyService, 'listDebates').mockImplementation(() => new Promise(() => {}))
     const wrapper = mount(HistoryView, {
       global: { plugins: [router, createPinia()] }
     })
@@ -35,10 +36,7 @@ describe('HistoryView.vue', () => {
     const mockDebates = [
       { id: '123', created_at: '2023-10-01T12:00:00Z', events: [{ type: 'start', user_request: 'Test prompt' }] }
     ]
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(mockDebates)
-    })
+    vi.spyOn(historyService, 'listDebates').mockResolvedValue(mockDebates)
 
     const wrapper = mount(HistoryView, {
       global: { plugins: [router, createPinia()] }
@@ -54,15 +52,8 @@ describe('HistoryView.vue', () => {
     const mockDebates = [
       { id: '123', created_at: '2023-10-01T12:00:00Z', events: [] }
     ]
-    global.fetch = vi.fn().mockImplementation((url, options) => {
-      if (options?.method === 'DELETE') {
-        return Promise.resolve({ ok: true })
-      }
-      return Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve(mockDebates)
-      })
-    })
+    vi.spyOn(historyService, 'listDebates').mockResolvedValue(mockDebates)
+    const deleteSpy = vi.spyOn(historyService, 'deleteDebate').mockResolvedValue(undefined)
     
     // Mock window.confirm
     global.confirm = vi.fn().mockReturnValue(true)
@@ -78,7 +69,7 @@ describe('HistoryView.vue', () => {
     await flushPromises()
 
     expect(global.confirm).toHaveBeenCalled()
-    expect(global.fetch).toHaveBeenCalledWith('/api/debates/123', { method: 'DELETE' })
+    expect(deleteSpy).toHaveBeenCalledWith('123')
     expect(wrapper.text()).not.toContain('Session 123')
   })
 
@@ -86,10 +77,7 @@ describe('HistoryView.vue', () => {
     const mockDebates = [
       { id: '123', created_at: '2023-10-01T12:00:00Z', events: [{ type: 'start', user_request: 'Test prompt' }] }
     ]
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(mockDebates)
-    })
+    vi.spyOn(historyService, 'listDebates').mockResolvedValue(mockDebates)
 
     const wrapper = mount(HistoryView, {
       global: { plugins: [router, createPinia()] }
@@ -122,10 +110,7 @@ describe('HistoryView.vue', () => {
         ]
       }
     ]
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(mockDebates)
-    })
+    vi.spyOn(historyService, 'listDebates').mockResolvedValue(mockDebates)
 
     const wrapper = mount(HistoryView, {
       global: { plugins: [router, pinia] }
@@ -141,10 +126,7 @@ describe('HistoryView.vue', () => {
   })
 
   it('navigates back to home on back button click', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve([])
-    })
+    vi.spyOn(historyService, 'listDebates').mockResolvedValue([])
 
     const wrapper = mount(HistoryView, {
       global: { plugins: [router, createPinia()] }
@@ -159,10 +141,8 @@ describe('HistoryView.vue', () => {
 
   it('does not delete debate if user cancels confirmation', async () => {
     const mockDebates = [{ id: '123', created_at: '2023-10-01T12:00:00Z', events: [] }]
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(mockDebates)
-    })
+    vi.spyOn(historyService, 'listDebates').mockResolvedValue(mockDebates)
+    const deleteSpy = vi.spyOn(historyService, 'deleteDebate').mockResolvedValue(undefined)
     global.confirm = vi.fn().mockReturnValue(false)
 
     const wrapper = mount(HistoryView, {
@@ -175,13 +155,13 @@ describe('HistoryView.vue', () => {
     await flushPromises()
 
     expect(global.confirm).toHaveBeenCalled()
-    expect(global.fetch).not.toHaveBeenCalledWith('/api/debates/123', { method: 'DELETE' })
+    expect(deleteSpy).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('ID: 123')
   })
 
   it('handles fetch error and delete error gracefully', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    global.fetch = vi.fn().mockRejectedValue(new Error('Fetch debates failed'))
+    const listSpy = vi.spyOn(historyService, 'listDebates').mockRejectedValue(new Error('Fetch debates failed'))
 
     const wrapper = mount(HistoryView, {
       global: { plugins: [router, createPinia()] }
@@ -193,12 +173,8 @@ describe('HistoryView.vue', () => {
 
     // Now test delete error
     global.confirm = vi.fn().mockReturnValue(true)
-    global.fetch = vi.fn().mockImplementation((url, opts) => {
-      if (opts?.method === 'DELETE') {
-        return Promise.reject(new Error('Delete debate failed'))
-      }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve([{ id: '999', created_at: '2023', events: [] }]) })
-    })
+    listSpy.mockResolvedValue([{ id: '999', created_at: '2023', events: [] }])
+    vi.spyOn(historyService, 'deleteDebate').mockRejectedValue(new Error('Delete debate failed'))
 
     const wrapper2 = mount(HistoryView, {
       global: { plugins: [router, createPinia()] }
@@ -210,5 +186,125 @@ describe('HistoryView.vue', () => {
     await flushPromises()
 
     expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to delete debate:', expect.any(Error))
+  })
+
+  it('extracts done conclusions, detects hitl_required badges, and avoids token double counting', async () => {
+    const mockDebates = [
+      {
+        id: 'deb-metrics',
+        created_at: '2026-11-18T12:00:00Z',
+        user_request: 'Revisión de arquitectura',
+        events: [
+          { type: 'start', user_request: 'Revisión de arquitectura' },
+          { type: 'hitl_required', role: 'Hermes', content: 'Aprobar alcance' },
+          { type: 'agent_completed', role: 'Hermes', content: 'Alcance ok', metadata: { total_tokens: '120', tokens: '120' } },
+          { type: 'done', role: 'Hermes', content: 'Alcance ok', metadata: { metrics_reported: 'true' } },
+          { type: 'done', role: 'Atenea', content: 'Dictamen final consolidado.', metadata: { total_tokens: '80', tokens: '80' } },
+        ]
+      }
+    ]
+    vi.spyOn(historyService, 'listDebates').mockResolvedValue(mockDebates)
+
+    const wrapper = mount(HistoryView, {
+      global: { plugins: [router, createPinia()] }
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Dictamen final consolidado.')
+    expect(wrapper.text()).toContain('200')
+    expect(wrapper.text()).not.toContain('320')
+  })
+
+  it('consumes paginated summary DTOs and fetches full debate events on demand when restoring', async () => {
+    const pinia = createPinia()
+    const store = useDebateStore(pinia)
+    const fullDetail = {
+      id: 'sum-001',
+      created_at: '2026-11-18T12:00:00Z',
+      user_request: 'Arquitectura paginada',
+      status: 'completed',
+      events: [
+        { type: 'start', user_request: 'Arquitectura paginada' },
+        { type: 'done', role: 'supervisor', content: 'Propuesta detallada completa' }
+      ]
+    }
+    const listSpy = vi.spyOn(historyService, 'listDebates').mockImplementation((params: ListDebatesParams) => {
+      if (params.offset === 0) {
+        return Promise.resolve({
+          total: 2,
+          total_all: 2,
+          limit: 20,
+          offset: 0,
+          items: [
+            {
+              id: 'sum-001',
+              created_at: '2026-11-18T12:00:00Z',
+              user_request: 'Arquitectura paginada',
+              target_agent: 'supervisor',
+              status: 'completed',
+              event_count: 8,
+              total_tokens: 450,
+              has_hitl: true,
+              conclusion: 'Conclusión resumida',
+              agents: ['senior_architect']
+            }
+          ]
+        })
+      }
+      return Promise.resolve({
+        total: 2,
+        total_all: 2,
+        limit: 20,
+        offset: 1,
+        items: [
+          {
+            id: 'sum-002',
+            created_at: '2026-11-18T11:00:00Z',
+            user_request: 'Segunda página',
+            target_agent: 'supervisor',
+            status: 'completed',
+            event_count: 3,
+            total_tokens: 150,
+            has_hitl: false,
+            conclusion: 'Resumen página 2',
+            agents: ['Hermes']
+          }
+        ]
+      })
+    })
+    const getSpy = vi.spyOn(historyService, 'getDebate').mockResolvedValue(fullDetail)
+
+    const wrapper = mount(HistoryView, {
+      global: { plugins: [router, pinia] }
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Arquitectura paginada')
+    expect(wrapper.text()).toContain('8 events')
+    expect(wrapper.text()).toContain('450')
+    expect(wrapper.text()).toContain('Conclusión resumida')
+    expect(wrapper.text()).toContain('senior architect')
+    expect(wrapper.text()).toContain('Mostrando 1 de 2 sesiones')
+
+    // Trigger scroll near bottom to load next page
+    const mainEl = wrapper.find('main')
+    Object.defineProperty(mainEl.element, 'scrollHeight', { value: 1000, configurable: true })
+    Object.defineProperty(mainEl.element, 'scrollTop', { value: 750, configurable: true })
+    Object.defineProperty(mainEl.element, 'clientHeight', { value: 200, configurable: true })
+    await mainEl.trigger('scroll')
+    await flushPromises()
+
+    expect(listSpy).toHaveBeenCalledWith(expect.objectContaining({ limit: 20, offset: 1, filter: 'all' }))
+    expect(wrapper.text()).toContain('Segunda página')
+
+    // Restore lightweight card: must fetch full detail via historyService.getDebate
+    const pushSpy = vi.spyOn(router, 'push')
+    await wrapper.find('.session-card').trigger('click')
+    await flushPromises()
+
+    expect(getSpy).toHaveBeenCalledWith('sum-001')
+    expect(store.currentSessionId).toBe('sum-001')
+    expect(store.messages.some(m => m.content.includes('Propuesta detallada completa'))).toBe(true)
+    expect(pushSpy).toHaveBeenCalledWith('/')
   })
 })

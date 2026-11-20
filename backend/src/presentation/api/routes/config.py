@@ -3,11 +3,18 @@ from typing import Annotated, List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from src.domain.agents.sub_agent_profiles import get_all_profiles, get_profile
 from src.domain.entities.user import User
+from src.domain.ports.agent_catalog_repository import (
+    IAgentCatalogRepository,
+    ITopologyProvider,
+)
 from src.domain.ports.agent_config_repository import IAgentConfigRepository
 from src.domain.value_objects.agent_config import AgentConfig
 from src.presentation.api.config import get_settings, Settings
+from src.presentation.api.dependencies.agents import (
+    get_agent_catalog,
+    get_topology_provider,
+)
 from src.presentation.api.dependencies.auth import get_agent_config_repository, get_current_user
 
 router = APIRouter(prefix="/config", tags=["config"])
@@ -77,16 +84,17 @@ def _build_agent_item(
 
 
 @router.get("/agents")
-async def get_agents_config(
+def get_agents_config(
     repo: Annotated[IAgentConfigRepository, Depends(get_config_repo)],
     current_user: Annotated[User, Depends(get_current_user)],
+    agent_catalog: Annotated[IAgentCatalogRepository, Depends(get_agent_catalog)],
+    topology_provider: Annotated[ITopologyProvider, Depends(get_topology_provider)],
 ) -> List[Dict[str, Any]]:
     """
     Devuelve la lista de agentes disponibles en el sistema con su nombre, descripción, proveedor, modelo y capacidades configuradas para el usuario autenticado.
     """
     settings = get_settings()
-    from src.domain.agents.debate_topology import load_topology
-    top = load_topology()
+    top = topology_provider.get_topology()
 
     return [
         _build_agent_item(
@@ -97,7 +105,7 @@ async def get_agents_config(
             default_rag_min_score=settings.rag_min_score,
             user_id=current_user.id,
         )
-        for profile in get_all_profiles()
+        for profile in agent_catalog.get_all_profiles()
     ]
 
 @router.get(
@@ -106,16 +114,17 @@ async def get_agents_config(
         404: {"description": "Agent role not found"}
     }
 )
-async def get_agent_config(
+def get_agent_config(
     role: str,
     repo: Annotated[IAgentConfigRepository, Depends(get_config_repo)],
     current_user: Annotated[User, Depends(get_current_user)],
+    agent_catalog: Annotated[IAgentCatalogRepository, Depends(get_agent_catalog)],
 ) -> Dict[str, Any]:
     """
     Obtiene la configuración (nombre, descripción, proveedor, modelo y RAG) de un agente específico para el usuario autenticado.
     """
     try:
-        profile = get_profile(role)
+        profile = agent_catalog.get_profile(role)
     except KeyError:
         raise HTTPException(status_code=404, detail="Agent role not found")
 
@@ -144,17 +153,18 @@ async def get_agent_config(
         404: {"description": "Agent role not found"}
     }
 )
-async def update_agent_config(
+def update_agent_config(
     role: str, 
     update: AgentConfigUpdate, 
     repo: Annotated[IAgentConfigRepository, Depends(get_config_repo)],
     current_user: Annotated[User, Depends(get_current_user)],
+    agent_catalog: Annotated[IAgentCatalogRepository, Depends(get_agent_catalog)],
 ):
     """
     Actualiza la configuración (proveedor, modelo y parámetros RAG) de un agente específico para el usuario autenticado.
     """
     try:
-        profile = get_profile(role)
+        profile = agent_catalog.get_profile(role)
     except KeyError:
         raise HTTPException(status_code=404, detail="Agent role not found")
 
@@ -181,12 +191,13 @@ async def update_agent_config(
 
 
 @router.get("/topology")
-async def get_topology() -> Dict[str, Any]:
+def get_topology(
+    topology_provider: Annotated[ITopologyProvider, Depends(get_topology_provider)],
+) -> Dict[str, Any]:
     """
     Devuelve la topología de roles y asignación de agentes configurada en topology.yaml.
     """
-    from src.domain.agents.debate_topology import load_topology
-    top = load_topology()
+    top = topology_provider.get_topology()
     return {
         "project_name": top.project_name,
         "project_description": top.project_description,

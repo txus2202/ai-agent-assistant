@@ -225,6 +225,7 @@ const handleToggleMic = () => {
           :active-agent-color="activeAgentColor"
           :active-agents="activeAgentsList"
           :is-debating="isOrbDebating"
+          :is-visible="!isMobileViewport || mobileTab === 'voice'"
           @submit-draft="chatPanelRef?.onSubmit()"
           class="flex-1 w-full h-full"
         />
@@ -241,13 +242,17 @@ const handleToggleMic = () => {
           class="flex-1" 
           :agents="store.agents"
           :initial-tab="mobileTab === 'telemetry' ? 'observability' : 'agents'"
+          :is-visible="!isMobileViewport || mobileTab === 'agents' || mobileTab === 'telemetry'"
         >
           <template #orchestration>
             <div class="flex flex-col justify-center space-y-2 h-full">
               <h3 class="text-[10px] font-mono text-slate-500 uppercase tracking-widest">
                 Consejo Técnico
               </h3>
-              <div class="p-3 bg-space-950/60 border border-space-800 rounded text-slate-400 font-mono text-xs flex items-center justify-between">
+              <div
+                data-test="council-status-card"
+                class="p-3 bg-space-950/60 border border-space-800 rounded text-slate-400 font-mono text-xs flex items-center justify-between"
+              >
                 <span class="flex items-center gap-2">
                   <span class="w-1.5 h-1.5 rounded-full" :class="store.isDebating ? 'bg-neon-green animate-pulse' : 'bg-slate-500'"></span>
                   <span>{{ store.isDebating ? 'Debate en curso' : 'Consejo en espera' }}</span>
@@ -263,8 +268,9 @@ const handleToggleMic = () => {
 
     </div>
 
-    <!-- Mobile SoundBar Dock (Over the bottom screens navigation menu on ALL mobile tabs) -->
+    <!-- Mobile SoundBar Dock (Conditionally mounted only on mobile viewports so SoundBar is never duplicated) -->
     <div
+      v-if="isMobileViewport"
       data-test="mobile-sound-bar"
       class="md:hidden w-full relative z-20 shrink-0 h-[34px]"
     >

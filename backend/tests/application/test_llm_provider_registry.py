@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.domain.exceptions import LLMProviderError, ProviderNotRegisteredError
+from src.domain.exceptions import ProviderNotRegisteredError
 from src.domain.ports.llm_provider import ILLMProvider
 
 
@@ -25,7 +25,7 @@ class FakeAdapter(ILLMProvider):
     def __init__(self, name: str = "fake"):
         self.name = name
 
-    def list_models(self) -> list[dict[str, str]]:
+    def list_models(self, probe: bool = True) -> list[dict[str, str]]:
         return [{"id": "test", "name": "Test"}]
 
     def complete(self, prompt: str, model_name: str) -> str:
@@ -99,3 +99,17 @@ class TestLLMProviderRegistry:
         err = exc_info.value
         assert err.provider == "openai"
         assert set(err.available) == {"anthropic", "gemini"}
+
+    def test_normalizes_provider_names_and_supports_membership_check(self):
+        from src.application.services.llm_provider_registry import LLMProviderRegistry
+
+        registry = LLMProviderRegistry()
+        adapter = FakeAdapter("gemini")
+        registry.register(" Gemini ", adapter)
+
+        assert registry.is_registered("GEMINI") is True
+        assert "gemini" in registry
+        assert "openai" not in registry
+        assert registry.get("GeMiNi") is adapter
+        assert registry.available() == ["gemini"]
+        assert not hasattr(registry, "list_all_models")

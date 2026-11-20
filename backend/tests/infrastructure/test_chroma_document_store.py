@@ -154,6 +154,20 @@ def test_chroma_store_initializes_http_client_when_host_provided(monkeypatch: py
     mock_http_client = MagicMock()
     monkeypatch.setattr(chromadb, "HttpClient", mock_http_client)
 
-    store = ChromaDBDocumentStore(host="chroma-cluster", port=8000)
+    ChromaDBDocumentStore(host="chroma-cluster", port=8000)
     mock_http_client.assert_called_once_with(host="chroma-cluster", port=8000)
+
+
+def test_chroma_store_prefers_chroma_persist_dir_over_legacy_chroma_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import MagicMock
+    import chromadb
+
+    mock_persistent = MagicMock()
+    monkeypatch.setattr(chromadb, "PersistentClient", mock_persistent)
+    monkeypatch.delenv("CHROMA_HOST", raising=False)
+    monkeypatch.setenv("CHROMA_PERSIST_DIR", "/tmp/chroma_canonical")
+    monkeypatch.setenv("CHROMA_PATH", "/tmp/chroma_legacy")
+
+    ChromaDBDocumentStore()
+    mock_persistent.assert_called_once_with(path="/tmp/chroma_canonical")
 

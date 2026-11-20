@@ -4,17 +4,17 @@ Unit Tests — LearnFromSession Service
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
 from src.application.services.learn_from_session import LearnFromSession
 from src.domain.ports.llm_provider import ILLMProvider
 from src.infrastructure.rag.in_memory_document_store import InMemoryDocumentStore
+from src.infrastructure.rag.obsidian_parser import ObsidianParser
 
 
 class FakeLLM(ILLMProvider):
-    def list_models(self) -> list[dict[str, str]]:
+    def list_models(self, probe: bool = True) -> list[dict[str, str]]:
         return [{"id": "test", "name": "Test"}]
 
     def complete(self, prompt: str, model_name: str) -> str:
@@ -36,6 +36,20 @@ Se acordó implementar OAuth2 con tokens JWT rotativos y validación asíncrona.
 """
 
 
+def test_learn_from_session_requires_document_parser(tmp_path: Path):
+    store = InMemoryDocumentStore()
+    llm = FakeLLM()
+    with pytest.raises(ValueError, match="document_parser"):
+        LearnFromSession.run(
+            session_id="test-session-123",
+            chat_history=[{"role": "user", "content": "Hello"}],
+            llm_provider=llm,
+            document_store=store,
+            vault_root=tmp_path,
+            model_name="mock-model",
+        )
+
+
 def test_learn_from_session_creates_solution_note_and_ingests(tmp_path: Path):
     store = InMemoryDocumentStore()
     chat_history = [
@@ -43,7 +57,7 @@ def test_learn_from_session_creates_solution_note_and_ingests(tmp_path: Path):
         {"role": "assistant", "name": "Hermes", "content": "Requisitos formalizados: OAuth2 y bajo acoplamiento."},
         {"role": "assistant", "name": "Ícaro", "content": "Propongo JWT con rotación de claves en Redis."},
         {"role": "assistant", "name": "Sphinx", "content": "Evaluación positiva con salvaguarda en expiración."},
-        {"role": "assistant", "name": "Atenea", "content": "Dictamen final: Se aprueba la arquitectura de Ícaro con Redis."}
+        {"role": "assistant", "name": "Atenea", "content": "Dictamen final: Se aprueba la arquitectura de Ícaro con Redis."},
     ]
 
     result = LearnFromSession.run(
@@ -53,6 +67,7 @@ def test_learn_from_session_creates_solution_note_and_ingests(tmp_path: Path):
         document_store=store,
         vault_root=tmp_path,
         model_name="mock-model",
+        document_parser=ObsidianParser(),
     )
 
     assert result.errors == []
@@ -64,10 +79,8 @@ def test_learn_from_session_creates_solution_note_and_ingests(tmp_path: Path):
     assert "Solución de Autenticación Distribuida" in content
     assert "test-session-123" in content
 
-    # Verificamos que se ingesta en el document store
     chunks = store.search("autenticación")
     assert len(chunks) > 0
-
 
 
 def test_learn_from_session_handles_empty_history(tmp_path: Path):
@@ -79,6 +92,7 @@ def test_learn_from_session_handles_empty_history(tmp_path: Path):
         document_store=store,
         vault_root=tmp_path,
         model_name="mock-model",
+        document_parser=ObsidianParser(),
     )
 
     assert len(result.errors) > 0

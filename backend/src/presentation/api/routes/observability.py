@@ -4,11 +4,12 @@ Endpoints for system observability metrics and telemetry.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 
 from src.domain.entities.user import User
-from src.domain.ports.observability_port import IObservabilityService
+from src.domain.ports.observability_service import IObservabilityService
 from src.infrastructure.observability.langfuse_adapter import LangfuseObservabilityAdapter
 from src.presentation.api.config import get_settings
 from src.presentation.api.dependencies.auth import get_current_user
@@ -43,7 +44,7 @@ async def get_stats(
 ) -> dict[str, Any]:
     """Retrieve real-time cluster health, CPU/memory telemetry, and active agent counts."""
     service = get_observability_service()
-    metrics = service.get_system_metrics()
+    metrics = await asyncio.to_thread(service.get_system_metrics)
     settings = get_settings()
     return {
         "cluster_status": metrics.cluster_status,

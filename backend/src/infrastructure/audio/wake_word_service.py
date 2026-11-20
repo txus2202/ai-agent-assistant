@@ -2,11 +2,14 @@ import os
 import json
 import logging
 import re
+import threading
 import unicodedata
 from dataclasses import dataclass
+from typing import Optional
 from vosk import Model, KaldiRecognizer  # type: ignore[import-untyped]
 
-from src.domain.agents.sub_agent_profiles import get_all_profiles
+from src.domain.ports.agent_catalog_repository import IAgentCatalogRepository
+from src.infrastructure.config.yaml_agent_catalog import YamlAgentCatalogRepository
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +74,17 @@ class WakeWordService:
     }
 
 
-    def __init__(self):
+    def __init__(self, agent_catalog: Optional[IAgentCatalogRepository] = None):
         """
-        Initialize the WakeWord service using Vosk and dynamic agent profiles.
+        Initialize the WakeWord service using Vosk and an injected agent catalog.
         """
         self.is_initialized = False
         self.model = None
         self.recognizer = None
+        self._model_lock = threading.RLock()
+        self._agent_catalog: IAgentCatalogRepository = (
+            agent_catalog if agent_catalog is not None else YamlAgentCatalogRepository()
+        )
         self._agent_triggers: dict[str, tuple[str, str]] = self._build_agent_triggers()
 
     @staticmethod
@@ -88,11 +95,11 @@ class WakeWordService:
 
     def _build_agent_triggers(self) -> dict[str, tuple[str, str]]:
         """
-        Dynamically extracts all agent wake words and aliases from SubAgentProfile registry.
+        Dynamically extracts all agent wake words and aliases from the catalog port.
         Maps trigger keyword -> (agent_role_value, display_name).
         """
         triggers: dict[str, tuple[str, str]] = {}
-        profiles = get_all_profiles()
+        profiles = self._agent_catalog.get_all_profiles()
 
         for profile in profiles:
             display_name = profile.display_name
@@ -120,28 +127,31 @@ class WakeWordService:
     def _initialize_model(self):
         if self.is_initialized:
             return
-        
-        # Path to Vosk model
-        env_path = os.environ.get("VOSK_MODEL_PATH")
-        candidates = [
-            env_path,
-            "/app/models/vosk-model-small-es-0.42",
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models", "vosk", "vosk-model-small-es-0.42")),
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "models", "vosk-model-small-es-0.42")),
-        ]
-        model_path = next((p for p in candidates if p and os.path.exists(p)), env_path or candidates[2])
-        print(f"[WW] Initializing WakeWordService with Vosk model: {model_path}")
-        
-        try:
-            self.model = Model(model_path)
-            self.recognizer = KaldiRecognizer(self.model, 16000)
-            self.is_initialized = True
-            print("[WW] Vosk model loaded successfully!")
-        except Exception:
-            logger.exception("Failed to load Vosk model at %s", model_path)
-            self.model = None
-            self.recognizer = None
-            self.is_initialized = True
+        with self._model_lock:
+            if self.is_initialized:
+                return
+
+            # Path to Vosk model
+            env_path = os.environ.get("VOSK_MODEL_PATH")
+            candidates = [
+                env_path,
+                "/app/models/vosk-model-small-es-0.42",
+                os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models", "vosk", "vosk-model-small-es-0.42")),
+                os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "models", "vosk-model-small-es-0.42")),
+            ]
+            model_path = next((p for p in candidates if p and os.path.exists(p)), env_path or candidates[2])
+            logger.info("[WW] Initializing WakeWordService with Vosk model: %s", model_path)
+
+            try:
+                self.model = Model(model_path)
+                self.recognizer = KaldiRecognizer(self.model, 16000)
+                self.is_initialized = True
+                logger.info("[WW] Vosk model loaded successfully!")
+            except Exception:
+                logger.exception("Failed to load Vosk model at %s", model_path)
+                self.model = None
+                self.recognizer = None
+                self.is_initialized = True
         
     def _decode_audio_text(self, audio_chunk_pcm_16khz: bytes) -> str:
         if not self.recognizer:
@@ -183,8 +193,9 @@ class WakeWordService:
         Process a chunk of 16kHz Int16 PCM audio.
         Returns WakeWordDetection indicating whether a registered agent wake word was detected.
         """
-        self._initialize_model()
-        text = self._decode_audio_text(audio_chunk_pcm_16khz)
+        with self._model_lock:
+            self._initialize_model()
+            text = self._decode_audio_text(audio_chunk_pcm_16khz)
         if not text:
             return WakeWordDetection(detected=False)
 
@@ -202,7 +213,8 @@ class WakeWordService:
         
     def reset(self):
         """Reset the internal state of the wake word models (useful after detection)."""
-        self._initialize_model()
-        if self.recognizer:
-            self.recognizer.Reset()
+        with self._model_lock:
+            self._initialize_model()
+            if self.recognizer:
+                self.recognizer.Reset()
 

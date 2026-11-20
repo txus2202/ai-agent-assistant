@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import ObservabilityPanel from '../ObservabilityPanel.vue'
 
 vi.mock('../../stores/debate', () => ({
@@ -18,8 +18,22 @@ vi.mock('../../stores/debate', () => ({
 }))
 
 describe('ObservabilityPanel.vue', () => {
+  const mountedWrappers: VueWrapper[] = []
+
+  const mountPanel = (props: Record<string, unknown> = {}) => {
+    const w = mount(ObservabilityPanel, { props })
+    mountedWrappers.push(w)
+    return w
+  }
+
   beforeEach(() => {
     vi.restoreAllMocks()
+  })
+
+  afterEach(() => {
+    while (mountedWrappers.length > 0) {
+      mountedWrappers.pop()?.unmount()
+    }
   })
 
   it.each([
@@ -36,20 +50,20 @@ describe('ObservabilityPanel.vue', () => {
       expectedTexts: ['AGENT LATENCY BENCHMARKS', 'Interpreter', '0.48s', 'The Judge']
     }
   ])('renders $description', ({ expectedTexts }) => {
-    const wrapper = mount(ObservabilityPanel)
+    const wrapper = mountPanel()
     for (const text of expectedTexts) {
       expect(wrapper.text()).toContain(text)
     }
   })
 
   it('renders context cache efficiency and logs event stream', () => {
-    const wrapper = mount(ObservabilityPanel)
+    const wrapper = mountPanel()
     expect(wrapper.text()).toContain("SESSION CONTEXT CACHE")
     expect(wrapper.text()).toContain("LOGS / EVENT STREAM")
   })
 
   it('renders dynamic active agent badge in header and benchmarks', () => {
-    const wrapper = mount(ObservabilityPanel)
+    const wrapper = mountPanel()
     expect(wrapper.text()).toContain("ACTIVE: 1 (THE JUDGE)")
   })
 
@@ -68,7 +82,7 @@ describe('ObservabilityPanel.vue', () => {
       ),
     )
 
-    const wrapper = mount(ObservabilityPanel)
+    const wrapper = mountPanel()
     await flushPromises()
     const link = wrapper.find('[data-test="langfuse-dashboard-link"]')
     expect(link.exists()).toBe(false)
@@ -89,7 +103,7 @@ describe('ObservabilityPanel.vue', () => {
       ),
     )
 
-    const wrapper = mount(ObservabilityPanel)
+    const wrapper = mountPanel()
     await flushPromises()
     const link = wrapper.find('[data-test="langfuse-dashboard-link"]')
     expect(link.exists()).toBe(true)
@@ -113,7 +127,7 @@ describe('ObservabilityPanel.vue', () => {
       ),
     )
 
-    const wrapper = mount(ObservabilityPanel)
+    const wrapper = mountPanel()
     await flushPromises()
     const link = wrapper.find('[data-test="langfuse-dashboard-link"]')
     expect(link.exists()).toBe(true)
@@ -121,10 +135,59 @@ describe('ObservabilityPanel.vue', () => {
   })
 
   it('displays ERROR status badge for agents in error state', () => {
-    const wrapper = mount(ObservabilityPanel)
+    const wrapper = mountPanel()
     // The Judge is ACTIVE with 1.8s running..., Senior Arch is COMPLETED with 1.12s
     expect(wrapper.text()).toContain('1.8s running...')
     expect(wrapper.text()).toContain('1.12s')
+  })
+
+  it('suspends polling and 200ms tick when document is hidden or panel is not visible', async () => {
+    vi.useFakeTimers()
+    const fetchSpy = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ cpu_percent: 25, memory_percent: 45, cluster_status: 'HEALTHY' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      )
+    )
+    global.fetch = fetchSpy
+
+    try {
+      const wrapper = mountPanel({ isVisible: true })
+      await flushPromises()
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+      // Visible + active agent -> 3s polling advances fetch count
+      await vi.advanceTimersByTimeAsync(3100)
+      expect(fetchSpy).toHaveBeenCalledTimes(2)
+
+      // Hide panel via prop -> no polling even after 6s
+      await wrapper.setProps({ isVisible: false })
+      await vi.advanceTimersByTimeAsync(6000)
+      expect(fetchSpy).toHaveBeenCalledTimes(2)
+
+      // Becoming visible again triggers fresh fetch and resumes polling
+      await wrapper.setProps({ isVisible: true })
+      await flushPromises()
+      expect(fetchSpy).toHaveBeenCalledTimes(3)
+
+      // Hide tab via document.visibilityState -> suspends polling
+      Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(6000)
+      expect(fetchSpy).toHaveBeenCalledTimes(3)
+
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+      document.dispatchEvent(new Event('visibilitychange'))
+      await flushPromises()
+      expect(fetchSpy).toHaveBeenCalledTimes(4)
+
+      wrapper.unmount()
+    } finally {
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+      vi.useRealTimers()
+    }
   })
 })
 

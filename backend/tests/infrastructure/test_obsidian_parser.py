@@ -9,7 +9,6 @@ They use tmp_path to create real .md files on disk.
 """
 from pathlib import Path
 
-import pytest
 
 from src.infrastructure.rag.obsidian_parser import ObsidianParser
 

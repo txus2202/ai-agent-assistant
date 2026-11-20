@@ -23,6 +23,8 @@ services:
       - "${BACKEND_BIND_IP:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     networks:
       - app-net
       - data-net
@@ -32,18 +34,34 @@ services:
       - ./agents.yaml:/app/agents.yaml:ro
       - ./topology.yaml:/app/topology.yaml:ro
       - ./backend/voices:/app/voices
+      - ./backend/src/infrastructure/models/vosk:/app/models:ro
+      - atenea_ml_cache:/home/atenea/.cache
     environment:
       - PYTHONUNBUFFERED=1
       - MALLOC_ARENA_MAX=2
-      - WHISPER_BEAM_SIZE=1
-      - WHISPER_THREADS=4
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-es}
+      - WHISPER_BEAM_SIZE=${WHISPER_BEAM_SIZE:-1}
+      - WHISPER_THREADS=${WHISPER_THREADS:-4}
+      - KOKORO_MODEL_PATH=${KOKORO_MODEL_PATH:-voices/kokoro-v1.0.onnx}
+      - KOKORO_VOICES_PATH=${KOKORO_VOICES_PATH:-voices/voices-v1.0.bin}
+      - KOKORO_VOICE_NAME=${KOKORO_VOICE_NAME:-ef_dora}
       - KOKORO_OMP_NUM_THREADS=${KOKORO_OMP_NUM_THREADS:-4}
+      - AGENTS_FILE=/app/agents.yaml
+      - TOPOLOGY_FILE=/app/topology.yaml
+      - TASK_PROMPT_MAX_LENGTH=${TASK_PROMPT_MAX_LENGTH:-10000}
       - VAULT_ROOT=/app/obsidian_vault
       - SQLITE_DB_PATH=/app/data/atenea.db
       - CHROMA_PERSIST_DIR=/app/data/chroma
       - CHROMA_HOST=${CHROMA_HOST:-}
-      - CHROMA_PORT=${CHROMA_PORT:-8000}
+      - CHROMA_PORT=8000
+      - RAG_TOP_K=${RAG_TOP_K:-5}
+      - RAG_MIN_SCORE=${RAG_MIN_SCORE:-0.30}
+      - REVIEW_ROUNDS=${REVIEW_ROUNDS:-1}
+      - MAX_LEARN_FILE_MB=${MAX_LEARN_FILE_MB:-50}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-}
+      - GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-europe-west1}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - DEFAULT_PROVIDER=${DEFAULT_PROVIDER:-gemini}
@@ -51,11 +69,13 @@ services:
       - IMAGE_GENERATION_PROVIDER=${IMAGE_GENERATION_PROVIDER:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost:5173","http://localhost:4173"]}
       - LANGFUSE_HOST=http://langfuse-web:3000
+      - LANGFUSE_DASHBOARD_URL=${LANGFUSE_DASHBOARD_URL:-http://localhost:3000}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
       - LANGFUSE_METRICS_ENABLED=${LANGFUSE_METRICS_ENABLED:-false}
+      - LANGFUSE_DEFAULT_USER_ID=${LANGFUSE_DEFAULT_USER_ID:-local_user}
       # --- Phase 7: Authentication & Security ---
-      - AUTH_SECRET_KEY=${AUTH_SECRET_KEY:-}
+      - AUTH_SECRET_KEY=${AUTH_SECRET_KEY:?Set AUTH_SECRET_KEY in .env (e.g. openssl rand -base64 48)}
       - AUTH_TOKEN_EXPIRY_SECONDS=${AUTH_TOKEN_EXPIRY_SECONDS:-28800}
       - AUTH_COOKIE_SECURE=${AUTH_COOKIE_SECURE:-false}
       - AUTH_COOKIE_NAME=${AUTH_COOKIE_NAME:-atenea_session}
@@ -67,7 +87,7 @@ services:
       - AUTH_RATE_LIMIT_LOGIN_WINDOW_SECONDS=${AUTH_RATE_LIMIT_LOGIN_WINDOW_SECONDS:-60}
       - AUTH_RATE_LIMIT_SETUP_ATTEMPTS=${AUTH_RATE_LIMIT_SETUP_ATTEMPTS:-3}
       - AUTH_RATE_LIMIT_SETUP_WINDOW_SECONDS=${AUTH_RATE_LIMIT_SETUP_WINDOW_SECONDS:-60}
-      - DATABASE_URL=${AUTH_DATABASE_URL:-}
+      - DATABASE_URL=${DATABASE_URL:-}
     deploy:
       resources:
         limits:
@@ -92,6 +112,8 @@ services:
       - "${FRONTEND_BIND_IP:-127.0.0.1}:${FRONTEND_PORT:-5173}:8080"
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     networks:
       - npm-network
       - app-net
@@ -99,19 +121,25 @@ services:
       resources:
         limits:
           memory: 256M
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:8080/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # ---------------------------------------------------------------------------
   # Scaled Infrastructure (Activated via --profile scale or --profile full)
   # ---------------------------------------------------------------------------
   chroma-server:
-    image: chromadb/chroma:latest
+    image: chromadb/chroma:1.5.9@sha256:1e0b73a187a28757c572acba508c46f48c9e8b0acaf5c20e6d95cdedce1acdf6
     container_name: atenea-chroma-server
     profiles:
       - scale
       - full
     restart: unless-stopped
     ports:
-      - "${CHROMA_BIND_IP:-127.0.0.1}:${CHROMA_PORT:-8001}:8000"
+      - "${CHROMA_BIND_IP:-127.0.0.1}:${CHROMA_HOST_PORT:-8001}:8000"
     security_opt:
       - no-new-privileges:true
     networks:
@@ -142,7 +170,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
       POSTGRES_DB: ${POSTGRES_DB:-postgres}
     ports:
       - "${POSTGRES_BIND_IP:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
@@ -153,7 +181,7 @@ services:
     volumes:
       - atenea_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -177,8 +205,6 @@ services:
       - no-new-privileges:true
     networks:
       - data-net
-    volumes:
-      - atenea_redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -193,7 +219,7 @@ services:
   # Langfuse Observability Stack (Phase 6 / ADR 020)
   # ---------------------------------------------------------------------------
   langfuse-web:
-    image: docker.langfuse.com/langfuse/langfuse:3
+    image: docker.langfuse.com/langfuse/langfuse:3@sha256:314f4d79d6761299e4299dc646943f01bfabbc1daff286ab818245549aa5e9d6
     container_name: atenea-langfuse-web
     profiles:
       - observability
@@ -214,31 +240,30 @@ services:
       - no-new-privileges:true
     networks:
       - npm-network
-      - app-net
       - data-net
     environment:
       HOSTNAME: "0.0.0.0"
       PORT: 3000
       NODE_ENV: production
       NODE_OPTIONS: "--max-old-space-size=1536"
-      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}}
+      DATABASE_URL: ${LANGFUSE_DATABASE_URL:-${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-postgres}}}
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-atenea_super_secret_nextauth_token_32bytes_sample}
-      SALT: ${SALT:-atenea_langfuse_salt_key_16bytes_sample}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-}
+      SALT: ${SALT:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-false}
       LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
       CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
       CLICKHOUSE_MIGRATION_URL: ${CLICKHOUSE_MIGRATION_URL:-clickhouse://clickhouse:9000}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
       CLICKHOUSE_CLUSTER_ENABLED: "false"
       REDIS_HOST: redis
       REDIS_PORT: 6379
       LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
       LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
       LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
-      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-miniosecret}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-}
       LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
       LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
     deploy:
@@ -253,7 +278,7 @@ services:
       start_period: 30s
 
   langfuse-worker:
-    image: docker.langfuse.com/langfuse/langfuse-worker:3
+    image: docker.langfuse.com/langfuse/langfuse-worker:3@sha256:02c87eda9a9c6be5b3bf9a78041db86f06bad568d9dd434be3b3c1159f8d0579
     container_name: atenea-langfuse-worker
     profiles:
       - observability
@@ -277,23 +302,23 @@ services:
       PORT: 3000
       NODE_ENV: production
       NODE_OPTIONS: "--max-old-space-size=1024"
-      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}}
+      DATABASE_URL: ${LANGFUSE_DATABASE_URL:-${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-postgres}}}
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-atenea_super_secret_nextauth_token_32bytes_sample}
-      SALT: ${SALT:-atenea_langfuse_salt_key_16bytes_sample}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-}
+      SALT: ${SALT:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-false}
       CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
       CLICKHOUSE_MIGRATION_URL: ${CLICKHOUSE_MIGRATION_URL:-clickhouse://clickhouse:9000}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
       CLICKHOUSE_CLUSTER_ENABLED: "false"
       REDIS_HOST: redis
       REDIS_PORT: 6379
       LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
       LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
       LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
-      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-miniosecret}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-}
       LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
       LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
     deploy:
@@ -308,10 +333,11 @@ services:
       - observability
       - full
     restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c", "test -n \"$$CLICKHOUSE_PASSWORD\" || { echo 'CLICKHOUSE_PASSWORD must be set in .env' >&2; exit 1; }; exec /entrypoint.sh"]
     environment:
       CLICKHOUSE_DB: default
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     ports:
       - "${CLICKHOUSE_HTTP_BIND_IP:-127.0.0.1}:${CLICKHOUSE_HTTP_PORT:-8123}:8123"
@@ -333,17 +359,17 @@ services:
           memory: 1024M
 
   minio:
-    image: cgr.dev/chainguard/minio:latest
+    image: cgr.dev/chainguard/minio@sha256:7618b82bba99aadd77fcf59eb6cfd89b4b8b8e01ac796c474d57a1c1abf17e79
     container_name: atenea-langfuse-minio
     profiles:
       - observability
       - full
     restart: unless-stopped
     entrypoint: sh
-    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    command: -c 'test -n "$$MINIO_ROOT_PASSWORD" || { echo "MINIO_ROOT_PASSWORD must be set in .env" >&2; exit 1; }; mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniosecret}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
     ports:
       - "${MINIO_API_BIND_IP:-127.0.0.1}:${MINIO_API_PORT:-9090}:9000"
       - "${MINIO_CONSOLE_BIND_IP:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9091}:9001"
@@ -365,10 +391,10 @@ services:
 
 volumes:
   atenea_data:
+  atenea_ml_cache:
   atenea_chroma_data:
   atenea_postgres_data:
   atenea_clickhouse_data:
-  atenea_redis_data:
   atenea_minio_data:
 
 networks:

@@ -11,7 +11,7 @@ from typing import Any, Literal
 from pathlib import Path
 import secrets
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,8 +25,14 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     
     # Vertex AI configuration
-    google_cloud_project: str | None = None
-    google_cloud_location: str = "europe-west1"
+    google_cloud_project: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("GOOGLE_CLOUD_PROJECT", "VERTEX_PROJECT_ID"),
+    )
+    google_cloud_location: str = Field(
+        default="europe-west1",
+        validation_alias=AliasChoices("GOOGLE_CLOUD_LOCATION", "VERTEX_LOCATION"),
+    )
 
     # Runtime defaults (Can be overridden by DEFAULT_PROVIDER, DEFAULT_MODEL)
     default_provider: str = "gemini"
@@ -41,8 +47,14 @@ class Settings(BaseSettings):
 
     # Storage paths (relative to backend/ directory)
     vault_root: Path = Path("../obsidian_vault")
-    chroma_persist_dir: Path = Path(".chroma")
-    sqlite_db_path: Path = Path("atenea.db")
+    chroma_persist_dir: Path = Field(
+        default=Path(".chroma"),
+        validation_alias=AliasChoices("CHROMA_PERSIST_DIR", "CHROMA_PATH"),
+    )
+    sqlite_db_path: Path = Field(
+        default=Path("atenea.db"),
+        validation_alias=AliasChoices("SQLITE_DB_PATH", "DB_PATH"),
+    )
     chroma_host: str | None = None
     chroma_port: int = 8000
 
@@ -52,6 +64,11 @@ class Settings(BaseSettings):
 
     # Learning Agent file size limit (MB)
     max_learn_file_mb: int = 50
+
+    # Domain Agent Catalog, Topology & Task limits
+    agents_file: str | None = None
+    topology_file: str | None = None
+    task_prompt_max_length: int = 10_000
 
     # Image Generation (Fidias - "imagen" | "")
     image_generation_provider: str = ""
@@ -113,6 +130,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
+        populate_by_name=True,
     )
 
     @field_validator("cors_origins", mode="before")
@@ -124,8 +142,8 @@ class Settings(BaseSettings):
                 try:
                     import json
                     return json.loads(v)
-                except Exception:
-                    pass
+                except ValueError:
+                    return [origin.strip() for origin in v.split(",") if origin.strip()]
             return [origin.strip() for origin in v.split(",") if origin.strip()]
         return v
 

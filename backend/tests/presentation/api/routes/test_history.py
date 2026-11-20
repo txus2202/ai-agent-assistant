@@ -41,7 +41,13 @@ def test_debates_unauthenticated():
 def test_get_empty_debates(client, test_repo):
     response = client.get("/debates")
     assert response.status_code == 200
-    assert response.json() == []
+    assert response.json() == {
+        "total": 0,
+        "total_all": 0,
+        "limit": 20,
+        "offset": 0,
+        "items": [],
+    }
 
 def test_get_debates_with_data(client, test_repo):
     record = DebateRecord(
@@ -49,16 +55,93 @@ def test_get_debates_with_data(client, test_repo):
         target_agent="supervisor",
         status="completed",
         user_id="test-user-id",
+        events=[
+            {"type": "start", "user_request": "test request"},
+            {"type": "hitl_required", "role": "Hermes", "content": "Aprobar alcance"},
+            {
+                "type": "agent_completed",
+                "role": "Hermes",
+                "content": "Alcance ok",
+                "metadata": {"total_tokens": "120", "tokens": "120"},
+            },
+            {
+                "type": "done",
+                "role": "Hermes",
+                "content": "Alcance ok",
+                "metadata": {"metrics_reported": "true"},
+            },
+            {
+                "type": "done",
+                "role": "supervisor",
+                "content": "# Dictamen final consolidado",
+                "metadata": {"total_tokens": "80", "tokens": "80"},
+            },
+        ],
     )
     test_repo.create(record)
-    
+
     response = client.get("/debates")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 1
-    assert data[0]["id"] == record.id
-    assert data[0]["user_request"] == "test request"
-    assert data[0]["status"] == "completed"
+    assert data["total"] == 1
+    assert data["total_all"] == 1
+    assert data["limit"] == 20
+    assert data["offset"] == 0
+    assert len(data["items"]) == 1
+
+    summary = data["items"][0]
+    assert summary["id"] == record.id
+    assert summary["user_request"] == "test request"
+    assert summary["status"] == "completed"
+    assert "events" not in summary
+    assert summary["event_count"] == 5
+    assert summary["total_tokens"] == 200
+    assert summary["has_hitl"] is True
+    assert summary["agents"] == ["Hermes"]
+    assert "Dictamen final consolidado" in summary["conclusion"]
+
+def test_get_debates_pagination_and_filters(client, test_repo):
+    from datetime import datetime, timedelta, timezone
+
+    base_time = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
+    for idx in range(5):
+        events = [{"type": "start", "user_request": f"Prompt {idx}"}]
+        if idx % 2 == 0:
+            events.append({"type": "hitl_required", "role": "Hermes", "content": "Check"})
+        test_repo.create(
+            DebateRecord(
+                id=f"deb-page-{idx}",
+                created_at=base_time + timedelta(minutes=idx),
+                user_request=f"Prompt {idx}" + (" arquitectura" if idx == 4 else ""),
+                status="completed",
+                user_id="test-user-id",
+                events=events,
+            )
+        )
+
+    page_res = client.get("/debates?limit=2&offset=1").json()
+    assert page_res["total"] == 5
+    assert page_res["total_all"] == 5
+    assert page_res["limit"] == 2
+    assert page_res["offset"] == 1
+    # Ordered DESC by created_at: idx 4, 3, 2, 1, 0 -> offset 1, limit 2 returns 3 and 2
+    assert [item["id"] for item in page_res["items"]] == ["deb-page-3", "deb-page-2"]
+    assert all("events" not in item for item in page_res["items"])
+
+    hitl_res = client.get("/debates?filter=hitl").json()
+    assert hitl_res["total"] == 3
+    assert hitl_res["total_all"] == 5
+    assert [item["id"] for item in hitl_res["items"]] == ["deb-page-4", "deb-page-2", "deb-page-0"]
+
+    search_res = client.get("/debates?search=arquitectura").json()
+    assert search_res["total"] == 1
+    assert search_res["total_all"] == 5
+    assert search_res["items"][0]["id"] == "deb-page-4"
+
+    # Full detail endpoint still returns full events on demand
+    detail_res = client.get("/debates/deb-page-4")
+    assert detail_res.status_code == 200
+    assert len(detail_res.json()["events"]) == 2
 
 def test_get_single_debate(client, test_repo):
     record = DebateRecord(user_request="single", status="running", user_id="test-user-id")
@@ -90,7 +173,9 @@ def test_debate_idor_isolation_other_user(test_repo):
     client = TestClient(app)
 
     # Cannot view in list
-    assert client.get("/debates").json() == []
+    list_res = client.get("/debates").json()
+    assert list_res["items"] == []
+    assert list_res["total"] == 0
 
     # Cannot view directly (404)
     assert client.get(f"/debates/{other_record.id}").status_code == 404

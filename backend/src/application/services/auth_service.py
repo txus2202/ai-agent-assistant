@@ -1,5 +1,7 @@
 import asyncio
+import base64
 from datetime import datetime, timezone
+import logging
 import uuid
 from typing import Optional, Tuple
 from src.domain.entities.user import User
@@ -13,11 +15,13 @@ from src.domain.exceptions import (
     SelfModificationError,
     WeakPasswordError,
 )
-from src.domain.ports.user_repository_port import IUserRepository
-from src.domain.ports.password_hasher_port import IPasswordHasher
-from src.domain.ports.token_service_port import ITokenService
+from src.domain.ports.user_repository import IUserRepository
+from src.domain.ports.password_hasher import IPasswordHasher
+from src.domain.ports.token_service import ITokenService
 from src.domain.ports.debate_repository import IDebateRepository
 from src.domain.ports.agent_config_repository import IAgentConfigRepository
+
+logger = logging.getLogger(__name__)
 
 # Pre-computed Argon2id hash for constant-time timing attack mitigation
 _DUMMY_HASH = "$argon2id$v=19$m=65536,t=2,p=2$c29tZXNhbHQxMjM0NTY3OA$9/3e3T5e0qYFmE2iU4zQ5sW8aD6gH7jK9lM1nO3pQ5s"
@@ -82,7 +86,11 @@ class AuthService:
                 try:
                     self._debate_repo.assign_legacy_debates_to_user(user.id)
                 except Exception:
-                    pass
+                    logger.warning(
+                        "Failed to assign pre-auth legacy debates to initial administrator %s",
+                        user.id,
+                        exc_info=True,
+                    )
 
             token = self._token_service.create_access_token(
                 user_id=user.id,
@@ -305,13 +313,26 @@ class AuthService:
         )
         return new_token, updated
 
+    @staticmethod
+    def _sanitize_for_log(value: str) -> str:
+        cleaned = value.replace("\r", "").replace("\n", "")
+        if cleaned.replace("-", "").replace("_", "").isalnum():
+            return cleaned
+        return f"b64:{base64.b64encode(cleaned.encode('utf-8')).decode('ascii')}"
+
     def _purge_user_resources(self, user_id: str) -> None:
+        safe_user_id = self._sanitize_for_log(user_id)
         for repo in (self._debate_repo, self._agent_config_repo):
             if repo:
                 try:
                     repo.delete_by_user_id(user_id)
                 except Exception:
-                    pass
+                    logger.warning(
+                        "Failed to purge user %s resources from %s",
+                        safe_user_id,
+                        type(repo).__name__,
+                        exc_info=True,
+                    )
 
     async def delete_user(self, actor: User, user_id: str) -> str:
         """

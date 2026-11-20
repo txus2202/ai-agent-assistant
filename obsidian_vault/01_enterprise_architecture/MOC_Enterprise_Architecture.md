@@ -27,7 +27,6 @@ Este dominio es la fuente de verdad primaria que consultan **Hestia** (para vali
 
 ## 🏗️ 3. Patrones de Arquitectura y Blueprints
 * [[01_enterprise_architecture/patterns/microservices_blueprint|Blueprint de Microservicio Empresarial]]
-* [[01_enterprise_architecture/patterns/event_driven_architecture|Patrón de Arquitectura Dirigida por Eventos (EDA)]]
 
 ## ⚖️ 4. Registro de Decisiones de Arquitectura (Company ADRs)
 * [[01_enterprise_architecture/company_adrs/ADR-001-microservices-communication|ADR-001: Comunicación Síncrona vs Asíncrona entre Microservicios]]

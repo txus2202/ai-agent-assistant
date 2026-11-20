@@ -2,9 +2,14 @@
 RED Tests: LangfuseObservabilityAdapter and SystemMetricsCollector (Feature: feature_observability.md)
 """
 from unittest.mock import MagicMock, patch
-import pytest
 
-from src.domain.ports.observability_port import IObservabilityService, TraceContext, SpanContext
+from src.domain.ports.observability_service import (
+    IObservabilityService,
+    SpanContext,
+    SystemMetrics,
+    TraceContext,
+)
+from src.infrastructure.observability import NoOpObservabilityService
 from src.infrastructure.observability.system_metrics_collector import SystemMetricsCollector
 from src.infrastructure.observability.langfuse_adapter import LangfuseObservabilityAdapter
 
@@ -188,4 +193,30 @@ def test_langfuse_adapter_when_disabled():
     adapter.end_trace(trace, status="SUCCESS")
 
     mock_client.flush.assert_not_called()
+
+
+def test_noop_observability_service_satisfies_protocol():
+    service = NoOpObservabilityService()
+    assert isinstance(service, IObservabilityService)
+
+    trace = service.start_trace(
+        name="debate",
+        session_id="ses-1",
+        user_id="user-42",
+        input_data="Necesito una landing page",
+        tags=["flow:debate", "agent:fidias"],
+    )
+    assert isinstance(trace, TraceContext)
+    assert trace.user_id == "user-42"
+    assert trace.tags == ["flow:debate", "agent:fidias"]
+
+    service.score_trace(trace, name="hitl_decision", value=1.0, comment="Aprobado por el usuario")
+    service.end_trace(trace, status="SUCCESS", output="Landing page generada")
+
+    span = service.start_agent_span(trace, agent_role="interpreter", input_prompt="hello")
+    assert isinstance(span, SpanContext)
+    service.end_agent_span(span, output="structured requirement", token_counts={"total": 120}, latency=0.45)
+
+    sys_metrics = service.get_system_metrics()
+    assert isinstance(sys_metrics, SystemMetrics)
 

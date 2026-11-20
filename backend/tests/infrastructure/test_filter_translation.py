@@ -2,7 +2,6 @@
 Unit tests for SearchFilter translation in ChromaDB and InMemory stores (TDD).
 Spec: obsidian_vault/docs/features/feature_dynamic_knowledge_domains.md (AC 6)
 """
-import pytest
 from src.domain.value_objects.document_chunk import SearchFilter, DocumentChunk
 from src.infrastructure.rag.chroma_document_store import ChromaDBDocumentStore
 from src.infrastructure.rag.in_memory_document_store import InMemoryDocumentStore

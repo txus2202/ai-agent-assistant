@@ -47,7 +47,7 @@ from src.application.agents.debate_state import (
 from src.application.agents.sub_agent_runner import SubAgentRunner
 from src.application.agents.triage_service import TriageDecision, classify_intent
 from src.domain.agents.debate_topology import DebateTopology
-from src.domain.agents.sub_agent_profiles import format_team_roster
+from src.domain.agents.sub_agent_profiles import SubAgentProfile, format_team_roster
 from src.domain.agents.supervisor_events import (
     EventType,
     HITLDecision,

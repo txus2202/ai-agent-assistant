@@ -86,6 +86,15 @@ test.describe('Chat, Agents and HITL Interaction', () => {
     await expect(hitlCard).toBeVisible()
     await expect(hitlCard).toContainText('Punto de Control (HITL)')
 
+    // If collapsed (e.g. mobile viewports where the card starts collapsed by design), expand it
+    const collapseToggle = page.locator('[data-test="hitl-collapse-toggle"]')
+    if (await collapseToggle.isVisible()) {
+      const isExpanded = await collapseToggle.getAttribute('aria-expanded')
+      if (isExpanded === 'false') {
+        await collapseToggle.click()
+      }
+    }
+
     // Decision action buttons must be present
     const approveBtn = page.locator('[data-test="hitl-approve-btn"]')
     await expect(approveBtn).toBeVisible()

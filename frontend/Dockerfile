@@ -9,7 +9,7 @@ COPY package*.json ./
 RUN npm ci --ignore-scripts
 
 COPY . .
-RUN npm run build
+RUN ./node_modules/.bin/vue-tsc --build tsconfig.app.json && npm run build-only
 
 # =============================================================================
 # Production Stage (Non-Root Unprivileged Nginx)

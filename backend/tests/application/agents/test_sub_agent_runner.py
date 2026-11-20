@@ -477,3 +477,34 @@ class TestSubAgentRunner:
         assert res_a.tokens == {"input": 111, "output": 22, "total": 133}
         assert res_b.content == "answer-beta"
         assert res_b.tokens == {"input": 999, "output": 88, "total": 1087}
+
+    @pytest.mark.anyio
+    async def test_sub_agent_runner_computes_cached_tokens_from_rag_and_session_context(self, generic_catalog):
+        store = InMemoryDocumentStore()
+        store.upsert([
+            _chunk(
+                "arch#1",
+                "Corporate microservice standard requiring mTLS and event-driven patterns across domains.",
+                metadata={"type": "spec", "status": "implemented"},
+            )
+        ])
+
+        res = await SubAgentRunner.run(
+            role="PropOne",
+            user_request=(
+                "## Formalized Requirements\n"
+                "Design a resilient payment gateway with strict security and mTLS."
+            ),
+            llm_provider=FakeLLM("Architectural proposal output"),
+            document_store=store,
+            model_name="gemini-3.6-flash",
+            chat_history=[
+                {"role": "user", "content": "Necesito una pasarela de pagos."},
+                {"role": "assistant", "agent": "Interpreter", "content": "Requisitos formalizados previos."},
+            ],
+            agent_catalog=generic_catalog,
+        )
+
+        assert res.tokens.get("cached", 0) > 0
+        assert res.tokens["cached"] <= res.tokens["input"]
+

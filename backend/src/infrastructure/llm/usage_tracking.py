@@ -17,14 +17,23 @@ def _safe_int(value: Any) -> int:
     return value if isinstance(value, int) else 0
 
 
-def build_usage(input_tokens: Any, output_tokens: Any, total_tokens: Any = None) -> dict[str, int]:
-    """Build a normalized ``{input, output, total}`` usage dictionary."""
+def build_usage(
+    input_tokens: Any,
+    output_tokens: Any,
+    total_tokens: Any = None,
+    cached_tokens: Any = 0,
+) -> dict[str, int]:
+    """Build a normalized ``{input, output, total[, cached]}`` usage dictionary."""
     in_t = _safe_int(input_tokens)
     out_t = _safe_int(output_tokens)
     tot_t = _safe_int(total_tokens) if total_tokens is not None else (in_t + out_t)
     if tot_t == 0 and (in_t or out_t):
         tot_t = in_t + out_t
-    return {"input": in_t, "output": out_t, "total": tot_t}
+    cached_t = _safe_int(cached_tokens)
+    result: dict[str, int] = {"input": in_t, "output": out_t, "total": tot_t}
+    if cached_t > 0:
+        result["cached"] = cached_t
+    return result
 
 
 class UsageTrackingMixin:

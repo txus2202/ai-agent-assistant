@@ -71,6 +71,7 @@ class GeminiAdapter(UsageTrackingMixin, ILLMProvider):
                     getattr(usage_meta, "prompt_token_count", 0),
                     getattr(usage_meta, "candidates_token_count", 0),
                     getattr(usage_meta, "total_token_count", None),
+                    getattr(usage_meta, "cached_content_token_count", 0),
                 )
             self._set_scoped_usage(usage)
 

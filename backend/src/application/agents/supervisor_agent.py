@@ -201,8 +201,14 @@ async def _run_direct_chat_mode(
 
     resp_text = "".join(resp_pieces)
     latency = round(time.perf_counter() - start_time, 2)
-    in_tkn = max(15, len(direct_prompt) // 4)
-    out_tkn = max(10, len(resp_text) // 4)
+    raw_usage = supervisor_provider.get_last_usage() if hasattr(supervisor_provider, "get_last_usage") else {}
+    provider_usage = raw_usage if isinstance(raw_usage, dict) else {}
+    in_tkn = provider_usage.get("input", 0) or max(15, len(direct_prompt) // 4)
+    out_tkn = provider_usage.get("output", 0) or max(10, len(resp_text) // 4)
+    hist_chars = sum(len(line) for line in hist_lines)
+    cached_tkn = provider_usage.get("cached", 0) or (
+        min(in_tkn, max(1, hist_chars // 4)) if hist_chars > 0 else 0
+    )
     meta = {
         "model": sup_model_name,
         "latency_seconds": str(latency),
@@ -210,6 +216,7 @@ async def _run_direct_chat_mode(
         "completion_tokens": str(out_tkn),
         "total_tokens": str(in_tkn + out_tkn),
         "tokens": str(in_tkn + out_tkn),
+        "cached_tokens": str(cached_tkn),
     }
     yield SupervisorEvent(type=EventType.AGENT_COMPLETED, role=sup_agent_name, content=resp_text, metadata=meta)
     yield SupervisorEvent(
@@ -329,13 +336,18 @@ def _build_role_runner(
             image_generator=image_generator,
             **runner_kwargs,
         )
+        in_tkn = resp.tokens.get("input", 0)
+        cached_tkn = resp.tokens.get("cached", 0)
+        if not cached_tkn and state.debate_history and req:
+            cached_tkn = min(in_tkn, max(1, len(req) // 4))
         meta = {
             "model": resp.model_name or model_name,
-            "prompt_tokens": str(resp.tokens.get("input", 0)),
+            "prompt_tokens": str(in_tkn),
             "completion_tokens": str(resp.tokens.get("output", 0)),
             "total_tokens": str(resp.tokens.get("total", 0)),
             "latency_seconds": str(resp.latency),
             "tokens": str(resp.tokens.get("total", 0)),
+            "cached_tokens": str(cached_tkn),
         }
         state.agent_metadata[agent_name] = meta
         state.agent_metadata[profile.id] = meta

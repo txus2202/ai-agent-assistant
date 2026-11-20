@@ -70,13 +70,19 @@ async def run_consolidation(
         out_tkn = max(1, len(final_response) // 4)
         usage = {"input": in_tkn, "output": out_tkn, "total": in_tkn + out_tkn}
 
+    in_total = usage.get("input", 0)
+    cached_tkn = usage.get("cached", 0)
+    if not cached_tkn and debate_context:
+        cached_tkn = min(in_total, max(1, len(debate_context) // 4))
+
     meta = {
         "model": default_model,
-        "prompt_tokens": str(usage.get("input", 0)),
+        "prompt_tokens": str(in_total),
         "completion_tokens": str(usage.get("output", 0)),
         "total_tokens": str(usage.get("total", 0)),
         "latency_seconds": str(latency),
         "tokens": str(usage.get("total", 0)),
+        "cached_tokens": str(cached_tkn),
     }
 
     return SupervisorEvent(

@@ -524,4 +524,58 @@ class TestAnthropicAdapter:
         with pytest.raises(LLMProviderError, match="Anthropic streaming error: stream boom"):
             list(adapter.complete_stream("Say hi", "claude-3-5-sonnet-latest"))
 
+    def test_adapters_extract_native_cached_token_counts(self, monkeypatch):
+        from src.infrastructure.llm.anthropic_adapter import AnthropicAdapter
+        from src.infrastructure.llm.gemini_adapter import GeminiAdapter
+        from src.infrastructure.llm.openai_adapter import OpenAIAdapter
+
+        # 1. Gemini: usage_metadata.cached_content_token_count
+        g_mock = _make_genai_mock()
+        monkeypatch.setitem(sys.modules, "google", MagicMock(genai=g_mock))
+        monkeypatch.setitem(sys.modules, "google.genai", g_mock)
+        gemini_resp = MagicMock()
+        gemini_resp.text = "Cached Gemini reply"
+        gemini_resp.usage_metadata = MagicMock(
+            prompt_token_count=200,
+            candidates_token_count=40,
+            total_token_count=240,
+            cached_content_token_count=120,
+        )
+        g_mock.Client.return_value.models.generate_content.return_value = gemini_resp
+        g_adapter = GeminiAdapter(api_key="test-key")
+        g_comp = g_adapter.complete_with_usage("Hello", "gemini-2.5-flash")
+        assert g_comp.usage == {"input": 200, "output": 40, "total": 240, "cached": 120}
+
+        # 2. OpenAI: usage.prompt_tokens_details.cached_tokens
+        o_mock = _make_openai_mock()
+        monkeypatch.setitem(sys.modules, "openai", o_mock)
+        oai_resp = MagicMock()
+        oai_resp.choices = [MagicMock(message=MagicMock(content="Cached OpenAI reply"))]
+        oai_resp.usage = MagicMock(
+            prompt_tokens=300,
+            completion_tokens=50,
+            total_tokens=350,
+            prompt_tokens_details=MagicMock(cached_tokens=180),
+        )
+        o_mock.OpenAI.return_value.chat.completions.create.return_value = oai_resp
+        o_adapter = OpenAIAdapter(api_key="test-key")
+        o_comp = o_adapter.complete_with_usage("Hello", "gpt-4o")
+        assert o_comp.usage == {"input": 300, "output": 50, "total": 350, "cached": 180}
+
+        # 3. Anthropic: usage.cache_read_input_tokens
+        anth_msg = MagicMock()
+        text_block = MagicMock()
+        text_block.text = "Cached Claude reply"
+        anth_msg.content = [text_block]
+        anth_msg.usage = MagicMock(
+            input_tokens=150,
+            output_tokens=30,
+            cache_read_input_tokens=90,
+        )
+        self._mock_anthropic.Anthropic.return_value.messages.create.return_value = anth_msg
+        a_adapter = AnthropicAdapter(api_key="test-key")
+        a_comp = a_adapter.complete_with_usage("Hello", "claude-3-5-sonnet-latest")
+        assert a_comp.usage == {"input": 150, "output": 30, "total": 180, "cached": 90}
+
+
 

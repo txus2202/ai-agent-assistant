@@ -1489,6 +1489,67 @@ class TestSupervisorAgentFaultTolerance:
         assert s_done.metadata.get("metrics_reported") == "true"
         assert "total_tokens" not in s_done.metadata
 
+    @pytest.mark.anyio
+    async def test_supervisor_emits_cached_tokens_in_agent_completed_and_consolidation_events(
+        self, monkeypatch, generic_catalog, generic_topology
+    ):
+        import src.application.agents.supervisor_agent as _mod
+        from src.domain.value_objects.document_chunk import DocumentChunk
+
+        monkeypatch.setattr(
+            _mod,
+            "classify_intent",
+            lambda *args, **kwargs: _mod.TriageDecision(mode="standard_debate"),
+        )
+        store = InMemoryDocumentStore()
+        store.upsert([
+            DocumentChunk(
+                id="doc#1",
+                content="Standard enterprise architecture guidelines for event-driven microservices.",
+                file_path="guidelines.md",
+                heading="Guidelines",
+                metadata={"type": "spec", "status": "implemented"},
+                score=0.95,
+            )
+        ])
+
+        events = await _collect(_mod.SupervisorAgent.run(
+            user_request="Diseña una arquitectura de microservicios orientada a eventos",
+            document_store=store,
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_approve_always,
+            chat_history=[{"role": "user", "content": "Contexto previo de la sesión de arquitectura"}],
+            topology=generic_topology,
+            agent_catalog=generic_catalog,
+        ))
+
+        completed_events = [e for e in events if e.type == EventType.AGENT_COMPLETED]
+        assert len(completed_events) >= 2
+        assert all("cached_tokens" in e.metadata for e in completed_events)
+        assert sum(int(e.metadata["cached_tokens"]) for e in completed_events) > 0
+
+        done_event = next(e for e in events if e.type == EventType.DONE)
+        assert "cached_tokens" in done_event.metadata
+        assert int(done_event.metadata["cached_tokens"]) > 0
+
+        # Even on a fresh first-turn debate (no prior chat_history, empty store),
+        # downstream council stages reuse the formalized session context and report cached_tokens > 0
+        fresh_events = await _collect(_mod.SupervisorAgent.run(
+            user_request="Diseña una arquitectura de pagos",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_approve_always,
+            chat_history=None,
+            topology=generic_topology,
+            agent_catalog=generic_catalog,
+        ))
+        fresh_completed = [e for e in fresh_events if e.type == EventType.AGENT_COMPLETED]
+        assert sum(int(e.metadata.get("cached_tokens", "0")) for e in fresh_completed) > 0
+
+
+
 
 
 

@@ -69,6 +69,7 @@ class AnthropicAdapter(UsageTrackingMixin, ILLMProvider):
                 usage = build_usage(
                     getattr(msg_usage, "input_tokens", 0),
                     getattr(msg_usage, "output_tokens", 0),
+                    cached_tokens=getattr(msg_usage, "cache_read_input_tokens", 0),
                 )
             self._set_scoped_usage(usage)
 
@@ -134,6 +135,7 @@ class AnthropicAdapter(UsageTrackingMixin, ILLMProvider):
                         build_usage(
                             getattr(usage_obj, "input_tokens", 0),
                             getattr(usage_obj, "output_tokens", 0),
+                            cached_tokens=getattr(usage_obj, "cache_read_input_tokens", 0),
                         )
                     )
                 else:

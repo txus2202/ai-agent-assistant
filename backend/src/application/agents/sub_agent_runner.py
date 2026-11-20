@@ -206,6 +206,31 @@ class SubAgentRunner:
 
         return content
 
+    @staticmethod
+    def _estimate_reusable_context_chars(
+        context_block: str,
+        chat_history: list[dict[str, Any]] | None,
+        user_request: str,
+    ) -> int:
+        reused = len(context_block) + len(format_chat_history(chat_history))
+        shared_stage_markers = (
+            "## Formalized Requirements",
+            "## Requisitos Formalizados",
+            "## Propuesta de ",
+            "## Tu propuesta previa",
+            "## Architectural Proposals",
+            "## Peer Review Critiques",
+            "## Critical Evaluation",
+            "## User Refinement",
+            "Review the following proposals:",
+            "The user has selected the following options to review:",
+            "Selected Final Solutions:",
+            "--- Aportaciones del Consejo ---",
+        )
+        if any(marker in user_request for marker in shared_stage_markers):
+            reused += len(user_request)
+        return reused
+
     @classmethod
     def _calculate_usage(
         cls,
@@ -214,6 +239,7 @@ class SubAgentRunner:
         llm_provider: ILLMProvider | None = None,
         *,
         usage: dict[str, int] | None = None,
+        reusable_context_chars: int = 0,
     ) -> dict[str, int]:
         resolved: dict[str, int] = dict(usage) if usage is not None else {}
         if usage is None and llm_provider is not None and hasattr(llm_provider, "get_last_usage"):
@@ -225,7 +251,15 @@ class SubAgentRunner:
             in_tkn = max(15, len(prompt) // 4)
         if not out_tkn or out_tkn == 0:
             out_tkn = max(10, len(content) // 4)
-        return {"input": in_tkn, "output": out_tkn, "total": in_tkn + out_tkn}
+
+        cached_tkn = resolved.get("cached", 0)
+        if not cached_tkn and reusable_context_chars > 0:
+            cached_tkn = min(in_tkn, max(1, reusable_context_chars // 4))
+
+        result: dict[str, int] = {"input": in_tkn, "output": out_tkn, "total": in_tkn + out_tkn}
+        if cached_tkn > 0:
+            result["cached"] = cached_tkn
+        return result
 
     @classmethod
     async def run(
@@ -282,7 +316,18 @@ class SubAgentRunner:
                 image_generator=image_generator,
             )
 
-        usage = cls._calculate_usage(prompt, content, llm_provider, usage=raw_usage)
+        reusable_chars = cls._estimate_reusable_context_chars(
+            context_block,
+            chat_history,
+            user_request,
+        )
+        usage = cls._calculate_usage(
+            prompt,
+            content,
+            llm_provider,
+            usage=raw_usage,
+            reusable_context_chars=reusable_chars,
+        )
 
         return SubAgentResponse(
             role=role,

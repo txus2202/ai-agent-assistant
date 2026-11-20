@@ -162,6 +162,31 @@ export function createDebateEventProcessor(deps: DebateEventProcessorDeps) {
 
     const contentToPush = stripFailedBlocksFromHitlContent(rawContent)
     if (contentToPush) {
+      if (contentToPush.includes('---')) {
+        const sections = contentToPush.split('---').map((s) => s.trim()).filter(Boolean)
+        const allSectionsPresent = sections.every((sec) => {
+          const cleaned = cleanAgentMessageContent(sec, deps.getKnownAgentNames())
+          return deps.messages.value.some(
+            (m) =>
+              m.role === 'assistant' &&
+              (m.content === cleaned || m.content.includes(cleaned) || cleaned.includes(m.content)),
+          )
+        })
+        if (allSectionsPresent) {
+          return
+        }
+      } else {
+        const cleaned = cleanAgentMessageContent(contentToPush, deps.getKnownAgentNames())
+        if (
+          deps.messages.value.some(
+            (m) =>
+              m.role === 'assistant' &&
+              (m.content === cleaned || m.content.includes(cleaned) || cleaned.includes(m.content)),
+          )
+        ) {
+          return
+        }
+      }
       pushAgentMessage(contentToPush, role)
     }
   }

@@ -135,6 +135,28 @@ class HITLResponse:
   - Si el usuario aprueba o refina y selecciona `target_agents = ["diagrammer"]`, el orquestador desvía el flujo para invocar a Aracne con el contexto acumulado y el feedback introducido.
   - Si `target_agents` está vacío, el orquestador prosigue con el siguiente paso natural de la cadena planificada.
 
+### 4.2.1 Flujo de Desvío Dinámico (`DIVERT`)
+Cuando el usuario acciona **Desviar** (`HITLDecision.DIVERT`) en cualquier punto de control:
+1. **Ejecución Concurrente con Emisión de Mensajes:**
+   - Se ejecutan en paralelo los agentes indicados en `target_agents`.
+   - Se activa obligatoriamente `emit_message=True` en `run_parallel_roles` para que cada agente desviado emita su evento `EventType.MESSAGE` individual con su contenido íntegro y metadatos, mostrándose de inmediato en la ventana del chat.
+2. **Nuevo Checkpoint HITL Post-Desvío:**
+   - Tras recibir las respuestas de los agentes desviados, Atenea emite un nuevo evento `EventType.HITL_REQUIRED` con metadatos contextuales (`checkpoint: f"after_divert_{lead_agent}"`).
+   - El orquestador entra en un bucle interactivo que permite al operador:
+     - **`CONSOLIDATE` / `APPROVE`:** Concluir el flujo llamando a la consolidación ejecutiva de Atenea, la cual integra las aportaciones de los agentes desviados.
+     - **`FINISH`:** Finalizar inmediatamente el debate con evento `DONE` sin generar consolidación.
+     - **`DIVERT`:** Encadenar un nuevo desvío hacia otros agentes del consejo.
+     - **`REFINE` / `RETRY`:** Proporcionar nuevas instrucciones o reintentar la fase si se requiere corrección.
+
+### 4.2.2 Emisión Uniforme de Mensajes en Fases Concurrentes y Prevención de Agrupación Monolítica
+Para garantizar que todos los agentes asignados a una fase paralela (p. ej. los proponentes Ícaro y Hestia, o especialistas en desvíos) contesten visiblemente de manera individual en el chat:
+1. **Emisión de Eventos `MESSAGE` por Agente:**
+   - `run_parallel_roles` emite por defecto `emit_message=True` en las propuestas finales de Fase 2, Fase 3 (evaluadores), Fase 4 (implementadores) y desvíos dinámicos.
+   - Cada agente publica su propio evento `EventType.MESSAGE` con su avatar, rol y contenido íntegro, permitiendo al usuario apreciar las visiones contrapuestas o complementarias en tarjetas separadas.
+2. **Deduplicación en Frontend (`handleHitlRequired`):**
+   - El evento `EventType.HITL_REQUIRED` sigue transportando el `combined_content` con separadores `---` para consumo de herramientas y trazabilidad.
+   - En el frontend (`debateEventProcessor.ts`), `handleHitlRequired` comprueba si los bloques de las propuestas ya han sido emitidos individualmente mediante eventos `message`. Si todos los bloques válidos ya están en el historial del chat, se evita re-insertar el contenido combinado como un mensaje monolítico bajo el agente líder.
+
 ### 4.3 Pre-deliberación Interna de Arquitectura (Actor-Critic con Sphinx)
 
 Para evitar que los arquitectos presenten propuestas inmaduras o vulnerables en el primer HITL:

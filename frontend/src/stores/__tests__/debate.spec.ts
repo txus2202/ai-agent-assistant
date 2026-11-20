@@ -1946,6 +1946,60 @@ describe('learnSession action', () => {
     expect(store.messages.some(m => m.agentName === 'Hefesto' && m.content.includes('Dockerfile multi-stage'))).toBe(true)
   })
 
+  it('displays individual messages for all parallel proposers and prevents duplicate combined card on hitl_required', () => {
+    const store = useDebateStore()
+    store.agents = [
+      { role: 'supervisor', name: 'Atenea', state: 'STANDBY' },
+      { role: 'innovator_architect', name: 'Ícaro', state: 'STANDBY' },
+      { role: 'conservative_architect', name: 'Hestia', state: 'STANDBY' },
+    ]
+
+    // 1. Both proposers start and emit individual message events
+    store.handleSupervisorEvent({ type: 'agent_started', role: 'Ícaro', content: '' })
+    store.handleSupervisorEvent({ type: 'agent_started', role: 'Hestia', content: '' })
+
+    store.handleSupervisorEvent({
+      type: 'message',
+      role: 'Ícaro',
+      content: '## Ícaro\nPropuesta innovadora con microservicios reactivos.',
+    })
+    store.handleSupervisorEvent({
+      type: 'agent_completed',
+      role: 'Ícaro',
+      content: '## Ícaro\nPropuesta innovadora con microservicios reactivos.',
+    })
+
+    store.handleSupervisorEvent({
+      type: 'message',
+      role: 'Hestia',
+      content: '## Hestia\nPropuesta pragmática con arquitectura modular monolítica.',
+    })
+    store.handleSupervisorEvent({
+      type: 'agent_completed',
+      role: 'Hestia',
+      content: '## Hestia\nPropuesta pragmática con arquitectura modular monolítica.',
+    })
+
+    // Both agents must have distinct messages in the chat
+    expect(store.messages).toHaveLength(2)
+    expect(store.messages[0]!.agentName).toBe('Ícaro')
+    expect(store.messages[0]!.content).toContain('microservicios reactivos')
+    expect(store.messages[1]!.agentName).toBe('Hestia')
+    expect(store.messages[1]!.content).toContain('arquitectura modular')
+
+    // 2. HITL required event arrives with combined content
+    store.handleSupervisorEvent({
+      type: 'hitl_required',
+      role: 'Ícaro',
+      content: '## Ícaro\nPropuesta innovadora con microservicios reactivos.\n\n---\n\n## Hestia\nPropuesta pragmática con arquitectura modular monolítica.',
+      metadata: { checkpoint: 'after_Ícaro', agent: 'Ícaro' },
+    })
+
+    // Must NOT add a third duplicate monolithic message under Ícaro
+    expect(store.messages).toHaveLength(2)
+    expect(store.isHitlRequired).toBe(true)
+  })
+
   it('does not double-count tokens or turns across stream_chunk, agent_completed, and companion done events', () => {
     const store = useDebateStore()
     store.agents = [

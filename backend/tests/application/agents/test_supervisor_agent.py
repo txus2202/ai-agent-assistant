@@ -419,6 +419,112 @@ class TestSupervisorAgentHITL:
         assert call_counts.get("Auditor", 0) == 2
 
     @pytest.mark.anyio
+    async def test_divert_at_hitl_emits_messages_and_raises_subsequent_hitl(self, monkeypatch, generic_catalog, generic_topology):
+        from src.application.agents import supervisor_agent as _mod
+        from src.application.agents.supervisor_agent import SupervisorAgent
+        from src.application.agents.sub_agent_runner import SubAgentResponse
+
+        async def _mock_runner(role, user_request, *args, **kwargs):
+            key = role.value if hasattr(role, "value") else str(role)
+            return SubAgentResponse(role=role, content=f"Response from {key}", context_chunks=[])
+
+        monkeypatch.setattr(_mod.SubAgentRunner, "run", _mock_runner)
+
+        hitl_checkpoints: list[str] = []
+
+        async def _hitl_cb(event: SupervisorEvent) -> HITLResponse:
+            checkpoint = event.metadata.get("checkpoint", "")
+            hitl_checkpoints.append(checkpoint)
+            if checkpoint == "after_Interpreter":
+                # Divert to PropOne and PropTwo
+                return HITLResponse(
+                    decision=HITLDecision.DIVERT,
+                    target_agents=["PropOne", "PropTwo"],
+                    feedback="Crea los diseños A y B",
+                )
+            # Second HITL after divert
+            return HITLResponse(decision=HITLDecision.CONSOLIDATE)
+
+        events = await _collect(SupervisorAgent.run(
+            user_request="Diseña un flujo de login",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_hitl_cb,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
+        ))
+
+        # Check that diverted agents emitted MESSAGE events with their content
+        message_events = [e for e in events if e.type == EventType.MESSAGE]
+        message_roles = [e.role for e in message_events]
+        assert "PropOne" in message_roles
+        assert "PropTwo" in message_roles
+
+        prop_one_msg = next(e for e in message_events if e.role == "PropOne")
+        assert "Response from PropOne" in prop_one_msg.content
+
+        # Check that a subsequent HITL was raised after the diverted agents answered
+        assert len(hitl_checkpoints) == 2
+        assert hitl_checkpoints[0] == "after_Interpreter"
+        assert hitl_checkpoints[1].startswith("after_")
+
+        # Check that consolidation was produced after the second HITL
+        done_event = next(e for e in events if e.type == EventType.DONE)
+        assert done_event is not None
+        assert done_event.role == "Coordinator"
+
+    @pytest.mark.anyio
+    async def test_divert_allows_chaining_then_finish(self, monkeypatch, generic_catalog, generic_topology):
+        from src.application.agents import supervisor_agent as _mod
+        from src.application.agents.supervisor_agent import SupervisorAgent
+        from src.application.agents.sub_agent_runner import SubAgentResponse
+
+        async def _mock_runner(role, user_request, *args, **kwargs):
+            key = role.value if hasattr(role, "value") else str(role)
+            return SubAgentResponse(role=role, content=f"Response from {key}", context_chunks=[])
+
+        monkeypatch.setattr(_mod.SubAgentRunner, "run", _mock_runner)
+
+        hitl_checkpoints: list[str] = []
+
+        async def _hitl_cb(event: SupervisorEvent) -> HITLResponse:
+            checkpoint = event.metadata.get("checkpoint", "")
+            hitl_checkpoints.append(checkpoint)
+            if checkpoint == "after_Interpreter":
+                # Divert 1: to PropOne
+                return HITLResponse(
+                    decision=HITLDecision.DIVERT,
+                    target_agents=["PropOne"],
+                )
+            if len(hitl_checkpoints) == 2:
+                # Divert 2: to Auditor
+                return HITLResponse(
+                    decision=HITLDecision.DIVERT,
+                    target_agents=["Auditor"],
+                )
+            # Third HITL: finish
+            return HITLResponse(decision=HITLDecision.FINISH)
+
+        events = await _collect(SupervisorAgent.run(
+            user_request="Diseña un flujo de login",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_hitl_cb,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
+        ))
+
+        message_roles = [e.role for e in events if e.type == EventType.MESSAGE]
+        assert "PropOne" in message_roles
+        assert "Auditor" in message_roles
+
+        assert len(hitl_checkpoints) == 3
+        done_event = next(e for e in events if e.type == EventType.DONE)
+        assert done_event.metadata.get("skip_consolidation") == "true"
+
+    @pytest.mark.anyio
     async def test_architects_internal_review_with_auditor_before_hitl(self, monkeypatch, generic_catalog, generic_topology):
         from src.application.agents import supervisor_agent as _mod
         from src.application.agents.supervisor_agent import SupervisorAgent
@@ -461,6 +567,68 @@ class TestSupervisorAgentHITL:
         # No intermediate HITL_REQUIRED in phase 2 pre-deliberation
         for t, _ in phase2_events:
             assert t != EventType.HITL_REQUIRED
+
+    @pytest.mark.anyio
+    async def test_all_parallel_proposers_emit_message_events(self, monkeypatch, generic_catalog, generic_topology):
+        from src.application.agents import supervisor_agent as _mod
+        from src.application.agents.supervisor_agent import SupervisorAgent
+        from src.application.agents.sub_agent_runner import SubAgentResponse
+
+        async def _capturing_runner(role, user_request, *args, **kwargs):
+            key = role.value if hasattr(role, "value") else str(role)
+            return SubAgentResponse(role=role, content=f"Proposal from {key}", context_chunks=[])
+
+        monkeypatch.setattr(_mod.SubAgentRunner, "run", _capturing_runner)
+
+        async def _cb(event: SupervisorEvent) -> HITLResponse:
+            return HITLResponse(decision=HITLDecision.APPROVE)
+
+        collected = await _collect(SupervisorAgent.run(
+            user_request="Diseña una arquitectura",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_cb,
+            review_rounds=1,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
+        ))
+
+        types_and_roles = [(e.type, e.role) for e in collected]
+        hitl_indices = [i for i, (t, _) in enumerate(types_and_roles) if t == EventType.HITL_REQUIRED]
+        assert len(hitl_indices) >= 2
+        hitl1_idx, hitl2_idx = hitl_indices[0], hitl_indices[1]
+
+        # In phase 2, both PropOne and PropTwo MUST emit EventType.MESSAGE before HITL2
+        phase2_messages = [
+            e for e in collected[hitl1_idx + 1:hitl2_idx]
+            if e.type == EventType.MESSAGE
+        ]
+        message_roles = [m.role for m in phase2_messages]
+        assert "PropOne" in message_roles, f"PropOne missing from message roles: {message_roles}"
+        assert "PropTwo" in message_roles, f"PropTwo missing from message roles: {message_roles}"
+
+        # Also test with review_rounds=0 (direct proposals without critique loop)
+        collected_no_review = await _collect(SupervisorAgent.run(
+            user_request="Diseña una arquitectura",
+            document_store=InMemoryDocumentStore(),
+            agent_config_repo=FakeAgentConfigRepo(),
+            llm_factory=lambda _: FakeLLM(),
+            hitl_callback=_cb,
+            review_rounds=0,
+            agent_catalog=generic_catalog,
+            topology=generic_topology,
+        ))
+        t_and_r_no_rev = [(e.type, e.role) for e in collected_no_review]
+        hitl_idx_no_rev = [i for i, (t, _) in enumerate(t_and_r_no_rev) if t == EventType.HITL_REQUIRED]
+        h1, h2 = hitl_idx_no_rev[0], hitl_idx_no_rev[1]
+        p2_msgs_no_rev = [
+            e for e in collected_no_review[h1 + 1:h2]
+            if e.type == EventType.MESSAGE
+        ]
+        p2_roles_no_rev = [m.role for m in p2_msgs_no_rev]
+        assert "PropOne" in p2_roles_no_rev
+        assert "PropTwo" in p2_roles_no_rev
 
     @pytest.mark.anyio
     async def test_review_rounds_and_defaults_are_injected_without_settings(self, monkeypatch, generic_catalog, generic_topology):
@@ -662,9 +830,10 @@ class TestAdaptiveSupervisorRouting:
 
         monkeypatch.setattr(_mod.SubAgentRunner, "run", _mock_runner)
 
-        # At HITL 1, user approves but redirects specifically to ImplOne
+        # At HITL 1, user approves but redirects specifically to ImplOne; at HITL 2 user consolidates
         decisions = iter([
             HITLResponse(decision=HITLDecision.APPROVE, target_agents=["implementer_one"]),
+            HITLResponse(decision=HITLDecision.CONSOLIDATE),
         ])
 
         async def _redirect_callback(_event: SupervisorEvent) -> HITLResponse:

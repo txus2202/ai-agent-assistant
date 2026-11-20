@@ -38,13 +38,19 @@ from src.application.agents.debate_phases import (
     execute_role_safely as _execute_role_safely,
     run_parallel_roles,
 )
-from src.application.agents.debate_state import DebateState
+from src.application.agents.debate_state import (
+    ERROR_MARKER,
+    FAILURE_MARKER,
+    SECTION_SEPARATOR,
+    DebateState,
+)
 from src.application.agents.sub_agent_runner import SubAgentRunner
 from src.application.agents.triage_service import TriageDecision, classify_intent
 from src.domain.agents.debate_topology import DebateTopology
 from src.domain.agents.sub_agent_profiles import format_team_roster
 from src.domain.agents.supervisor_events import (
     EventType,
+    HITLDecision,
     HITLResponse,
     SupervisorEvent,
 )
@@ -268,25 +274,89 @@ def _resolve_target_agents(agent_names: list[str], agent_catalog: IAgentCatalogR
 async def _maybe_divert_to_targets(
     state: DebateState,
     run_role: RoleRunner,
+    hitl_callback: HitlCallback,
     supervisor_provider: Any,
     sup_model_name: str,
     sup_agent_name: str,
     active_topology: DebateTopology,
     agent_catalog: IAgentCatalogRepository,
 ) -> AsyncGenerator[SupervisorEvent, None]:
-    target_agents = _resolve_target_agents(state.target_agents, agent_catalog)
-    if not target_agents:
-        return
-    req = state.formalized + (f"\n\n## User Refinement\n{state.refinement}" if state.refinement else "")
-    async for event in run_parallel_roles(
-        tuple(target_agents),
-        constant_prompt(req),
-        run_role,
-        state,
-        error_format="[Fallo en {role}: {error}]",
-        agent_catalog=agent_catalog,
-    ):
-        yield event
+    while state.target_agents:
+        target_agents = _resolve_target_agents(state.target_agents, agent_catalog)
+        if not target_agents:
+            break
+        current_targets = list(target_agents)
+        state.target_agents = []
+
+        req = state.formalized + (f"\n\n## User Refinement\n{state.refinement}" if state.refinement else "")
+        async for event in run_parallel_roles(
+            tuple(current_targets),
+            constant_prompt(req),
+            run_role,
+            state,
+            error_format="[Fallo en {role}: {error}]",
+            emit_message=True,
+            agent_catalog=agent_catalog,
+        ):
+            yield event
+
+        combined_content = SECTION_SEPARATOR.join(state.agent_outputs.get(r, "") for r in current_targets)
+        lead_agent = current_targets[0]
+        has_error = any(
+            any(marker in state.agent_outputs.get(r, "") for marker in (FAILURE_MARKER, ERROR_MARKER))
+            for r in current_targets
+        )
+        hitl_metadata = {"checkpoint": f"after_divert_{lead_agent}", "agent": lead_agent}
+        if has_error:
+            hitl_metadata["error_recovery"] = "true"
+
+        hitl_event = SupervisorEvent(
+            type=EventType.HITL_REQUIRED,
+            role=lead_agent,
+            content=combined_content,
+            metadata=hitl_metadata,
+        )
+        yield hitl_event
+        hitl = await hitl_callback(hitl_event)
+
+        if hitl.decision == HITLDecision.FINISH:
+            state.finish_early = True
+            state.skip_consolidation = True
+            yield SupervisorEvent(
+                type=EventType.DONE,
+                role=sup_agent_name,
+                content="Debate finalizado por el usuario tras desvío sin consolidación.",
+                metadata={"skip_consolidation": "true"},
+            )
+            return
+
+        if hitl.decision in (HITLDecision.CONSOLIDATE, HITLDecision.APPROVE):
+            state.finish_early = True
+            yield await _run_consolidation(
+                state,
+                supervisor_provider,
+                sup_model_name,
+                supervisor_name=sup_agent_name,
+                topology=active_topology,
+            )
+            return
+
+        if hitl.decision == HITLDecision.DIVERT:
+            state.target_agents = hitl.target_agents or current_targets
+            if hitl.feedback:
+                state.refinement = hitl.feedback
+            continue
+
+        if hitl.decision == HITLDecision.REFINE:
+            state.refinement = hitl.feedback
+            state.target_agents = hitl.target_agents or current_targets
+            continue
+
+        if hitl.decision == HITLDecision.RETRY:
+            state.target_agents = hitl.target_agents or current_targets
+            continue
+
+    state.finish_early = True
     yield await _run_consolidation(
         state,
         supervisor_provider,
@@ -431,6 +501,7 @@ async def _execute_single_stage(
         async for event in _maybe_divert_to_targets(
             state,
             run_role,
+            hitl_callback,
             supervisor_provider,
             sup_model_name,
             sup_agent_name,
@@ -438,6 +509,7 @@ async def _execute_single_stage(
             agent_catalog,
         ):
             yield event
+        return
     if state.finish_early and not state.target_agents:
         if state.skip_consolidation:
             yield SupervisorEvent(

@@ -66,7 +66,7 @@ async def run_parallel_roles(
     state: DebateState,
     *,
     error_format: str = "[Fallo en {role}: {error}]",
-    emit_message: bool = False,
+    emit_message: bool = True,
     on_success: Callable[[str, str], None] | None = None,
     on_error: Callable[[str, str], None] | None = None,
     agent_catalog: IAgentCatalogRepository | None = None,
@@ -147,6 +147,8 @@ def apply_phase_hitl_decision(
         state.target_agents = hitl.target_agents
 
     if hitl.decision in (HITLDecision.APPROVE, HITLDecision.DIVERT):
+        if hitl.decision == HITLDecision.DIVERT and hitl.feedback:
+            state.refinement = hitl.feedback
         on_commit(hitl)
         return True, ""
 
@@ -295,6 +297,7 @@ async def run_review_rounds(
             run_role,
             state,
             error_format="[Fallo al refinar propuesta de {role}: {error}]",
+            emit_message=True,
         ):
             yield event
 
@@ -386,12 +389,14 @@ async def _execute_proposer_round(
     refinement: str,
 ) -> AsyncGenerator[SupervisorEvent, None]:
     req = state.formalized + (f"\n\n## User Refinement\n{refinement}" if refinement else "")
+    has_reviews = bool(reviewer_roles and review_rounds > 0)
     async for event in run_parallel_roles(
         roles_to_run,
         constant_prompt(req),
         run_role,
         state,
         error_format="[Fallo al generar propuesta de {role}: {error}]",
+        emit_message=not has_reviews,
     ):
         yield event
 

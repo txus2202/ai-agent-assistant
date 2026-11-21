@@ -398,7 +398,7 @@ sniffio==1.3.1
     #   openai
 soundfile==0.14.0
     # via ai-agent-assistant-backend
-soupsieve==4.0.1
+soupsieve==4.1.1
     # via
     #   ai-agent-assistant-backend
     #   beautifulsoup4

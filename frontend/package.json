@@ -23,7 +23,7 @@
     "format": "prettier --write --experimental-cli src/"
   },
   "dependencies": {
-    "dompurify": "^3.4.17",
+    "dompurify": "^3.4.18",
     "mermaid": "^12.2.0",
     "pinia": "^4.0.3",
     "pptxgenjs": "^4.0.1",

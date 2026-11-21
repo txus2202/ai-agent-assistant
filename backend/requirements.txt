@@ -507,7 +507,7 @@ websockets==16.1.1
     #   google-genai
     #   uvicorn
     #   vosk
-wrapt==1.17.3
+wrapt==2.5.2
     # via langfuse
 yarl==1.25.1
     # via aiohttp

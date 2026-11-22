@@ -5,6 +5,7 @@ from src.application.services.auth_service import AuthService
 from src.domain.entities.user import User
 from src.domain.ports.agent_config_repository import IAgentConfigRepository
 from src.domain.ports.debate_repository import IDebateRepository
+from src.domain.ports.security_notifier import ISecurityNotifier
 from src.domain.ports.user_repository import IUserRepository
 from src.infrastructure.persistence.sqlite_agent_config_repository import SqliteAgentConfigRepository
 from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
@@ -252,9 +253,8 @@ def require_admin(
     return user
 
 
-def get_security_notifier(connection: HTTPConnection) -> "ISecurityNotifier":
+def get_security_notifier(connection: HTTPConnection) -> ISecurityNotifier:
     """Dependency providing ISecurityNotifier from app.state or initialized from settings."""
-    from src.domain.ports.security_notifier import ISecurityNotifier
     from src.infrastructure.security.telegram_notifier import TelegramSecurityNotifier
 
     app_state = getattr(connection.app, "state", None)

@@ -1,6 +1,6 @@
 import pytest
 import httpx
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from src.infrastructure.security.telegram_notifier import TelegramSecurityNotifier
 

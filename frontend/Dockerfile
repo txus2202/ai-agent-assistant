@@ -17,6 +17,10 @@ RUN ./node_modules/.bin/vue-tsc --build tsconfig.app.json && npm run build-only
 # Uses official unprivileged image running as user 101 (nginx) on port 8080
 FROM nginx/nginx-unprivileged:1.30-alpine
 
+USER root
+# Apply latest Alpine security patches (resolves CVEs in base packages such as libxml2)
+RUN apk update && apk upgrade --no-cache
+
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 

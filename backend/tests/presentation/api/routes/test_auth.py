@@ -312,5 +312,107 @@ async def test_non_admin_cannot_access_user_management(test_app):
         assert res_create.status_code == 403
 
 
+@pytest.mark.asyncio
+async def test_security_notifier_triggers_on_login_events(auth_components, tmp_path):
+    import asyncio
+    from unittest.mock import AsyncMock
+    from src.presentation.api.dependencies.rate_limiter import default_rate_limiter
+
+    default_rate_limiter.reset()
+    user_repo, auth_service = auth_components
+    settings = Settings(
+        vault_path=str(tmp_path / "vault"),
+        db_path=str(tmp_path / "auth_test.db"),
+        auth_secret_key="test_auth_secret_key_32_bytes_long_entropy",
+        auth_trust_x_forwarded_for=True,
+        auth_rate_limit_login_attempts=2,
+        auth_rate_limit_login_window_seconds=60,
+    )
+
+    mock_notifier = AsyncMock()
+    mock_notifier.notify_login_attempt = AsyncMock(return_value=True)
+    mock_notifier.notify_rate_limit = AsyncMock(return_value=True)
+
+    app = create_app(
+        settings=settings,
+        auth_service=auth_service,
+        security_notifier=mock_notifier,
+    )
+
+    transport = ASGITransport(app=app)
+    headers = {
+        "CF-Connecting-IP": "203.0.113.195",
+        "CF-IPCountry": "ES",
+        "User-Agent": "TestBrowser/1.0",
+    }
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Setup admin
+        await client.post(
+            "/api/auth/setup",
+            json={"username": "profesor", "password": "ProfesorPassword123!"},
+            headers=headers,
+        )
+        await asyncio.sleep(0.01)
+
+        # 2. Login successfully
+        good_login = await client.post(
+            "/api/auth/login",
+            json={"username": "profesor", "password": "ProfesorPassword123!"},
+            headers=headers,
+        )
+        assert good_login.status_code == 200
+        await asyncio.sleep(0.01)
+
+        success_calls = [
+            call for call in mock_notifier.notify_login_attempt.call_args_list
+            if call.kwargs.get("success") is True and call.kwargs.get("username") == "profesor"
+        ]
+        assert len(success_calls) >= 1
+        assert success_calls[-1].kwargs["client_ip"] == "203.0.113.195"
+        assert success_calls[-1].kwargs["country"] == "ES"
+        assert success_calls[-1].kwargs["user_agent"] == "TestBrowser/1.0"
+
+        # 3. Failed login attempt
+        bad_login = await client.post(
+            "/api/auth/login",
+            json={"username": "profesor", "password": "WrongPassword"},
+            headers=headers,
+        )
+        assert bad_login.status_code == 401
+        await asyncio.sleep(0.01)
+
+        fail_calls = [
+            call for call in mock_notifier.notify_login_attempt.call_args_list
+            if call.kwargs.get("success") is False and call.kwargs.get("username") == "profesor"
+        ]
+        assert len(fail_calls) == 1
+        assert fail_calls[0].kwargs["client_ip"] == "203.0.113.195"
+        assert fail_calls[0].kwargs["country"] == "ES"
+        assert fail_calls[0].kwargs["reason"] == "Credenciales inválidas"
+
+        # 4. Trigger rate limit (2 attempts allowed per window)
+        bad_login_2 = await client.post(
+            "/api/auth/login",
+            json={"username": "profesor", "password": "WrongPassword"},
+            headers=headers,
+        )
+        assert bad_login_2.status_code == 401
+
+        rate_limit_resp = await client.post(
+            "/api/auth/login",
+            json={"username": "profesor", "password": "WrongPassword"},
+            headers=headers,
+        )
+        assert rate_limit_resp.status_code == 429
+        await asyncio.sleep(0.01)
+
+        assert mock_notifier.notify_rate_limit.await_count >= 1
+        rate_call = mock_notifier.notify_rate_limit.call_args_list[-1]
+        assert rate_call.kwargs["client_ip"] == "203.0.113.195"
+        assert rate_call.kwargs["country"] == "ES"
+        assert rate_call.kwargs["endpoint"] == "/api/auth/login"
+
+
+
 
 

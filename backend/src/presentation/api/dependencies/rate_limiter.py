@@ -55,14 +55,26 @@ default_rate_limiter = InMemoryRateLimiter()
 
 
 def get_client_ip(request: Request, trust_x_forwarded_for: bool = False) -> str:
-    """Resolve client IP address, only trusting X-Forwarded-For when explicitly configured."""
+    """Resolve client IP address, checking Cloudflare CF-Connecting-IP and X-Forwarded-For when configured."""
     if trust_x_forwarded_for:
+        cf_ip = request.headers.get("CF-Connecting-IP")
+        if cf_ip and cf_ip.strip():
+            return cf_ip.strip()
         forwarded = request.headers.get("X-Forwarded-For")
         if forwarded:
             return forwarded.split(",")[0].strip()
     if request.client and getattr(request.client, "host", None):
         return request.client.host
     return "unknown"
+
+
+def get_client_country(request: Request, trust_x_forwarded_for: bool = False) -> Optional[str]:
+    """Resolve client country from Cloudflare CF-IPCountry header when trusted proxy headers are enabled."""
+    if trust_x_forwarded_for:
+        country = request.headers.get("CF-IPCountry")
+        if country and country.strip():
+            return country.strip().upper()
+    return None
 
 
 def enforce_rate_limit(

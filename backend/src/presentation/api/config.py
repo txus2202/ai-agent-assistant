@@ -117,6 +117,17 @@ class Settings(BaseSettings):
     auth_rate_limit_setup_attempts: int = 3
     auth_rate_limit_setup_window_seconds: int = 60
 
+    # Telegram Security Alerts
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    telegram_alerts_enabled: bool = True
+    telegram_alert_on_login_success: bool = True
+    telegram_alert_admin_only_success: bool = False
+    telegram_alert_on_login_failure: bool = True
+    telegram_alert_failed_login_threshold: int = 1
+    telegram_alert_on_rate_limit: bool = True
+    telegram_alert_throttle_seconds: int = 60
+
     @property
     def effective_langfuse_host(self) -> str:
         return self.langfuse_base_url or self.langfuse_host or DEFAULT_LANGFUSE_HOST

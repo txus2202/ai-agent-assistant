@@ -251,3 +251,28 @@ def require_admin(
         )
     return user
 
+
+def get_security_notifier(connection: HTTPConnection) -> "ISecurityNotifier":
+    """Dependency providing ISecurityNotifier from app.state or initialized from settings."""
+    from src.domain.ports.security_notifier import ISecurityNotifier
+    from src.infrastructure.security.telegram_notifier import TelegramSecurityNotifier
+
+    app_state = getattr(connection.app, "state", None)
+    if app_state and hasattr(app_state, "security_notifier") and app_state.security_notifier is not None:
+        notifier: ISecurityNotifier = app_state.security_notifier
+        return notifier
+
+    settings = (app_state.settings if app_state and hasattr(app_state, "settings") else None) or get_settings()
+    return TelegramSecurityNotifier(
+        bot_token=settings.telegram_bot_token,
+        chat_id=settings.telegram_chat_id,
+        enabled=settings.telegram_alerts_enabled,
+        alert_on_login_success=settings.telegram_alert_on_login_success,
+        alert_admin_only_success=settings.telegram_alert_admin_only_success,
+        alert_on_login_failure=settings.telegram_alert_on_login_failure,
+        failed_login_threshold=settings.telegram_alert_failed_login_threshold,
+        alert_on_rate_limit=settings.telegram_alert_on_rate_limit,
+        throttle_seconds=settings.telegram_alert_throttle_seconds,
+    )
+
+

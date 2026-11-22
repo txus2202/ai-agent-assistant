@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from src.domain.ports.document_parser import IDocumentParser
     from src.domain.ports.document_store import IDocumentStore
     from src.domain.ports.image_generator import IImageGenerator
+    from src.domain.ports.security_notifier import ISecurityNotifier
     from src.domain.ports.source_extractor import ISourceExtractor, SourceType
     from src.infrastructure.llm.registry import LLMProviderConfig
 
@@ -137,6 +138,7 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
 def create_app(
     settings: Settings | None = None,
     auth_service: Any = None,
+    security_notifier: ISecurityNotifier | None = None,
     document_store: IDocumentStore | None = None,
     agent_catalog: IAgentCatalogRepository | None = None,
     topology_provider: ITopologyProvider | None = None,
@@ -191,6 +193,20 @@ def create_app(
     )
     if auth_service is not None:
         app.state.auth_service = auth_service
+
+    from src.infrastructure.security.telegram_notifier import TelegramSecurityNotifier
+
+    app.state.security_notifier = security_notifier or TelegramSecurityNotifier(
+        bot_token=cfg.telegram_bot_token,
+        chat_id=cfg.telegram_chat_id,
+        enabled=cfg.telegram_alerts_enabled,
+        alert_on_login_success=cfg.telegram_alert_on_login_success,
+        alert_admin_only_success=cfg.telegram_alert_admin_only_success,
+        alert_on_login_failure=cfg.telegram_alert_on_login_failure,
+        failed_login_threshold=cfg.telegram_alert_failed_login_threshold,
+        alert_on_rate_limit=cfg.telegram_alert_on_rate_limit,
+        throttle_seconds=cfg.telegram_alert_throttle_seconds,
+    )
 
     # ── CORS ─────────────────────────────────────────────────────────────
     app.add_middleware(

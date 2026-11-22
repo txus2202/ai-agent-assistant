@@ -1,6 +1,7 @@
+import asyncio
 import secrets
 from datetime import datetime
-from typing import Optional
+from typing import Any, Coroutine, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
@@ -16,46 +17,98 @@ from src.domain.exceptions import (
     SelfModificationError,
     WeakPasswordError,
 )
+from src.domain.ports.security_notifier import ISecurityNotifier
 from src.presentation.api.config import get_settings
 from src.presentation.api.dependencies.auth import (
     get_auth_service,
     get_current_user,
     get_current_user_optional,
+    get_security_notifier,
     require_admin,
 )
 from src.presentation.api.dependencies.rate_limiter import (
     default_rate_limiter,
     enforce_rate_limit,
+    get_client_country,
     get_client_ip,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
+_background_tasks: set[asyncio.Task[Any]] = set()
 
-def check_login_rate_limit(request: Request) -> None:
+
+def fire_and_forget(coro: Coroutine[Any, Any, Any]) -> Optional[asyncio.Task[Any]]:
+    """Execute background async task without blocking request lifecycle while preventing GC."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        coro.close()
+        return None
+    task = loop.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
+
+
+async def check_login_rate_limit(request: Request) -> None:
     settings = getattr(request.app.state, "settings", None) or get_settings()
     limiter = getattr(request.app.state, "rate_limiter", default_rate_limiter)
-    enforce_rate_limit(
-        request=request,
-        max_requests=settings.auth_rate_limit_login_attempts,
-        window_seconds=settings.auth_rate_limit_login_window_seconds,
-        limiter=limiter,
-        key_prefix="auth:login",
-        trust_x_forwarded_for=getattr(settings, "auth_trust_x_forwarded_for", False),
-    )
+    trust_x_forwarded_for = getattr(settings, "auth_trust_x_forwarded_for", False)
+    try:
+        enforce_rate_limit(
+            request=request,
+            max_requests=settings.auth_rate_limit_login_attempts,
+            window_seconds=settings.auth_rate_limit_login_window_seconds,
+            limiter=limiter,
+            key_prefix="auth:login",
+            trust_x_forwarded_for=trust_x_forwarded_for,
+        )
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+            notifier = get_security_notifier(request)
+            client_ip = get_client_ip(request, trust_x_forwarded_for=trust_x_forwarded_for)
+            country = get_client_country(request, trust_x_forwarded_for=trust_x_forwarded_for)
+            user_agent = request.headers.get("user-agent")
+            fire_and_forget(
+                notifier.notify_rate_limit(
+                    client_ip=client_ip,
+                    endpoint="/api/auth/login",
+                    user_agent=user_agent,
+                    country=country,
+                )
+            )
+        raise exc
 
 
-def check_setup_rate_limit(request: Request) -> None:
+async def check_setup_rate_limit(request: Request) -> None:
     settings = getattr(request.app.state, "settings", None) or get_settings()
     limiter = getattr(request.app.state, "rate_limiter", default_rate_limiter)
-    enforce_rate_limit(
-        request=request,
-        max_requests=settings.auth_rate_limit_setup_attempts,
-        window_seconds=settings.auth_rate_limit_setup_window_seconds,
-        limiter=limiter,
-        key_prefix="auth:setup",
-        trust_x_forwarded_for=getattr(settings, "auth_trust_x_forwarded_for", False),
-    )
+    trust_x_forwarded_for = getattr(settings, "auth_trust_x_forwarded_for", False)
+    try:
+        enforce_rate_limit(
+            request=request,
+            max_requests=settings.auth_rate_limit_setup_attempts,
+            window_seconds=settings.auth_rate_limit_setup_window_seconds,
+            limiter=limiter,
+            key_prefix="auth:setup",
+            trust_x_forwarded_for=trust_x_forwarded_for,
+        )
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+            notifier = get_security_notifier(request)
+            client_ip = get_client_ip(request, trust_x_forwarded_for=trust_x_forwarded_for)
+            country = get_client_country(request, trust_x_forwarded_for=trust_x_forwarded_for)
+            user_agent = request.headers.get("user-agent")
+            fire_and_forget(
+                notifier.notify_rate_limit(
+                    client_ip=client_ip,
+                    endpoint="/api/auth/setup",
+                    user_agent=user_agent,
+                    country=country,
+                )
+            )
+        raise exc
 
 
 class UserPublic(BaseModel):
@@ -167,8 +220,14 @@ async def initial_setup(
     request: Request,
     x_setup_token: Optional[str] = Header(default=None, alias="X-Setup-Token"),
     auth_service: AuthService = Depends(get_auth_service),
+    notifier: ISecurityNotifier = Depends(get_security_notifier),
 ) -> AuthSuccessResponse:
     settings = getattr(request.app.state, "settings", None) or get_settings()
+    trust_x_forwarded_for = getattr(settings, "auth_trust_x_forwarded_for", False)
+    client_ip = get_client_ip(request, trust_x_forwarded_for=trust_x_forwarded_for)
+    country = get_client_country(request, trust_x_forwarded_for=trust_x_forwarded_for)
+    user_agent = request.headers.get("user-agent")
+
     if settings.initial_setup_token:
         provided_token = body.setup_token or x_setup_token or ""
         if not secrets.compare_digest(provided_token, settings.initial_setup_token):
@@ -182,6 +241,17 @@ async def initial_setup(
             password=body.password,
         )
         _set_auth_cookie(response, token, request=request)
+        fire_and_forget(
+            notifier.notify_login_attempt(
+                username=user.username,
+                client_ip=client_ip,
+                success=True,
+                is_admin=True,
+                user_agent=user_agent,
+                country=country,
+                reason="Inicialización de administrador",
+            )
+        )
         return AuthSuccessResponse(
             user=_user_to_public(user),
             message="Administrator account initialized successfully",
@@ -212,30 +282,62 @@ async def login(
     response: Response,
     request: Request,
     auth_service: AuthService = Depends(get_auth_service),
+    notifier: ISecurityNotifier = Depends(get_security_notifier),
 ) -> AuthSuccessResponse:
+    settings = getattr(request.app.state, "settings", None) or get_settings()
+    trust_x_forwarded_for = getattr(settings, "auth_trust_x_forwarded_for", False)
+    client_ip = get_client_ip(request, trust_x_forwarded_for=trust_x_forwarded_for)
+    country = get_client_country(request, trust_x_forwarded_for=trust_x_forwarded_for)
+    user_agent = request.headers.get("user-agent")
+
     try:
         token, user = await auth_service.authenticate(
             username=body.username,
             password=body.password,
         )
-        settings = getattr(request.app.state, "settings", None) or get_settings()
         limiter = getattr(request.app.state, "rate_limiter", default_rate_limiter)
-        client_ip = get_client_ip(
-            request,
-            trust_x_forwarded_for=getattr(settings, "auth_trust_x_forwarded_for", False),
-        )
         limiter.reset_key(f"auth:login:{client_ip}")
         _set_auth_cookie(response, token, request=request)
+        fire_and_forget(
+            notifier.notify_login_attempt(
+                username=user.username,
+                client_ip=client_ip,
+                success=True,
+                is_admin=user.is_admin,
+                user_agent=user_agent,
+                country=country,
+            )
+        )
         return AuthSuccessResponse(
             user=_user_to_public(user),
             message="Authenticated successfully",
         )
     except InvalidCredentialsError as exc:
+        fire_and_forget(
+            notifier.notify_login_attempt(
+                username=body.username,
+                client_ip=client_ip,
+                success=False,
+                user_agent=user_agent,
+                country=country,
+                reason="Credenciales inválidas",
+            )
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
         ) from exc
     except UserInactiveError as exc:
+        fire_and_forget(
+            notifier.notify_login_attempt(
+                username=body.username,
+                client_ip=client_ip,
+                success=False,
+                user_agent=user_agent,
+                country=country,
+                reason="Cuenta desactivada",
+            )
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),

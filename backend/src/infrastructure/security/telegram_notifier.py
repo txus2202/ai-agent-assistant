@@ -39,8 +39,8 @@ class TelegramSecurityNotifier(ISecurityNotifier):
         throttle_seconds: int = 60,
         http_client: Optional[httpx.AsyncClient] = None,
     ) -> None:
-        self.bot_token = bot_token.strip() if bot_token else ""
-        self.chat_id = chat_id.strip() if chat_id else ""
+        self.bot_token = bot_token.strip().strip('"').strip("'") if bot_token else ""
+        self.chat_id = chat_id.strip().strip('"').strip("'") if chat_id else ""
         self.enabled = bool(enabled and self.bot_token and self.chat_id)
 
         # Configurable event filters

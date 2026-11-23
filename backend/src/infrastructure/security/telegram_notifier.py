@@ -123,49 +123,38 @@ class TelegramSecurityNotifier(ISecurityNotifier):
             )
             return False
 
-    async def notify_login_attempt(
+    def _should_alert_login(
+        self,
+        *,
+        success: bool,
+        is_admin: bool,
+        user_key: str,
+    ) -> bool:
+        if success:
+            self._failure_counts.pop(user_key, None)
+            if not self.alert_on_login_success:
+                return False
+            return not (self.alert_admin_only_success and not is_admin)
+
+        if not self.alert_on_login_failure:
+            return False
+
+        self._failure_counts[user_key] += 1
+        return self._failure_counts[user_key] >= self.failed_login_threshold
+
+    def _build_login_alert_message(
         self,
         *,
         username: str,
         client_ip: str,
         success: bool,
-        is_admin: bool = False,
-        user_agent: Optional[str] = None,
-        country: Optional[str] = None,
-        reason: Optional[str] = None,
-    ) -> bool:
-        if not self.enabled:
-            return False
-
-        user_key = f"{client_ip}:{username}"
-
-        # ── 1. Evaluate filter rules ───────────────────────────────────────
-        if success:
-            # Reset failure count on success
-            self._failure_counts.pop(user_key, None)
-
-            if not self.alert_on_login_success:
-                return False
-            if self.alert_admin_only_success and not is_admin:
-                return False
-        else:
-            if not self.alert_on_login_failure:
-                return False
-
-            self._failure_counts[user_key] += 1
-            current_failures = self._failure_counts[user_key]
-
-            # If threshold > 1, only alert once the threshold is reached
-            if current_failures < self.failed_login_threshold:
-                return False
-
-        # ── 2. Anti-spam Throttling ────────────────────────────────────────
-        throttle_key = f"login:{'success' if success else 'fail'}:{client_ip}"
-        is_throttled, previous_suppressed = self._should_throttle(throttle_key)
-        if is_throttled:
-            return False
-
-        # ── 3. Build alert content ─────────────────────────────────────────
+        is_admin: bool,
+        user_key: str,
+        user_agent: Optional[str],
+        country: Optional[str],
+        reason: Optional[str],
+        previous_suppressed: int,
+    ) -> str:
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         status_label = "Inicio de sesión exitoso ✅" if success else "Intento de inicio de sesión fallido ❌"
         icon = "🔐" if success else "🚨"
@@ -201,7 +190,43 @@ class TelegramSecurityNotifier(ISecurityNotifier):
                 f"\n⚠️ <i>Nota: Se han agrupado y omitido {previous_suppressed} alertas similares en los últimos {self.throttle_seconds}s para evitar saturación.</i>"
             )
 
-        return await self._send_message("\n".join(lines))
+        return "\n".join(lines)
+
+    async def notify_login_attempt(
+        self,
+        *,
+        username: str,
+        client_ip: str,
+        success: bool,
+        is_admin: bool = False,
+        user_agent: Optional[str] = None,
+        country: Optional[str] = None,
+        reason: Optional[str] = None,
+    ) -> bool:
+        if not self.enabled:
+            return False
+
+        user_key = f"{client_ip}:{username}"
+        if not self._should_alert_login(success=success, is_admin=is_admin, user_key=user_key):
+            return False
+
+        throttle_key = f"login:{'success' if success else 'fail'}:{client_ip}"
+        is_throttled, previous_suppressed = self._should_throttle(throttle_key)
+        if is_throttled:
+            return False
+
+        message = self._build_login_alert_message(
+            username=username,
+            client_ip=client_ip,
+            success=success,
+            is_admin=is_admin,
+            user_key=user_key,
+            user_agent=user_agent,
+            country=country,
+            reason=reason,
+            previous_suppressed=previous_suppressed,
+        )
+        return await self._send_message(message)
 
     async def notify_rate_limit(
         self,

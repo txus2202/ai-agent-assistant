@@ -78,6 +78,7 @@ async def check_login_rate_limit(request: Request) -> None:
                     country=country,
                 )
             )
+            await asyncio.sleep(0)
         raise exc
 
 
@@ -108,6 +109,7 @@ async def check_setup_rate_limit(request: Request) -> None:
                     country=country,
                 )
             )
+            await asyncio.sleep(0)
         raise exc
 
 

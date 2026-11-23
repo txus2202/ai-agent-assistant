@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import { useAuthStore } from '../stores/auth'
 
@@ -52,15 +52,42 @@ export async function forceLogoutToLogin(redirectPath?: string): Promise<void> {
   }
 }
 
+async function handleInvalidRoute(authStore: ReturnType<typeof useAuthStore>) {
+  if (authStore.user) {
+    await authStore.logout()
+  }
+  authStore.user = null
+  return { path: '/login' }
+}
+
+function handleSetupRedirect(toPath: string, isInitialized: boolean | null, isAuthenticated: boolean) {
+  if (isInitialized === false) {
+    return toPath !== '/setup' ? { path: '/setup' } : undefined
+  }
+  if (toPath === '/setup') {
+    return { path: isAuthenticated ? '/' : '/login' }
+  }
+  return undefined
+}
+
+function handleAuthGuard(to: RouteLocationNormalized, isAuthenticated: boolean) {
+  if (to.meta.requiresAuth && !isAuthenticated) {
+    return {
+      path: '/login',
+      query: to.fullPath !== '/' ? { redirect: to.fullPath } : undefined,
+    }
+  }
+  if (to.meta.guestOnly && isAuthenticated) {
+    return { path: '/' }
+  }
+  return undefined
+}
+
 router.beforeEach(async (to) => {
   const authStore = useAuthStore()
 
   if (to.meta.invalidRoute) {
-    if (authStore.user) {
-      await authStore.logout()
-    }
-    authStore.user = null
-    return { path: '/login' }
+    return handleInvalidRoute(authStore)
   }
 
   if (authStore.isInitialized === null && authStore.isBackendAvailable !== false) {
@@ -72,29 +99,12 @@ router.beforeEach(async (to) => {
     return
   }
 
-  // System not yet configured with an initial admin (backend is reachable and 0 users exist)
-  if (authStore.isInitialized === false) {
-    if (to.path !== '/setup') {
-      return { path: '/setup' }
-    }
-    return
+  const setupRedirect = handleSetupRedirect(to.path, authStore.isInitialized, authStore.isAuthenticated)
+  if (setupRedirect) {
+    return setupRedirect
   }
 
-  // System is initialized
-  if (to.path === '/setup') {
-    return { path: authStore.isAuthenticated ? '/' : '/login' }
-  }
-
-  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-    return {
-      path: '/login',
-      query: to.fullPath !== '/' ? { redirect: to.fullPath } : undefined,
-    }
-  }
-
-  if (to.meta.guestOnly && authStore.isAuthenticated) {
-    return { path: '/' }
-  }
+  return handleAuthGuard(to, authStore.isAuthenticated)
 })
 
 router.onError((error) => {

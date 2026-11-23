@@ -127,9 +127,7 @@ function hasExplicitSlideSignals(content: string): boolean {
     return false
   }
   const hasExplicitSlideHeading = /(?:^|\n)##\s+(?:slide|diapositiva)\b/i.test(content)
-  const hasSlideLayoutComment = /<!--\s*(?:layout|notes):\s*(?:hero|cards|split|standard|[^-]+)-->/i.test(
-    content,
-  )
+  const hasSlideLayoutComment = /<!--\s*(?:layout|notes):\s*[^->]+-->/i.test(content)
   return hasExplicitSlideHeading || hasSlideLayoutComment
 }
 
@@ -192,7 +190,7 @@ function extractDocumentAgentEnvelope(
 ): MessageBlock[] | null {
   const openFenceRegex = /(?:^|\n)```([a-zA-Z0-9_#+-]+)?(?:[ \t][^\n]*)?\n/
   const openMatch = openFenceRegex.exec(rawContent)
-  if (!openMatch || openMatch.index === undefined) {
+  if (openMatch?.index === undefined) {
     return null
   }
 
@@ -218,7 +216,7 @@ function extractDocumentAgentEnvelope(
     lastCloseMatch = match
   }
 
-  if (!lastCloseMatch || lastCloseMatch.index === undefined) {
+  if (lastCloseMatch?.index === undefined) {
     return null
   }
 

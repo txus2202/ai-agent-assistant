@@ -1,6 +1,6 @@
 ---
 created: 2026-11-08
-updated: 2026-11-20
+updated: 2026-11-23
 type: spec
 phase: 7
 layer: cross-cutting
@@ -111,9 +111,14 @@ flowchart TD
 
 ### E. Frontend (`frontend/src/`)
 - **`utils/messageParser.ts`:**
-  - Parser multiformato que divide el contenido del mensaje en bloques secuenciales: `text`, `mermaid`, `code`, `document` e `image`.
+  - Parser multiformato que divide el contenido del mensaje en bloques secuenciales: `text`, `mermaid`, `code`, `document`, `presentation` e `image`.
+  - **Aislamiento por Herramientas del Agente (`agentTools` / `isDocumentAgent`):**
+    - Reconoce etiquetas de documento (`markdown`, `md`, `doc`, `document`, `pdf`, `report`, `manual`, `acta`).
+    - Soporta bloques de documento (` ```markdown `, ` ```pdf `, etc.) que contienen bloques de código anidados (` ```bash `, ` ```json `, etc.) en su interior sin truncar prematuramente el documento ni fragmentarlo en tarjetas de código sueltas.
+    - Si un agente tiene `document_viewer` en su lista de `tools` en `agents.yaml` y **no** tiene `code_viewer` (p.ej. **Calíope**), nunca se emiten bloques `type: 'code'` ni se abre `CodeModal`: cualquier bloque delimitado (que no sea `presentation` o `mermaid`) o documento con fragmentos de código anidados se consolida y renderiza íntegramente en la herramienta de Documento (`DocumentModal`), ofreciendo siempre las opciones de descarga en formato `.pdf` y `.md`.
 - **`components/tools/`:**
-  - Componentes modulares independientes para cada tipo de recurso interactivo (`CodeModal`, `DiagramModal`, `DocumentModal`, `ImageModal`).
+  - Componentes modulares independientes para cada tipo de recurso interactivo (`CodeModal`, `DiagramModal`, `DocumentModal`, `ImageModal`, `PresentationModal`).
+  - `DocumentModal.vue` y la tarjeta de documento en `ChatMessageBlock.vue` integran las opciones de descarga para exportar tanto en **`.pdf`** como en **`.md`** (incluyendo menú desplegable de descarga con ambas opciones y accesos directos).
 - **`components/ChatPanel.vue`:**
   - Renderizado condicional de tarjetas temáticas con scroll interno acotado (`max-h-56` para código y documentos), botones icon-only con tooltips descriptivos en hover, y apertura de modales completas.
 

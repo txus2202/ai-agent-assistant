@@ -784,6 +784,41 @@ describe('ChatPanel.vue', () => {
     // Modal is now open
     expect(wrapper.find('[data-test="document-modal-backdrop"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Manual de Integración')
+
+    // Document card download dropdown has .pdf and .md options
+    const docDownloadMenuBtn = wrapper.find('[data-test="chat-doc-download-menu-btn"]')
+    expect(docDownloadMenuBtn.exists()).toBe(true)
+    await docDownloadMenuBtn.trigger('click')
+    expect(wrapper.find('[data-test="chat-doc-download-option-pdf"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="chat-doc-download-option-md"]').exists()).toBe(true)
+  })
+
+  it('never renders code card or CodeModal for Caliope when she generates a PDF report with nested code blocks', async () => {
+    const messages = [
+      {
+        role: 'assistant' as const,
+        content: `Aquí tienes el manual en PDF solicitado:
+\`\`\`markdown
+# Manual de Despliegue: Auth-Core
+## 1. Comandos de Arranque
+\`\`\`bash
+docker compose up -d
+\`\`\`
+## 2. Referencias
+- ADR-022
+\`\`\``,
+        agentName: 'Calíope'
+      }
+    ]
+
+    const wrapper = mount(ChatPanel, {
+      props: { messages, isDebating: false }
+    })
+
+    expect(wrapper.find('[data-test="chat-code-card"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="chat-document-card"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="chat-document-card"]').text()).toContain('Manual de Despliegue: Auth-Core')
+    expect(wrapper.find('[data-test="chat-document-card"]').text()).toContain('docker compose up -d')
   })
 
   it('renders presentation card for Caliope and opens PresentationModal when clicking Ver or Proyectar', async () => {

@@ -2,10 +2,12 @@
 import { computed } from 'vue'
 import {
   Check,
+  ChevronDown,
   Code2,
   Copy,
   Download,
   Eye,
+  FileCode,
   FileText,
   ImageIcon,
   Network,
@@ -24,6 +26,7 @@ const props = defineProps<{
   copiedCodeIndex: number | null
   copiedDocIndex: number | null
   copiedPresentationIndex: number | null
+  activeDocumentDownloadMenu?: number | null
   activePresentationDownloadMenu: number | null
 }>()
 
@@ -31,6 +34,7 @@ const emit = defineEmits<{
   (e: 'copy', payload: ArtifactCopyPayload): void
   (e: 'open', payload: ArtifactOpenPayload): void
   (e: 'download', payload: ArtifactDownloadPayload): void
+  (e: 'toggle-document-download', cardKey: number): void
   (e: 'toggle-presentation-download', cardKey: number): void
 }>()
 
@@ -307,6 +311,67 @@ const cardKey = computed(() => props.messageIndex * 100 + props.blockIndex)
           </span>
         </button>
 
+        <div class="relative">
+          <button
+            type="button"
+            @click.stop="emit('toggle-document-download', cardKey)"
+            data-test="chat-doc-download-menu-btn"
+            class="relative group p-1.5 rounded-lg bg-[#030509] border border-pink-500/40 hover:border-pink-400 text-pink-200 hover:text-white transition-colors cursor-pointer flex items-center gap-1"
+            title="Opciones de descarga (.pdf y .md)"
+            aria-label="Opciones de descarga (.pdf y .md)"
+            :aria-expanded="activeDocumentDownloadMenu === cardKey"
+          >
+            <Download class="w-3.5 h-3.5" />
+            <ChevronDown
+              class="w-2.5 h-2.5 opacity-70 transition-transform duration-150"
+              :class="activeDocumentDownloadMenu === cardKey ? 'rotate-180' : ''"
+            />
+            <span
+              v-if="activeDocumentDownloadMenu !== cardKey"
+              class="pointer-events-none absolute top-full mt-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono font-bold text-pink-300 border border-pink-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
+            >
+              Descargar
+            </span>
+          </button>
+
+          <div
+            v-if="activeDocumentDownloadMenu === cardKey"
+            data-test="chat-doc-download-dropdown"
+            class="absolute right-0 top-full mt-1.5 w-48 bg-[#0e0816]/95 border border-pink-500/40 rounded-xl p-1 shadow-[0_0_20px_rgba(236,72,153,0.25)] backdrop-blur-md z-50 flex flex-col gap-0.5 font-mono text-left animate-in fade-in duration-100"
+          >
+            <button
+              type="button"
+              @click="
+                emit('download', {
+                  kind: 'document-pdf',
+                  content: block.content,
+                  title: block.title || 'documento',
+                })
+              "
+              data-test="chat-doc-download-option-pdf"
+              class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-200 hover:text-white hover:bg-pink-950/60 transition-colors text-xs cursor-pointer text-left"
+            >
+              <Printer class="w-3.5 h-3.5 text-pink-400 shrink-0" />
+              <span>Documento PDF (.pdf)</span>
+            </button>
+            <button
+              type="button"
+              @click="
+                emit('download', {
+                  kind: 'document-md',
+                  content: block.content,
+                  title: block.title || 'documento',
+                })
+              "
+              data-test="chat-doc-download-option-md"
+              class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-200 hover:text-white hover:bg-pink-950/60 transition-colors text-xs cursor-pointer text-left"
+            >
+              <FileCode class="w-3.5 h-3.5 text-pink-400 shrink-0" />
+              <span>Markdown (.md)</span>
+            </button>
+          </div>
+        </div>
+
         <button
           type="button"
           @click="
@@ -321,7 +386,7 @@ const cardKey = computed(() => props.messageIndex * 100 + props.blockIndex)
           title="Descargar archivo Markdown (.md)"
           aria-label="Descargar archivo Markdown (.md)"
         >
-          <Download class="w-3.5 h-3.5" />
+          <FileCode class="w-3.5 h-3.5" />
           <span
             class="pointer-events-none absolute top-full mt-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#03060c] px-2 py-0.5 text-[10px] font-mono font-bold text-pink-300 border border-pink-500/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-lg z-50 select-none"
           >
@@ -340,8 +405,8 @@ const cardKey = computed(() => props.messageIndex * 100 + props.blockIndex)
           "
           data-test="chat-doc-export-pdf-btn"
           class="relative group p-1.5 rounded-lg bg-pink-500/15 hover:bg-pink-500/25 border border-pink-500 text-pink-300 transition-colors cursor-pointer flex items-center justify-center"
-          title="Descargar / Imprimir en PDF"
-          aria-label="Descargar / Imprimir en PDF"
+          title="Descargar / Imprimir en PDF (.pdf)"
+          aria-label="Descargar / Imprimir en PDF (.pdf)"
         >
           <Printer class="w-3.5 h-3.5" />
           <span

@@ -99,16 +99,52 @@ function parseTextAndImages(textChunk: string): MessageBlock[] {
 
 export interface ParseOptions {
   isDocumentAgent?: boolean
+  agentTools?: string[]
 }
 
-function createFencedBlock(langRaw: string, codeContent: string): MessageBlock {
+const PRESENTATION_TAGS = new Set(['presentation', 'slides', 'deck', 'slide', 'diapositiva'])
+const DOCUMENT_TAGS = new Set([
+  'markdown',
+  'md',
+  'doc',
+  'document',
+  'pdf',
+  'report',
+  'manual',
+  'acta',
+])
+
+function isDocumentOnlyAgent(options?: ParseOptions): boolean {
+  const tools = options?.agentTools
+  if (Array.isArray(tools) && tools.length > 0) {
+    return tools.includes('document_viewer') && !tools.includes('code_viewer')
+  }
+  return Boolean(options?.isDocumentAgent)
+}
+
+function hasExplicitSlideSignals(content: string): boolean {
+  if (!/(?:^|\n)---\s*(?:\n|$)/.test(content)) {
+    return false
+  }
+  const hasExplicitSlideHeading = /(?:^|\n)##\s+(?:slide|diapositiva)\b/i.test(content)
+  const hasSlideLayoutComment = /<!--\s*(?:layout|notes):\s*(?:hero|cards|split|standard|[^-]+)-->/i.test(
+    content,
+  )
+  return hasExplicitSlideHeading || hasSlideLayoutComment
+}
+
+function createFencedBlock(
+  langRaw: string,
+  codeContent: string,
+  options?: ParseOptions,
+): MessageBlock {
   if (langRaw === 'mermaid' || langRaw === 'diagram') {
     return {
       type: 'mermaid',
-      content: codeContent
+      content: codeContent,
     }
   }
-  if (['presentation', 'slides', 'deck', 'slide', 'diapositiva'].includes(langRaw)) {
+  if (PRESENTATION_TAGS.has(langRaw)) {
     const parsed = parsePresentation(codeContent)
     return {
       type: 'presentation',
@@ -116,12 +152,12 @@ function createFencedBlock(langRaw: string, codeContent: string): MessageBlock {
       title: parsed.title,
       slideCount: parsed.slides.length,
       language: 'presentation',
-      extension: 'html'
+      extension: 'html',
     }
   }
-  if (['markdown', 'md', 'doc', 'document'].includes(langRaw)) {
-    // If markdown has slide dividers `---` and slide headers, treat as presentation
-    if (codeContent.includes('---') && /(?:^|\n)##\s+(?:slide|diapositiva|\w+)/i.test(codeContent)) {
+  if (DOCUMENT_TAGS.has(langRaw) || isDocumentOnlyAgent(options)) {
+    // Only treat a markdown/doc block as a presentation if it has explicit slide headings or slide layout directives
+    if (hasExplicitSlideSignals(codeContent)) {
       const parsed = parsePresentation(codeContent)
       if (parsed.slides.length >= 2) {
         return {
@@ -130,7 +166,7 @@ function createFencedBlock(langRaw: string, codeContent: string): MessageBlock {
           title: parsed.title,
           slideCount: parsed.slides.length,
           language: 'presentation',
-          extension: 'html'
+          extension: 'html',
         }
       }
     }
@@ -139,15 +175,69 @@ function createFencedBlock(langRaw: string, codeContent: string): MessageBlock {
       content: codeContent,
       title: extractDocumentTitle(codeContent, 'Documento Técnico'),
       language: 'markdown',
-      extension: 'md'
+      extension: 'md',
     }
   }
   return {
     type: 'code',
     content: codeContent,
     language: langRaw || 'code',
-    extension: getLanguageExtension(langRaw)
+    extension: getLanguageExtension(langRaw),
   }
+}
+
+function extractDocumentAgentEnvelope(
+  rawContent: string,
+  options?: ParseOptions,
+): MessageBlock[] | null {
+  const openFenceRegex = /(?:^|\n)```([a-zA-Z0-9_#+-]+)?(?:[ \t][^\n]*)?\n/
+  const openMatch = openFenceRegex.exec(rawContent)
+  if (!openMatch || openMatch.index === undefined) {
+    return null
+  }
+
+  const fenceOffset = openMatch[0].startsWith('\n') ? 1 : 0
+  const openFenceStart = openMatch.index + fenceOffset
+  const langRaw = (openMatch[1] || '').trim().toLowerCase()
+  const contentStart = openMatch.index + openMatch[0].length
+
+  // Only treat as outer document/presentation envelope if it's a document/presentation tag,
+  // or if it appears before any top-level markdown heading (# Title)
+  const beforeFence = rawContent.slice(0, openFenceStart).trim()
+  const hasHeadingBeforeFence = /(?:^|\n)#[ \t]+[^\n]+/.test(beforeFence)
+  if (hasHeadingBeforeFence && !DOCUMENT_TAGS.has(langRaw) && !PRESENTATION_TAGS.has(langRaw)) {
+    return null
+  }
+
+  // Find the LAST closing fence ``` in the message so nested code blocks inside the document are preserved
+  const closeFenceRegex = /\n```[ \t]*(?:\n|$)/g
+  let lastCloseMatch: RegExpExecArray | null = null
+  let match: RegExpExecArray | null
+  closeFenceRegex.lastIndex = contentStart
+  while ((match = closeFenceRegex.exec(rawContent)) !== null) {
+    lastCloseMatch = match
+  }
+
+  if (!lastCloseMatch || lastCloseMatch.index === undefined) {
+    return null
+  }
+
+  const innerContent = rawContent.slice(contentStart, lastCloseMatch.index).trim()
+  if (!innerContent) {
+    return null
+  }
+
+  const afterFence = rawContent.slice(lastCloseMatch.index + lastCloseMatch[0].length).trim()
+  const result: MessageBlock[] = []
+
+  if (beforeFence) {
+    result.push(...parseTextAndImages(beforeFence))
+  }
+  result.push(createFencedBlock(langRaw || 'markdown', innerContent, options))
+  if (afterFence) {
+    result.push(...parseTextAndImages(afterFence))
+  }
+  return result
 }
 
 function handleDocumentAgentFallback(rawContent: string): MessageBlock[] | null {
@@ -166,8 +256,8 @@ function handleDocumentAgentFallback(rawContent: string): MessageBlock[] | null 
     result.push(...parseTextAndImages(preamble))
   }
 
-  // Check if raw document contains slides
-  if (docContent.includes('---') && /(?:^|\n)##\s+(?:slide|diapositiva|\w+)/i.test(docContent)) {
+  // Check if raw document contains explicit slide signals
+  if (hasExplicitSlideSignals(docContent)) {
     const parsed = parsePresentation(docContent)
     if (parsed.slides.length >= 2) {
       result.push({
@@ -192,7 +282,7 @@ function handleDocumentAgentFallback(rawContent: string): MessageBlock[] | null 
   return result
 }
 
-function extractFencedBlocksAndText(rawContent: string): MessageBlock[] {
+function extractFencedBlocksAndText(rawContent: string, options?: ParseOptions): MessageBlock[] {
   const blocks: MessageBlock[] = []
   let lastIndex = 0
   let match: RegExpExecArray | null
@@ -215,7 +305,7 @@ function extractFencedBlocksAndText(rawContent: string): MessageBlock[] {
     const codeContent = (match[2] || '').trim()
 
     if (codeContent) {
-      blocks.push(createFencedBlock(langRaw, codeContent))
+      blocks.push(createFencedBlock(langRaw, codeContent, options))
     }
 
     lastIndex = matchEnd
@@ -241,10 +331,21 @@ export function parseMessageContent(rawContent: string, options?: ParseOptions):
     return []
   }
 
-  const blocks = extractFencedBlocksAndText(rawContent)
+  if (isDocumentOnlyAgent(options)) {
+    const envelopeBlocks = extractDocumentAgentEnvelope(rawContent, options)
+    if (envelopeBlocks) {
+      return envelopeBlocks
+    }
+    const fallbackResult = handleDocumentAgentFallback(rawContent)
+    if (fallbackResult) {
+      return fallbackResult
+    }
+  }
+
+  const blocks = extractFencedBlocksAndText(rawContent, options)
 
   // Fallback for document agents (e.g. Calíope) emitting raw markdown without fenced code blocks
-  if (options?.isDocumentAgent && !blocks.some(b => b.type === 'document' || b.type === 'code')) {
+  if (options?.isDocumentAgent && !blocks.some((b) => b.type === 'document' || b.type === 'code')) {
     const fallbackResult = handleDocumentAgentFallback(rawContent)
     if (fallbackResult) {
       return fallbackResult

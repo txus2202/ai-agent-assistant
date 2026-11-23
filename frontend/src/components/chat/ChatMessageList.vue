@@ -16,6 +16,7 @@ const props = defineProps<{
   copiedCodeIndex: number | null
   copiedDocIndex: number | null
   copiedPresentationIndex: number | null
+  activeDocumentDownloadMenu?: number | null
   activePresentationDownloadMenu: number | null
 }>()
 
@@ -26,6 +27,7 @@ const emit = defineEmits<{
   (e: 'copy', payload: ArtifactCopyPayload): void
   (e: 'open', payload: ArtifactOpenPayload): void
   (e: 'download', payload: ArtifactDownloadPayload): void
+  (e: 'toggle-document-download', cardKey: number): void
   (e: 'toggle-presentation-download', cardKey: number): void
 }>()
 
@@ -159,11 +161,13 @@ defineExpose({
       :copied-code-index="copiedCodeIndex"
       :copied-doc-index="copiedDocIndex"
       :copied-presentation-index="copiedPresentationIndex"
+      :active-document-download-menu="activeDocumentDownloadMenu ?? null"
       :active-presentation-download-menu="activePresentationDownloadMenu"
       @stop-tts="emit('stop-tts')"
       @copy="emit('copy', $event)"
       @open="emit('open', $event)"
       @download="emit('download', $event)"
+      @toggle-document-download="emit('toggle-document-download', $event)"
       @toggle-presentation-download="emit('toggle-presentation-download', $event)"
     />
 

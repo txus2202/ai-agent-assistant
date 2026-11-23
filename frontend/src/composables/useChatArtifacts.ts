@@ -25,6 +25,7 @@ export interface RenderedMessageBlock extends MessageBlock {
 interface ParsedMessageCacheEntry {
   content: string
   isDocAgent: boolean
+  toolsKey: string
   blocks: RenderedMessageBlock[]
 }
 
@@ -72,6 +73,7 @@ export function useChatArtifacts(deps: UseChatArtifactsDeps) {
   const activeDocContent = ref('')
   const activeDocTitle = ref('Documento Técnico')
   const { state: copiedDocIndex, trigger: triggerCopiedDoc } = useTimedReset<number | null>(null)
+  const activeDocumentDownloadMenu: Ref<number | null> = ref(null)
 
   const isPresentationModalOpen = ref(false)
   const activePresentationContent = ref('')
@@ -82,18 +84,17 @@ export function useChatArtifacts(deps: UseChatArtifactsDeps) {
 
   const parsedBlocksCache = new Map<string, ParsedMessageCacheEntry>()
 
-  const agentHasDocumentViewer = (agentName?: string): boolean => {
-    if (!agentName) return false
+  const resolveAgentForMessage = (agentName?: string): Agent | undefined => {
+    if (!agentName) return undefined
     const lower = agentName.toLowerCase()
     const normalize = deps.normalizeAgentRole
     const norm = normalize ? normalize(agentName).toLowerCase() : lower
-    const agent = deps.getAgents()?.find(
+    return deps.getAgents()?.find(
       (a) =>
         a.name?.toLowerCase() === lower ||
         a.role?.toLowerCase() === lower ||
         (normalize ? normalize(a.role).toLowerCase() === norm : false),
     )
-    return agent?.tools?.includes('document_viewer') ?? false
   }
 
   const getMessageCacheKey = (msg: ChatMessage, index: number): string =>
@@ -105,19 +106,27 @@ export function useChatArtifacts(deps: UseChatArtifactsDeps) {
       const key = getMessageCacheKey(msg, index)
       activeKeys.add(key)
       if (msg.role === 'user') return []
-      const isDocAgent = agentHasDocumentViewer(msg.agentName)
+      const agent = resolveAgentForMessage(msg.agentName || msg.agentRole)
+      const agentTools = agent?.tools ?? []
+      const isDocAgent = agentTools.includes('document_viewer')
+      const toolsKey = agentTools.join(',')
       const cached = parsedBlocksCache.get(key)
-      if (cached?.content === msg.content && cached?.isDocAgent === isDocAgent) {
+      if (
+        cached?.content === msg.content &&
+        cached?.isDocAgent === isDocAgent &&
+        cached?.toolsKey === toolsKey
+      ) {
         return cached.blocks
       }
       const blocks: RenderedMessageBlock[] = parseMessageContent(msg.content, {
         isDocumentAgent: isDocAgent,
+        agentTools,
       }).map((block) =>
         block.type === 'document'
           ? { ...block, renderedHtml: sanitizeHtml(renderMarkdownToHtml(block.content)) }
           : block,
       )
-      parsedBlocksCache.set(key, { content: msg.content, isDocAgent, blocks })
+      parsedBlocksCache.set(key, { content: msg.content, isDocAgent, toolsKey, blocks })
       return blocks
     })
 
@@ -129,6 +138,15 @@ export function useChatArtifacts(deps: UseChatArtifactsDeps) {
     return result
   })
 
+  const toggleDocumentDownloadMenu = (index: number) => {
+    activeDocumentDownloadMenu.value =
+      activeDocumentDownloadMenu.value === index ? null : index
+  }
+
+  const closeDocumentDownloadMenu = () => {
+    activeDocumentDownloadMenu.value = null
+  }
+
   const togglePresentationDownloadMenu = (index: number) => {
     activePresentationDownloadMenu.value =
       activePresentationDownloadMenu.value === index ? null : index
@@ -136,6 +154,7 @@ export function useChatArtifacts(deps: UseChatArtifactsDeps) {
 
   const closePresentationDownloadMenu = () => {
     activePresentationDownloadMenu.value = null
+    activeDocumentDownloadMenu.value = null
   }
 
   const openPresentationModal = (content: string, title?: string) => {
@@ -245,10 +264,12 @@ export function useChatArtifacts(deps: UseChatArtifactsDeps) {
   }
 
   const downloadChatDocMarkdown = (content: string, title?: string) => {
+    closeDocumentDownloadMenu()
     downloadMarkdownFile(content, title || 'documento')
   }
 
   const exportChatDocPdf = (content: string, title?: string) => {
+    closeDocumentDownloadMenu()
     exportDocumentToPdf(content, title || 'documento')
   }
 
@@ -271,12 +292,15 @@ export function useChatArtifacts(deps: UseChatArtifactsDeps) {
     activeDocContent,
     activeDocTitle,
     copiedDocIndex,
+    activeDocumentDownloadMenu,
     isPresentationModalOpen,
     activePresentationContent,
     activePresentationTitle,
     copiedPresentationIndex,
     activePresentationDownloadMenu,
     memoizedMessageBlocks,
+    toggleDocumentDownloadMenu,
+    closeDocumentDownloadMenu,
     togglePresentationDownloadMenu,
     closePresentationDownloadMenu,
     openPresentationModal,

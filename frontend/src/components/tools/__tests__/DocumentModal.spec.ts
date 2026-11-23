@@ -113,6 +113,14 @@ describe('DocumentModal.vue', () => {
     // Click Export PDF
     await wrapper.find('[data-test="document-modal-export-pdf-btn"]').trigger('click')
     expect(openSpy).toHaveBeenCalled()
+
+    // Also supports download dropdown with .pdf and .md options
+    const dropdownBtn = wrapper.find('[data-test="document-modal-download-menu-btn"]')
+    expect(dropdownBtn.exists()).toBe(true)
+    await dropdownBtn.trigger('click')
+    expect(wrapper.find('[data-test="document-download-dropdown"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="document-download-option-pdf"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="document-download-option-md"]').exists()).toBe(true)
   })
 
   it('emits close on close button click and escape key', async () => {

@@ -187,4 +187,142 @@ Este es el documento oficial sin bloques delimitados.`
     expect(blocks[0]!.title).toBe('Demo Slides')
     expect(blocks[0]!.slideCount).toBe(1)
   })
+
+  it('parses ```pdf and ```report fenced blocks as document type', () => {
+    const text = `Aquí tienes el manual en PDF solicitado:
+\`\`\`pdf
+# Manual de Despliegue y Operaciones
+## 1. Introducción
+Este manual describe el procedimiento paso a paso.
+\`\`\``
+
+    const blocks = parseMessageContent(text, { isDocumentAgent: true, agentTools: ['document_viewer', 'presentation_viewer'] })
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0]!.type).toBe('text')
+    expect(blocks[1]!.type).toBe('document')
+    expect(blocks[1]!.title).toBe('Manual de Despliegue y Operaciones')
+    expect(blocks[1]!.content).toContain('## 1. Introducción')
+  })
+
+  it('keeps nested code fences inside a document block intact without emitting code blocks when agent only has document_viewer', () => {
+    const text = `Aquí tienes el manual técnico:
+\`\`\`markdown
+# Manual de Configuración
+## 1. Variables de Entorno
+Ejecuta el siguiente comando en terminal:
+\`\`\`bash
+docker compose up -d --build
+\`\`\`
+## 2. Conclusión
+El sistema quedará operativo.
+\`\`\``
+
+    const blocks = parseMessageContent(text, {
+      isDocumentAgent: true,
+      agentTools: ['document_viewer', 'presentation_viewer']
+    })
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0]!.type).toBe('text')
+    expect(blocks[0]!.content).toBe('Aquí tienes el manual técnico:')
+    expect(blocks[1]!.type).toBe('document')
+    expect(blocks[1]!.title).toBe('Manual de Configuración')
+    expect(blocks[1]!.content).toContain('```bash\ndocker compose up -d --build\n```')
+    expect(blocks[1]!.content).toContain('## 2. Conclusión')
+    expect(blocks.some(b => b.type === 'code')).toBe(false)
+  })
+
+  it('treats raw markdown document containing embedded code blocks as a single document when agent has document_viewer and not code_viewer', () => {
+    const text = `Claro, aquí tienes el reporte en PDF:
+
+# Reporte de Seguridad
+## 1. Script de Auditoría
+\`\`\`python
+def audit():
+    return True
+\`\`\`
+## 2. Resultado
+Todo en orden.`
+
+    const blocks = parseMessageContent(text, {
+      isDocumentAgent: true,
+      agentTools: ['document_viewer', 'presentation_viewer']
+    })
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0]!.type).toBe('text')
+    expect(blocks[0]!.content).toBe('Claro, aquí tienes el reporte en PDF:')
+    expect(blocks[1]!.type).toBe('document')
+    expect(blocks[1]!.title).toBe('Reporte de Seguridad')
+    expect(blocks[1]!.content).toContain('```python')
+    expect(blocks[1]!.content).toContain('## 2. Resultado')
+    expect(blocks.some(b => b.type === 'code')).toBe(false)
+  })
+
+  it('never emits code block for an agent with document_viewer and without code_viewer even if fenced with an arbitrary tag', () => {
+    const text = `Aquí tienes el documento solicitado:
+\`\`\`txt
+# Acta de Reunión: Arquitectura
+- Fecha: Hoy
+- Acuerdos: Usar PostgreSQL
+\`\`\``
+
+    const blocks = parseMessageContent(text, {
+      isDocumentAgent: true,
+      agentTools: ['document_viewer']
+    })
+    expect(blocks).toHaveLength(2)
+    expect(blocks[1]!.type).toBe('document')
+    expect(blocks[1]!.title).toBe('Acta de Reunión: Arquitectura')
+    expect(blocks.some(b => b.type === 'code')).toBe(false)
+  })
+
+  it('does NOT classify a markdown document or manual with horizontal rules (---) or tables as a presentation unless it has explicit slide headers or layout directives', () => {
+    const text = `Aquí tienes el documento solicitado:
+\`\`\`markdown
+# Manual de Arquitectura y Operaciones
+
+---
+
+## 1. Introducción
+Este manual técnico detalla la arquitectura del sistema Atenea y sus componentes principales.
+
+| Componente | Puerto | Descripción |
+|---|---|---|
+| Backend | 8000 | API FastAPI |
+| Frontend | 5173 | SPA Vue 3 |
+
+---
+
+## 2. Procedimiento de Despliegue
+Para desplegar la solución en producción sigue estos pasos detallados.
+\`\`\``
+
+    const blocks = parseMessageContent(text, {
+      isDocumentAgent: true,
+      agentTools: ['document_viewer', 'presentation_viewer']
+    })
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0]!.type).toBe('text')
+    expect(blocks[1]!.type).toBe('document')
+    expect(blocks[1]!.title).toBe('Manual de Arquitectura y Operaciones')
+  })
+
+  it('does NOT classify raw markdown document with horizontal rules (---) as a presentation in fallback mode', () => {
+    const text = `Aquí tienes el reporte:
+
+# Reporte Técnico de Auditoría
+---
+## 1. Alcance
+Descripción detallada del alcance de la auditoría.
+---
+## 2. Conclusiones
+El sistema cumple con los requisitos.`
+
+    const blocks = parseMessageContent(text, {
+      isDocumentAgent: true,
+      agentTools: ['document_viewer', 'presentation_viewer']
+    })
+    expect(blocks).toHaveLength(2)
+    expect(blocks[1]!.type).toBe('document')
+    expect(blocks[1]!.title).toBe('Reporte Técnico de Auditoría')
+  })
 })

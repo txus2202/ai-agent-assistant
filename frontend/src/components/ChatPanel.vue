@@ -391,6 +391,7 @@ defineExpose({
       :copied-code-index="artifacts.copiedCodeIndex.value"
       :copied-doc-index="artifacts.copiedDocIndex.value"
       :copied-presentation-index="artifacts.copiedPresentationIndex.value"
+      :active-document-download-menu="artifacts.activeDocumentDownloadMenu.value"
       :active-presentation-download-menu="artifacts.activePresentationDownloadMenu.value"
       @stop-tts="store.stopTts()"
       @cancel-debate="store.cancelDebate()"
@@ -398,6 +399,7 @@ defineExpose({
       @copy="handleArtifactCopy"
       @open="handleArtifactOpen"
       @download="handleArtifactDownload"
+      @toggle-document-download="artifacts.toggleDocumentDownloadMenu"
       @toggle-presentation-download="artifacts.togglePresentationDownloadMenu"
     />
 

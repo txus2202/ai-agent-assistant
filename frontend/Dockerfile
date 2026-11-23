@@ -15,7 +15,7 @@ RUN ./node_modules/.bin/vue-tsc --build tsconfig.app.json && npm run build-only
 # Production Stage (Non-Root Unprivileged Nginx)
 # =============================================================================
 # Uses official unprivileged image running as user 101 (nginx) on port 8080
-FROM nginx/nginx-unprivileged:1.30-alpine
+FROM nginx/nginx-unprivileged:1.30-alpine AS runtime
 
 USER root
 # Apply latest Alpine security patches (resolves CVEs in base packages such as libxml2)

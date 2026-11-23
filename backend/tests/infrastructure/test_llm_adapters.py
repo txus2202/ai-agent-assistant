@@ -624,5 +624,132 @@ class TestAnthropicAdapter:
         assert o_adapter.get_last_usage() == {"input": 500, "output": 80, "total": 580, "cached": 320}
 
 
+# ===========================================================================
+# LocalLLMAdapter (Ollama / OpenAI-compatible Local AI)
+# ===========================================================================
+
+class TestLocalLLMAdapter:
+    @pytest.fixture(autouse=True)
+    def mock_openai(self, monkeypatch):
+        mock = _make_openai_mock("Local Ollama response")
+        monkeypatch.setitem(sys.modules, "openai", mock)
+        self._mock_openai = mock
+
+    def test_normalizes_base_url_and_defaults_api_key_to_ollama(self):
+        from src.infrastructure.llm.local_llm_adapter import LocalLLMAdapter
+
+        adapter = LocalLLMAdapter(base_url="http://localhost:11434")
+        assert adapter.base_url == "http://localhost:11434/v1"
+        self._mock_openai.OpenAI.assert_called_with(
+            base_url="http://localhost:11434/v1",
+            api_key="ollama",
+        )
+
+        adapter_v1 = LocalLLMAdapter(base_url="http://192.168.1.50:11434/v1/", api_key="custom-local-key")
+        assert adapter_v1.base_url == "http://192.168.1.50:11434/v1"
+        self._mock_openai.OpenAI.assert_called_with(
+            base_url="http://192.168.1.50:11434/v1",
+            api_key="custom-local-key",
+        )
+
+    def test_missing_base_url_raises_llm_provider_error(self, monkeypatch):
+        monkeypatch.delenv("LOCAL_LLM_BASE_URL", raising=False)
+        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        from src.infrastructure.llm.local_llm_adapter import LocalLLMAdapter
+
+        with pytest.raises(LLMProviderError, match="LOCAL_LLM_BASE_URL"):
+            LocalLLMAdapter()
+
+    def test_complete_and_complete_with_usage_return_string_and_usage(self):
+        from src.infrastructure.llm.local_llm_adapter import LocalLLMAdapter
+
+        resp = MagicMock()
+        resp.choices = [MagicMock(message=MagicMock(content="Respuesta desde Llama 3.3"))]
+        resp.usage = MagicMock(
+            prompt_tokens=120,
+            completion_tokens=45,
+            total_tokens=165,
+            prompt_tokens_details=None,
+        )
+        self._mock_openai.OpenAI.return_value.chat.completions.create.return_value = resp
+
+        adapter = LocalLLMAdapter(base_url="http://localhost:11434")
+        completion = adapter.complete_with_usage("Hola Atenea", "llama3.3:latest")
+
+        assert completion.content == "Respuesta desde Llama 3.3"
+        assert completion.usage == {"input": 120, "output": 45, "total": 165}
+        assert adapter.get_last_usage() == {"input": 120, "output": 45, "total": 165}
+
+    def test_complete_stream_yields_chunks_and_records_usage(self):
+        from src.infrastructure.llm.local_llm_adapter import LocalLLMAdapter
+
+        c1 = MagicMock(choices=[MagicMock(delta=MagicMock(content="Arquitectura "))], usage=None)
+        c2 = MagicMock(
+            choices=[MagicMock(delta=MagicMock(content="Local"))],
+            usage=MagicMock(
+                prompt_tokens=80,
+                completion_tokens=20,
+                total_tokens=100,
+                prompt_tokens_details=None,
+            ),
+        )
+        self._mock_openai.OpenAI.return_value.chat.completions.create.return_value = iter([c1, c2])
+
+        adapter = LocalLLMAdapter(base_url="http://localhost:11434")
+        chunks = list(adapter.complete_stream("Explica Clean Arch", "qwen2.5-coder:14b"))
+
+        assert chunks == ["Arquitectura ", "Local"]
+        assert adapter.get_last_usage() == {"input": 80, "output": 20, "total": 100}
+
+    def test_complete_image_returns_string_for_vision_models(self, tmp_path: Path):
+        from src.infrastructure.llm.local_llm_adapter import LocalLLMAdapter
+
+        img_file = tmp_path / "diagram.png"
+        img_file.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        adapter = LocalLLMAdapter(base_url="http://localhost:11434")
+        result = adapter.complete_image("Analiza este diagrama", img_file, "llama3.2-vision:latest")
+
+        assert result == "Local Ollama response"
+
+    def test_list_models_returns_all_non_embedding_ollama_models_without_token_probes(self):
+        from src.infrastructure.llm.local_llm_adapter import LocalLLMAdapter
+
+        m_llama = MagicMock()
+        m_llama.id = "llama3.3:latest"
+        m_qwen = MagicMock()
+        m_qwen.id = "qwen2.5-coder:14b"
+        m_embed = MagicMock()
+        m_embed.id = "nomic-embed-text:latest"
+        m_bge = MagicMock()
+        m_bge.id = "bge-m3:latest"
+
+        self._mock_openai.OpenAI.return_value.models.list.return_value.data = [
+            m_llama,
+            m_qwen,
+            m_embed,
+            m_bge,
+        ]
+        self._mock_openai.OpenAI.return_value.chat.completions.create.reset_mock()
+
+        adapter = LocalLLMAdapter(base_url="http://localhost:11434")
+        models_probed = adapter.list_models(probe=True)
+
+        ids = [m["id"] for m in models_probed]
+        assert ids == ["llama3.3:latest", "qwen2.5-coder:14b"]
+        # Must NOT fire chat.completions.create during list_models(probe=True) so Ollama does not swap models in RAM
+        self._mock_openai.OpenAI.return_value.chat.completions.create.assert_not_called()
+
+    def test_wraps_sdk_exceptions_as_llm_provider_error(self):
+        from src.infrastructure.llm.local_llm_adapter import LocalLLMAdapter
+
+        self._mock_openai.OpenAI.return_value.chat.completions.create.side_effect = RuntimeError("Connection refused")
+
+        adapter = LocalLLMAdapter(base_url="http://localhost:11434")
+        with pytest.raises(LLMProviderError, match="Connection refused"):
+            adapter.complete("Ping", "llama3.3")
+
+
+
 
 

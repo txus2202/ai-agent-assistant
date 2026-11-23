@@ -46,6 +46,8 @@ def build_llm_provider_config(settings: Settings | None = None) -> LLMProviderCo
         anthropic_api_key=cfg.anthropic_api_key,
         google_cloud_project=cfg.google_cloud_project,
         google_cloud_location=cfg.google_cloud_location,
+        local_llm_base_url=cfg.local_llm_base_url,
+        local_llm_api_key=cfg.local_llm_api_key,
     )
 
 

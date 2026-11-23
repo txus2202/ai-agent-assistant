@@ -23,6 +23,14 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     openai_api_key: str = ""
     anthropic_api_key: str = ""
+    local_llm_base_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("LOCAL_LLM_BASE_URL", "OLLAMA_BASE_URL"),
+    )
+    local_llm_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("LOCAL_LLM_API_KEY", "OLLAMA_API_KEY"),
+    )
     
     # Vertex AI configuration
     google_cloud_project: str | None = Field(
@@ -161,7 +169,7 @@ class Settings(BaseSettings):
     @field_validator("default_provider")
     @classmethod
     def validate_provider(cls, v: str) -> str:
-        allowed = {"gemini", "openai", "anthropic"}
+        allowed = {"gemini", "openai", "anthropic", "local"}
         if v not in allowed:
             raise ValueError(f"Unknown provider: '{v}'. Must be one of {allowed}")
         return v

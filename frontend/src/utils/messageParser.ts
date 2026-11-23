@@ -127,7 +127,7 @@ function hasExplicitSlideSignals(content: string): boolean {
     return false
   }
   const hasExplicitSlideHeading = /(?:^|\n)##\s+(?:slide|diapositiva)\b/i.test(content)
-  const hasSlideLayoutComment = /<!--\s*(?:layout|notes):\s*[^->]+-->/i.test(content)
+  const hasSlideLayoutComment = /<!--\s*(?:layout|notes):/i.test(content)
   return hasExplicitSlideHeading || hasSlideLayoutComment
 }
 

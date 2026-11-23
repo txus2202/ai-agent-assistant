@@ -142,6 +142,29 @@ class TelegramSecurityNotifier(ISecurityNotifier):
         self._failure_counts[user_key] += 1
         return self._failure_counts[user_key] >= self.failed_login_threshold
 
+    def _format_login_failure_details(
+        self,
+        *,
+        user_key: str,
+        reason: Optional[str],
+    ) -> list[str]:
+        lines: list[str] = []
+        current_failures = self._failure_counts.get(user_key, 1)
+        if current_failures > 1:
+            lines.append(f"<b>Intentos fallidos acumulados:</b> {current_failures}")
+        if reason:
+            lines.append(f"<b>Motivo:</b> {html.escape(reason)}")
+        return lines
+
+    @staticmethod
+    def _format_user_agent(user_agent: Optional[str]) -> Optional[str]:
+        if not user_agent:
+            return None
+        truncated = user_agent[:200]
+        if len(user_agent) > 200:
+            truncated += "..."
+        return f"<b>Dispositivo:</b> <i>{html.escape(truncated)}</i>"
+
     def _build_login_alert_message(
         self,
         *,
@@ -175,15 +198,11 @@ class TelegramSecurityNotifier(ISecurityNotifier):
         lines.append(f"<b>Fecha:</b> <code>{now_str}</code>")
 
         if not success:
-            current_failures = self._failure_counts.get(user_key, 1)
-            if current_failures > 1:
-                lines.append(f"<b>Intentos fallidos acumulados:</b> {current_failures}")
-            if reason:
-                lines.append(f"<b>Motivo:</b> {html.escape(reason)}")
+            lines.extend(self._format_login_failure_details(user_key=user_key, reason=reason))
 
-        if user_agent:
-            ua = user_agent[:200] + ("..." if len(user_agent) > 200 else "")
-            lines.append(f"<b>Dispositivo:</b> <i>{html.escape(ua)}</i>")
+        ua_line = self._format_user_agent(user_agent)
+        if ua_line:
+            lines.append(ua_line)
 
         if previous_suppressed > 0:
             lines.append(

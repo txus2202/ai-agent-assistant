@@ -44,8 +44,8 @@ class LLMProviderConfig:
                 or os.getenv("VERTEX_LOCATION")
                 or "europe-west1"
             ),
-            local_llm_base_url=os.getenv("LOCAL_LLM_BASE_URL") or os.getenv("OLLAMA_BASE_URL", ""),
-            local_llm_api_key=os.getenv("LOCAL_LLM_API_KEY", ""),
+            local_llm_base_url=os.getenv("LOCAL_LLM_BASE_URL") or os.getenv("OLLAMA_BASE_URL") or "",
+            local_llm_api_key=os.getenv("LOCAL_LLM_API_KEY") or "",
         )
 
 

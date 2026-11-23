@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDebateStore, type SupervisorEvent, type DebateSession } from '../stores/debate'
+import { useAuthStore } from '../stores/auth'
 import { historyService, type PaginatedDebatesResponse } from '../services/historyService'
 import { ArrowLeft, Trash2, Search, ArrowRight, Clock } from '@lucide/vue'
 
@@ -21,7 +22,16 @@ interface DebateSummaryItem extends DebateSession {
 
 const router = useRouter()
 const store = useDebateStore()
+const authStore = useAuthStore()
 const debates = ref<DebateSummaryItem[]>([])
+
+const forceLogoutOnError = async () => {
+  if (authStore.user) {
+    await authStore.logout()
+  }
+  authStore.user = null
+  await router.push('/login')
+}
 const isLoading = ref(true)
 const isLoadingMore = ref(false)
 const loadingDetailId = ref<string | null>(null)
@@ -94,6 +104,7 @@ const fetchDebates = async (reset = true) => {
     }
   } catch (error) {
     console.error('Failed to fetch debates:', error)
+    await forceLogoutOnError()
   } finally {
     if (requestSeq === activeFetchSeq) {
       isLoading.value = false
@@ -344,14 +355,20 @@ const restoreDebate = async (debate: DebateSummaryItem) => {
       }
     } catch (error) {
       console.error('Failed to load debate details:', error)
+      await forceLogoutOnError()
       return
     } finally {
       loadingDetailId.value = null
     }
   }
 
-  store.loadDebate(fullSession)
-  await router.push('/')
+  try {
+    store.loadDebate(fullSession)
+    await router.push('/')
+  } catch (error) {
+    console.error('Failed to restore debate session:', error)
+    await forceLogoutOnError()
+  }
 }
 </script>
 

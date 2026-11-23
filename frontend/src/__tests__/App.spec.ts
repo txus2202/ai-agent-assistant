@@ -52,11 +52,18 @@ describe('App.vue', () => {
       created_at: '2026-11-10T00:00:00Z'
     }
 
+    let resolveAgents: () => void = () => {}
     configStore.loadProviders = vi.fn().mockResolvedValue(undefined)
     configStore.loadAgentsConfig = vi.fn().mockResolvedValue(undefined)
-    debateStore.loadAgents = vi.fn().mockImplementation(() => {
-      debateStore.isAgentsLoaded = false
-    })
+    debateStore.loadAgents = vi.fn().mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveAgents = () => {
+            debateStore.isAgentsLoaded = true
+            resolve()
+          }
+        })
+    )
 
     const wrapper = mount(App, {
       global: {
@@ -69,6 +76,7 @@ describe('App.vue', () => {
     expect(wrapper.text()).toContain('INITIALIZING AI AGENT ASSISTANT...')
     expect(wrapper.find('[data-test="router-view-stub"]').exists()).toBe(false)
 
+    resolveAgents()
     await flushPromises()
 
     expect(configStore.loadProviders).toHaveBeenCalled()
@@ -129,5 +137,76 @@ describe('App.vue', () => {
 
     expect(wrapper.text()).toContain('Servidor Backend No Disponible')
     expect(wrapper.find('[data-test="router-view-stub"]').exists()).toBe(false)
+  })
+
+  it('logs out the user and redirects to /login instead of staying on blank screen when application initialization or agent loading fails', async () => {
+    const configStore = useConfigStore()
+    const debateStore = useDebateStore()
+    const authStore = useAuthStore()
+    authStore.user = {
+      id: 'usr-1',
+      username: 'admin',
+      is_admin: true,
+      is_active: true,
+      created_at: '2026-11-10T00:00:00Z'
+    }
+
+    const logoutSpy = vi.spyOn(authStore, 'logout').mockImplementation(async () => {
+      authStore.user = null
+    })
+    configStore.loadProviders = vi.fn().mockRejectedValue(new Error('Failed to load providers'))
+    configStore.loadAgentsConfig = vi.fn().mockResolvedValue(undefined)
+    debateStore.loadAgents = vi.fn().mockResolvedValue(undefined)
+
+    mount(App, {
+      global: {
+        stubs: {
+          'router-view': { template: '<div data-test="router-view-stub">Route View</div>' }
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(logoutSpy).toHaveBeenCalled()
+    expect(authStore.user).toBeNull()
+  })
+
+  it('logs out the user and redirects to /login when a child route component throws a runtime error (onErrorCaptured)', async () => {
+    const debateStore = useDebateStore()
+    const authStore = useAuthStore()
+    debateStore.isAgentsLoaded = true
+    authStore.user = {
+      id: 'usr-1',
+      username: 'admin',
+      is_admin: true,
+      is_active: true,
+      created_at: '2026-11-10T00:00:00Z'
+    }
+
+    const logoutSpy = vi.spyOn(authStore, 'logout').mockImplementation(async () => {
+      authStore.user = null
+    })
+
+    const BrokenChild = {
+      name: 'BrokenChild',
+      setup() {
+        throw new Error('Navigation render crash between App and History')
+      },
+      template: '<div>Broken</div>'
+    }
+
+    mount(App, {
+      global: {
+        stubs: {
+          'router-view': BrokenChild
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(logoutSpy).toHaveBeenCalled()
+    expect(authStore.user).toBeNull()
   })
 })

@@ -9,6 +9,7 @@ const { mockCreateApp, mockUse, mockMount } = vi.hoisted(() => {
   const mockMount = vi.fn()
   const mockUse = vi.fn().mockReturnThis()
   const mockApp = {
+    config: {} as { errorHandler?: (err: unknown) => void },
     use: mockUse,
     mount: mockMount,
   }
@@ -67,5 +68,24 @@ describe('main.ts bootstrap', () => {
       path: '/login',
       query: { redirect: '/history' },
     })
+
+    // Also verifies global app.config.errorHandler logs out and redirects to /login
+    authStore.user = {
+      id: 'u1',
+      username: 'admin',
+      is_admin: true,
+      is_active: true,
+      created_at: '2026-11-09T00:00:00Z',
+    }
+    const logoutSpy = vi.spyOn(authStore, 'logout').mockImplementation(async () => {
+      authStore.user = null
+    })
+    const createdApp = mockCreateApp.mock.results[0]?.value as {
+      config?: { errorHandler?: (err: unknown) => void }
+    }
+    expect(createdApp?.config?.errorHandler).toBeTypeOf('function')
+    createdApp?.config?.errorHandler?.(new Error('Uncaught component error'))
+    expect(logoutSpy).toHaveBeenCalled()
+    expect(authStore.user).toBeNull()
   })
 })

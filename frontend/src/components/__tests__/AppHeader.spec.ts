@@ -53,12 +53,15 @@ describe('AppHeader.vue', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders correctly without supervisor info or SYSTEM CORE', () => {
+  it('renders correctly without supervisor info or SYSTEM CORE and displays the Atenea owl icon', () => {
     const store = useDebateStore()
     const wrapper = mount(AppHeader)
     expect(wrapper.text().toUpperCase()).not.toContain('SYSTEM CORE')
     expect(wrapper.text()).toContain(store.projectName)
     expect(wrapper.text()).not.toContain('SUPERVISOR:')
+    const brandIcon = wrapper.find('[data-test="atenea-brand-icon"]')
+    expect(brandIcon.exists()).toBe(true)
+    expect(brandIcon.attributes('src')).toBe('/atenea-icon.png')
   })
 
   it('renders dynamic project_name and project_description from debate store topology', async () => {

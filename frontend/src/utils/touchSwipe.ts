@@ -6,6 +6,7 @@ export interface TouchSwipeOptions {
   onSwipeLeft?: () => void
   onSwipeRight?: () => void
   threshold?: number
+  ignoreInteractive?: boolean
 }
 
 /**
@@ -18,6 +19,7 @@ export function setupSwipeListener(
   options: TouchSwipeOptions
 ): () => void {
   const threshold = options.threshold ?? 25
+  const ignoreInteractive = options.ignoreInteractive ?? true
 
   let touchStartY = 0
   let touchStartX = 0
@@ -25,8 +27,9 @@ export function setupSwipeListener(
   let touchCurrentX = 0
   let isTrackingTouch = false
   let lastTouchEndTime = 0
+  let suppressNextPointerClick = false
 
-  const triggerSwipeIfExceeded = (deltaY: number, deltaX: number) => {
+  const triggerSwipeIfExceeded = (deltaY: number, deltaX: number): boolean => {
     const absY = Math.abs(deltaY)
     const absX = Math.abs(deltaX)
     if (absY >= threshold && absY > absX * 1.1) {
@@ -35,20 +38,41 @@ export function setupSwipeListener(
       } else {
         options.onSwipeDown?.()
       }
+      return true
     } else if (absX >= threshold && absX > absY * 1.1) {
       if (deltaX < 0) {
         options.onSwipeLeft?.()
       } else {
         options.onSwipeRight?.()
       }
+      return true
     }
+    return false
   }
 
   const isInteractive = (target: EventTarget | null): boolean => {
-    return Boolean((target as HTMLElement)?.closest?.('button, a, input, textarea, select, [role="button"]'))
+    const el = target as HTMLElement | null
+    if (!ignoreInteractive) {
+      // Allow dragging on collapsible handle bars, but still ignore actual form inputs or inner action buttons like #micButton
+      return Boolean(
+        el?.closest?.(
+          '#micButton, [data-test="soundbar-view-switch"], [data-test="hitl-retry-btn"], [data-test="hitl-target-chip"], [data-test="hitl-approve-btn"], [data-test="hitl-consolidate-btn"], [data-test="hitl-finish-btn"], [data-test="hitl-refine-btn"], [data-test="hitl-divert-btn"], [data-test="hitl-reject-btn"], a, input, textarea, select',
+        ),
+      )
+    }
+    return Boolean(el?.closest?.('button, a, input, textarea, select, [role="button"]'))
+  }
+
+  const handleClickCapture = (e: MouseEvent) => {
+    if (suppressNextPointerClick) {
+      suppressNextPointerClick = false
+      e.preventDefault()
+      e.stopPropagation()
+    }
   }
 
   const handleTouchStart = (e: TouchEvent) => {
+    suppressNextPointerClick = false
     if (isInteractive(e.target)) return
     const list = e.touches?.length ? e.touches : e.changedTouches
     if (list?.length !== 1) return
@@ -97,6 +121,7 @@ export function setupSwipeListener(
   let isTrackingPointer = false
 
   const handlePointerDown = (e: PointerEvent) => {
+    suppressNextPointerClick = false
     if (isInteractive(e.target)) return
     // If touch was recently active, ignore synthetic pointer events to avoid double-triggers
     if (Date.now() - lastTouchEndTime < 500) return
@@ -120,7 +145,9 @@ export function setupSwipeListener(
     isTrackingPointer = false
     const deltaY = e.clientY - pointerStartY
     const deltaX = e.clientX - pointerStartX
-    triggerSwipeIfExceeded(deltaY, deltaX)
+    if (triggerSwipeIfExceeded(deltaY, deltaX)) {
+      suppressNextPointerClick = true
+    }
   }
 
   const handlePointerCancel = () => {
@@ -139,6 +166,7 @@ export function setupSwipeListener(
   element.addEventListener('pointermove', handlePointerMove)
   element.addEventListener('pointerup', handlePointerUp)
   element.addEventListener('pointercancel', handlePointerCancel)
+  element.addEventListener('click', handleClickCapture, true)
 
   return () => {
     element.removeEventListener('touchstart', handleTouchStart)
@@ -149,6 +177,7 @@ export function setupSwipeListener(
     element.removeEventListener('pointermove', handlePointerMove)
     element.removeEventListener('pointerup', handlePointerUp)
     element.removeEventListener('pointercancel', handlePointerCancel)
+    element.removeEventListener('click', handleClickCapture, true)
   }
 }
 

@@ -19,12 +19,15 @@ describe('InitialSetupView.vue', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders initial setup form properly', () => {
+  it('renders initial setup form properly with Atenea brand icon', () => {
     const wrapper = mount(InitialSetupView)
     expect(wrapper.find('input[data-test="username"]').exists()).toBe(true)
     expect(wrapper.find('input[data-test="password"]').exists()).toBe(true)
     expect(wrapper.find('input[data-test="confirm-password"]').exists()).toBe(true)
     expect(wrapper.find('button[type="submit"]').exists()).toBe(true)
+    const brandIcon = wrapper.find('[data-test="atenea-brand-icon"]')
+    expect(brandIcon.exists()).toBe(true)
+    expect(brandIcon.attributes('src')).toBe('/atenea-icon.png')
   })
 
   it('renders dynamic project name from debateStore', () => {

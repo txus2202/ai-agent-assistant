@@ -63,6 +63,7 @@ const collapse = () => {
 }
 
 useTouchSwipe(hitlCardRef, {
+  ignoreInteractive: false,
   onSwipeUp: expand,
   onSwipeDown: collapse,
 })

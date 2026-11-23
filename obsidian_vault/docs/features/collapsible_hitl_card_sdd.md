@@ -1,10 +1,10 @@
 ---
 created: 2026-11-20
-updated: 2026-11-20
+updated: 2026-11-23
 type: spec
 phase: 5
 layer: presentation
-status: approved
+status: implemented
 category: meta-project
 tags: [sdd, hitl, ui, mobile, responsive, ux, collapsible]
 ---
@@ -56,9 +56,10 @@ Permitir que la tarjeta de control HITL sea **ocultable/colapsable y desplegable
   - Altura del contenedor inferior en `ChatPanel.vue` reducida automáticamente, liberando espacio para el listado de mensajes.
 
 ### 2.2 Gestos y Accesibilidad
-- Soporte táctil en móviles mediante la utilidad existente [touchSwipe.ts](file:///Users/jesusjimenezvaquero/Documents/WS/ai-agent-assistant/frontend/src/utils/touchSwipe.ts):
-  - Deslizar hacia arriba (`onSwipeUp`): Expande la botonera.
-  - Deslizar hacia abajo (`onSwipeDown`): Colapsa la botonera.
+- Soporte táctil en móviles y tablets mediante la utilidad existente [touchSwipe.ts](file:///Users/jesusjimenezvaquero/Documents/WS/ai-agent-assistant/frontend/src/utils/touchSwipe.ts):
+  - Deslizar hacia arriba (`onSwipeUp`): Expande la botonera o barra de sonido.
+  - Deslizar hacia abajo (`onSwipeDown`): Colapsa la botonera o barra de sonido.
+  - **Compatibilidad con `<button>` / `[role="button"]` como tirador de arrastre:** En `SoundBar.vue` y `ChatHitlCard.vue`, el tirador (`soundbar-collapse-handle`) es un elemento `<button>` de ancho completo. Para que el gesto de swipe vertical funcione al iniciar el toque directamente sobre el tirador sin que se dispare además el evento `click` sintético (que invertiría el estado de nuevo), `touchSwipe.ts` permite configurar `ignoreInteractive: false` y suprime el siguiente evento `click` en fase de captura cuando se ha completado un gesto de swipe.
 - Accesibilidad ARIA:
   - `aria-expanded="true|false"` en el botón de toggle.
   - `aria-controls="hitl-card-body"` referenciando el panel de botones.

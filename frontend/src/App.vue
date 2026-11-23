@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, ref, watch } from 'vue'
-import { routeLocationKey, useRouter } from 'vue-router'
+import { computed, inject, onErrorCaptured, onMounted, ref, watch } from 'vue'
+import { routeLocationKey, useRoute, useRouter } from 'vue-router'
 import { useDebateStore } from './stores/debate'
 import { useConfigStore } from './stores/config'
 import { useAuthStore } from './stores/auth'
@@ -11,12 +11,15 @@ const store = useDebateStore()
 const configStore = useConfigStore()
 const authStore = useAuthStore()
 const { initTheme } = useTheme()
-const route = inject(routeLocationKey, null)
+const injectedRoute = inject(routeLocationKey, null)
 const router = useRouter()
+const currentRoute = injectedRoute || (router ? useRoute() : null)
 const isRetrying = ref(false)
 
 const isAuthRoute = computed(() => {
-  return route?.name === 'login' || route?.name === 'setup'
+  const name = currentRoute?.name ?? router?.currentRoute?.value?.name
+  const path = currentRoute?.path ?? router?.currentRoute?.value?.path
+  return name === 'login' || name === 'setup' || path === '/login' || path === '/setup'
 })
 
 watch(
@@ -29,6 +32,24 @@ watch(
   { immediate: true }
 )
 
+const handleCriticalAppError = async (err: unknown) => {
+  console.error('Critical application error captured, logging out user to login screen:', err)
+  store.disconnect()
+  store.isAgentsLoaded = false
+  if (authStore.user) {
+    await authStore.logout()
+  }
+  authStore.user = null
+  if (router && !isAuthRoute.value) {
+    await router.push('/login')
+  }
+}
+
+onErrorCaptured((err) => {
+  void handleCriticalAppError(err)
+  return false
+})
+
 const initializeAppData = async () => {
   try {
     await Promise.all([
@@ -36,11 +57,15 @@ const initializeAppData = async () => {
       configStore.loadAgentsConfig()
     ])
     await store.loadAgents()
+    if (!store.isAgentsLoaded && authStore.isAuthenticated) {
+      throw new Error('Failed to load agent catalog')
+    }
     if (import.meta.env.MODE !== 'test') {
       store.connect()
     }
   } catch (e) {
     console.error('Failed to load application data:', e)
+    await handleCriticalAppError(e)
   }
 }
 

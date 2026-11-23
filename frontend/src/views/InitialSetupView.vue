@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useDebateStore } from '../stores/debate'
-import { Cpu, ShieldCheck, User, Lock, KeyRound, AlertCircle, Sparkles } from '@lucide/vue'
+import { ShieldCheck, User, Lock, KeyRound, AlertCircle, Sparkles } from '@lucide/vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -66,8 +66,13 @@ const handleSetup = async () => {
     <div class="w-full max-w-lg relative z-10">
       <!-- Header branding -->
       <div class="text-center mb-6">
-        <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-space-900 border border-amber-500/30 shadow-[0_0_25px_rgba(245,158,11,0.15)] mb-3">
-          <Cpu class="w-8 h-8 text-amber-400 animate-pulse" />
+        <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-space-900 border border-amber-500/30 shadow-[0_0_25px_rgba(245,158,11,0.18)] mb-3 p-1.5">
+          <img
+            src="/atenea-icon.png"
+            alt="Atenea"
+            data-test="atenea-brand-icon"
+            class="w-full h-full object-contain drop-shadow-[0_0_10px_rgba(0,229,255,0.5)]"
+          />
         </div>
         <h1 class="text-xl sm:text-2xl font-bold tracking-widest uppercase font-mono text-cyan-100">
           {{ debateStore.projectName }}

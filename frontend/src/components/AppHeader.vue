@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useDebateStore } from '../stores/debate'
 import { useAuthStore } from '../stores/auth'
-import { Cpu, Volume2, VolumeX, History, Ear, EarOff, Sun, Moon, LogOut, Users, User as UserIcon, KeyRound, X, ChevronDown } from '@lucide/vue'
+import { Volume2, VolumeX, History, Ear, EarOff, Sun, Moon, LogOut, Users, User as UserIcon, KeyRound, X, ChevronDown } from '@lucide/vue'
 import { useTheme } from '../composables/useTheme'
 import UserManagementModal from './UserManagementModal.vue'
 
@@ -262,7 +262,12 @@ onUnmounted(() => {
       <div class="relative px-5 sm:px-6 xl:px-8 py-2 sm:py-1.5 bg-space-850 border border-cyan-500/40 rounded-lg sm:rounded-t-sm shadow-[0_0_25px_rgba(0,229,255,0.12)] truncate">
         <div class="absolute -top-[1px] left-1/2 -translate-x-1/2 w-20 sm:w-24 h-[2px] bg-cyan-400 shadow-[0_0_12px_#00e5ff]"></div>
         <h1 class="text-sm sm:text-base font-semibold tracking-widest uppercase text-cyan-100 flex items-center justify-center space-x-2.5">
-          <Cpu class="w-4 h-4 sm:w-4.5 sm:h-4.5 text-cyan-400 shrink-0" />
+          <img
+            src="/atenea-icon.png"
+            alt="Atenea"
+            data-test="atenea-brand-icon"
+            class="w-5 h-5 sm:w-6 sm:h-6 object-contain shrink-0 drop-shadow-[0_0_8px_rgba(0,229,255,0.45)]"
+          />
           <span class="font-bold tracking-widest">{{ debateStore.projectName }}</span>
         </h1>
         <div class="text-center hidden xl:block">

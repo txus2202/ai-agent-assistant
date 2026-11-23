@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bot, User } from '@lucide/vue'
+import { User } from '@lucide/vue'
 import type { RenderedMessageBlock } from '../../composables/useChatArtifacts'
 import type { ChatMessage } from '../../utils/debateHelpers'
 import ChatMessageBlock from './ChatMessageBlock.vue'
@@ -49,7 +49,7 @@ const emit = defineEmits<{
     <div v-else class="flex flex-col items-start max-w-[95%] min-w-0 w-full">
       <div class="flex items-center space-x-2 mb-2">
         <div
-          class="w-5 h-5 rounded-full border flex items-center justify-center transition-colors"
+          class="w-5 h-5 rounded-full border flex items-center justify-center transition-colors overflow-hidden p-0.5"
           :style="
             message.colorHex
               ? {
@@ -61,7 +61,11 @@ const emit = defineEmits<{
           "
           :class="!message.colorHex ? 'border-neon-green/50 bg-neon-green/10 text-neon-green' : ''"
         >
-          <Bot class="w-3 h-3" />
+          <img
+            src="/atenea-icon.png"
+            alt="Atenea"
+            class="w-3.5 h-3.5 object-contain"
+          />
         </div>
         <span class="text-[11px] font-bold text-white tracking-widest font-mono">
           {{ projectName }}

@@ -231,4 +231,47 @@ describe('touchSwipe utility', () => {
 
     expect(onSwipeLeft).toHaveBeenCalledTimes(1)
   })
+
+  it('allows swiping on interactive button handles when ignoreInteractive is false and suppresses synthetic click after swipe', () => {
+    const container = document.createElement('div')
+    const button = document.createElement('button')
+    container.appendChild(button)
+
+    const onSwipeUp = vi.fn()
+    const onClick = vi.fn()
+    button.addEventListener('click', onClick)
+
+    const cleanup = setupSwipeListener(container, {
+      onSwipeUp,
+      threshold: 25,
+      ignoreInteractive: false,
+    })
+
+    // Start pointer swipe on button
+    button.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        bubbles: true,
+        clientX: 100,
+        clientY: 200,
+        pointerType: 'touch',
+      }),
+    )
+    button.dispatchEvent(
+      new PointerEvent('pointerup', {
+        bubbles: true,
+        clientX: 100,
+        clientY: 120,
+        pointerType: 'touch',
+      }),
+    )
+
+    expect(onSwipeUp).toHaveBeenCalledTimes(1)
+
+    // Synthetic click immediately after pointer drag should be suppressed
+    const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true })
+    button.dispatchEvent(clickEvent)
+    expect(onClick).not.toHaveBeenCalled()
+
+    cleanup()
+  })
 })

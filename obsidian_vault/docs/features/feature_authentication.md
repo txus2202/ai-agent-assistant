@@ -1,6 +1,6 @@
 ---
 created: 2026-11-09
-updated: 2026-11-10
+updated: 2026-11-23
 type: spec
 phase: 7
 layer: application
@@ -22,6 +22,9 @@ This specification defines the authentication and user lifecycle architecture fo
 4. **Fail-Closed WebSocket Defense:** Real-time endpoints (`/ws/debate` and `/ws/audio/wake-word`) mandate authentication, Origin (CSWSH) verification, and fail-closed termination (1008/1011) if uninitialized or unauthorized.
 5. **Configurable Deletion Strategies:** Environment-controlled user deletion via `AUTH_DELETE_STRATEGY` (`soft` with `deleted_at` audit timestamps vs `hard` with cascade purging of debates and custom agent model configurations).
 6. **Dual Database Composition Root:** Zero-configuration SQLite for homelab appliances with seamless auto-migration, and asynchronous connection pooling via PostgreSQL (`asyncpg`) for enterprise infrastructure.
+7. **Resilient Frontend Error Recovery & Session Fail-Safe (Zero Blank Screen):**
+   - **Router & Chunk Error Handling (`router.onError` & catch-all `/:pathMatch(.*)*`):** If an error occurs during navigation between views (e.g., `/history` $\leftrightarrow$ `/`, lazy chunk loading failure, or route guard/component error), the router logs out the user, clears session state, and redirects cleanly to `/login` instead of leaving a blank screen.
+   - **Global Vue Error Boundary (`app.config.errorHandler` & `onErrorCaptured` in `App.vue`):** Any uncaught runtime/render error or failed app data initialization (`initializeAppData`) automatically triggers a fail-safe session cleanup (`authStore.logout()`, `debateStore.disconnect()`) and redirects the operator to `/login`.
 
 ---
 

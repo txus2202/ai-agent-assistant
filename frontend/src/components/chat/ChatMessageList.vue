@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Bot, Info, Square, X } from '@lucide/vue'
+import { Info, Square, X } from '@lucide/vue'
 import type { RenderedMessageBlock } from '../../composables/useChatArtifacts'
 import type { ChatMessage } from '../../utils/debateHelpers'
 import ChatMessageItem from './ChatMessageItem.vue'
@@ -175,9 +175,13 @@ defineExpose({
     <div v-if="isDebating" class="flex flex-col items-start max-w-[90%] relative" data-test="typing-indicator">
       <div class="flex items-center space-x-2 mb-2">
         <div
-          class="w-5 h-5 rounded-full border border-neon-green/50 flex items-center justify-center bg-neon-green/10 text-neon-green"
+          class="w-5 h-5 rounded-full border border-neon-green/50 flex items-center justify-center bg-neon-green/10 text-neon-green overflow-hidden p-0.5"
         >
-          <Bot class="w-3 h-3" />
+          <img
+            src="/atenea-icon.png"
+            alt="Atenea"
+            class="w-3.5 h-3.5 object-contain"
+          />
         </div>
         <span class="text-[11px] font-bold text-white tracking-widest font-mono">
           {{ projectName }}

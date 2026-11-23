@@ -10,7 +10,8 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'home', component: { template: '<div>Home</div>' } },
-    { path: '/history', name: 'history', component: HistoryView }
+    { path: '/history', name: 'history', component: HistoryView },
+    { path: '/login', name: 'login', component: { template: '<div>Login</div>' } }
   ]
 })
 

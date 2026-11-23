@@ -113,4 +113,26 @@ describe('Router & Navigation Guards', () => {
 
     expect(router.currentRoute.value.path).toBe('/')
   })
+
+  it('redirects unknown routes to /login and logs out user when router error occurs', async () => {
+    const authStore = useAuthStore()
+    authStore.isInitialized = true
+    authStore.user = {
+      id: 'usr-1',
+      username: 'admin',
+      is_admin: true,
+      is_active: true,
+      created_at: '2026-11-09T00:00:00'
+    }
+    const logoutSpy = vi.spyOn(authStore, 'logout').mockImplementation(async () => {
+      authStore.user = null
+    })
+
+    await router.push('/non-existent-route-xyz')
+    await router.isReady()
+
+    expect(logoutSpy).toHaveBeenCalled()
+    expect(authStore.user).toBeNull()
+    expect(router.currentRoute.value.path).toBe('/login')
+  })
 })

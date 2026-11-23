@@ -256,6 +256,54 @@ describe('SoundBar.vue', () => {
     expect(wrapper.find('[data-test="soundbar-body"]').attributes('style')).toBeFalsy()
   })
 
+  it('supports touch and pointer swipe gestures directly on the soundbar-collapse-handle button', async () => {
+    const wrapper = mount(SoundBar, {
+      props: {
+        collapsible: true,
+        initialCollapsed: true
+      }
+    })
+
+    expect(wrapper.vm.isCollapsed).toBe(true)
+
+    const handle = wrapper.find('[data-test="soundbar-collapse-handle"]')
+    expect(handle.exists()).toBe(true)
+
+    // Swipe UP starting directly on the <button data-test="soundbar-collapse-handle">
+    handle.element.dispatchEvent(
+      new TouchEvent('touchstart', {
+        bubbles: true,
+        touches: [{ clientX: 100, clientY: 200 } as unknown as Touch],
+      }),
+    )
+    handle.element.dispatchEvent(
+      new TouchEvent('touchend', {
+        bubbles: true,
+        changedTouches: [{ clientX: 100, clientY: 110 } as unknown as Touch],
+      }),
+    )
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.isCollapsed).toBe(false)
+
+    // Swipe DOWN starting directly on the <button data-test="soundbar-collapse-handle">
+    handle.element.dispatchEvent(
+      new TouchEvent('touchstart', {
+        bubbles: true,
+        touches: [{ clientX: 100, clientY: 110 } as unknown as Touch],
+      }),
+    )
+    handle.element.dispatchEvent(
+      new TouchEvent('touchend', {
+        bubbles: true,
+        changedTouches: [{ clientX: 100, clientY: 200 } as unknown as Touch],
+      }),
+    )
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.isCollapsed).toBe(true)
+  })
+
   it('expands automatically and starts recording when store.isWakeWordTriggered becomes true while collapsed with listenWakeWord=true', async () => {
     const store = useDebateStore()
     const wrapper = mount(SoundBar, {

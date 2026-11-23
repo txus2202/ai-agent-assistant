@@ -29,11 +29,39 @@ const router = createRouter({
       component: () => import('../views/InitialSetupView.vue'),
       meta: { setupOnly: true },
     },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'not-found-fallback',
+      component: () => import('../views/LoginView.vue'),
+      meta: { invalidRoute: true },
+    },
   ],
 })
 
+export async function forceLogoutToLogin(redirectPath?: string): Promise<void> {
+  const authStore = useAuthStore()
+  if (authStore.user) {
+    await authStore.logout()
+  }
+  authStore.user = null
+  if (router.currentRoute.value.path !== '/login') {
+    await router.push({
+      path: '/login',
+      query: redirectPath && redirectPath !== '/' && redirectPath !== '/login' ? { redirect: redirectPath } : undefined,
+    })
+  }
+}
+
 router.beforeEach(async (to) => {
   const authStore = useAuthStore()
+
+  if (to.meta.invalidRoute) {
+    if (authStore.user) {
+      await authStore.logout()
+    }
+    authStore.user = null
+    return { path: '/login' }
+  }
 
   if (authStore.isInitialized === null && authStore.isBackendAvailable !== false) {
     await authStore.checkAuth()
@@ -67,6 +95,11 @@ router.beforeEach(async (to) => {
   if (to.meta.guestOnly && authStore.isAuthenticated) {
     return { path: '/' }
   }
+})
+
+router.onError((error) => {
+  console.error('Navigation error detected, logging out to login screen:', error)
+  void forceLogoutToLogin()
 })
 
 export default router

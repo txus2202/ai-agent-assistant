@@ -77,6 +77,7 @@ const collapse = () => {
 }
 
 useTouchSwipe(soundBarContainerRef, {
+  ignoreInteractive: false,
   onSwipeUp: () => {
     if (props.collapsible && isCollapsed.value) {
       expand()

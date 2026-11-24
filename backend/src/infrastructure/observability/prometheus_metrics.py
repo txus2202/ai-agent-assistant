@@ -105,6 +105,29 @@ class PrometheusMetricsService(IMetricsService):
             labelnames=["reason"],
         )
 
+        # Pre-initialize default label series to 0 so Prometheus exports them immediately at startup
+        self._preinitialize_default_labels()
+
+    def _preinitialize_default_labels(self) -> None:
+        """Pre-initialize common label dimensions so Netdata/Prometheus discover metrics at boot."""
+        try:
+            if self._ws_active_connections is not None:
+                self._ws_active_connections.labels(channel="debate")
+            if self._stt_transcription_seconds is not None:
+                self._stt_transcription_seconds.labels(model="base")
+            if self._tts_synthesis_seconds is not None:
+                self._tts_synthesis_seconds.labels(voice="default")
+            if self._wake_word_detections is not None:
+                self._wake_word_detections.labels(model="vosk")
+            if self._rag_query_seconds is not None:
+                self._rag_query_seconds.labels(collection="default")
+            if self._learning_notes_saved is not None:
+                self._learning_notes_saved.labels(status="success")
+            if self._auth_failed_logins is not None:
+                self._auth_failed_logins.labels(reason="invalid_credentials")
+        except Exception as exc:
+            logger.debug("Failed to pre-initialize Prometheus default metric labels: %s", exc)
+
     def inc_websocket_connection(self, channel: str) -> None:
         try:
             if self._ws_active_connections is not None:

@@ -210,12 +210,15 @@ def test_composition_root_wires_agent_catalog_topology_and_task_limit(monkeypatc
 def test_composition_root_wires_ports_and_llm_image_config(monkeypatch, tmp_path):
     monkeypatch.delenv("IMAGE_GENERATION_PROVIDER", raising=False)
     monkeypatch.delenv("IMAGE_PROVIDER", raising=False)
+    monkeypatch.delenv("LOCAL_LLM_BASE_URL", raising=False)
+    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
     settings = Settings(
         sqlite_db_path=tmp_path / "sqlite.db",
         auth_secret_key="test_secret_key_32_bytes_minimum_length",
         gemini_api_key="gem-root-key",
         openai_api_key="oai-root-key",
         image_generation_provider="imagen",
+        local_llm_base_url="",
     )
     app = create_app(settings=settings)
 

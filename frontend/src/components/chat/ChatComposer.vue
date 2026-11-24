@@ -5,7 +5,7 @@ import type { VaultDomainItem } from '../../services/debateApiService'
 import ChatAgentSelector from './ChatAgentSelector.vue'
 import type { SelectableAgentOption } from './types'
 
-defineProps<{
+const props = defineProps<{
   draftMessage: string
   selectedAgents: string[]
   agentsList: SelectableAgentOption[]
@@ -31,6 +31,47 @@ const chatInputRef = ref<HTMLTextAreaElement | null>(null)
 
 const focusInput = () => {
   chatInputRef.value?.focus()
+}
+
+const isTouchOrMobileDevice = (): boolean => {
+  if (typeof window === 'undefined') return false
+  const isCoarse =
+    window.matchMedia('(pointer: coarse)').matches ||
+    /Android|iPhone|iPad|iPod/i.test(navigator?.userAgent || '')
+  const isSmallScreen = window.matchMedia('(max-width: 768px)').matches
+  return isCoarse && isSmallScreen
+}
+
+const handleKeyDown = (event: KeyboardEvent) => {
+  if (event.key !== 'Enter') return
+
+  // Durante composición IME o dictado de voz, no interceptar
+  if (event.isComposing) return
+
+  // Shift + Enter: siempre salto de línea (comportamiento nativo de textarea)
+  if (event.shiftKey) {
+    return
+  }
+
+  // Ctrl + Enter o Cmd + Enter: forzar envío (atajo para desktop y tablets)
+  if (event.ctrlKey || event.metaKey) {
+    event.preventDefault()
+    if (props.draftMessage.trim() && !(props.isDebating && !props.isHitlRequired)) {
+      emit('submit')
+    }
+    return
+  }
+
+  // En teclado móvil/táctil: Enter hace salto de línea (para enviar se pulsa el botón)
+  if (isTouchOrMobileDevice()) {
+    return
+  }
+
+  // En escritorio con teclado físico: Enter envía el mensaje
+  event.preventDefault()
+  if (props.draftMessage.trim() && !(props.isDebating && !props.isHitlRequired)) {
+    emit('submit')
+  }
 }
 
 defineExpose({
@@ -145,7 +186,7 @@ defineExpose({
               : 'border-space-700 focus:border-neon-cyan'
           "
           :disabled="isDebating && !isHitlRequired"
-          @keydown.enter.prevent="emit('submit')"
+          @keydown="handleKeyDown"
         ></textarea>
 
         <button

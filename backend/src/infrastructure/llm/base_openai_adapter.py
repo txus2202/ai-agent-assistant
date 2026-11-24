@@ -95,3 +95,4 @@ class BaseOpenAIAdapter(UsageTrackingMixin, ILLMProvider):
             return response.choices[0].message.content or ""
         except Exception as exc:  # noqa: BLE001
             raise LLMProviderError(str(exc)) from exc
+

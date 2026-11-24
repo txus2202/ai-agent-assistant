@@ -2,7 +2,7 @@
 Unit tests for PrometheusMetricsService.
 Verifies metric recording, labels, gauge tracking, and fail-safe behavior.
 """
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 import pytest
 
 from src.domain.ports.metrics_service import IMetricsService

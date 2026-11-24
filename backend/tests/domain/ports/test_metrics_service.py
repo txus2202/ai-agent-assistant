@@ -2,7 +2,6 @@
 Tests for IMetricsService protocol and NoOpMetricsService.
 Verifies compliance with hexagonal architecture requirements.
 """
-import pytest
 from src.domain.ports.metrics_service import IMetricsService
 from src.infrastructure.observability.noop_metrics import NoOpMetricsService
 

@@ -1,12 +1,9 @@
 """
 Integration tests for Prometheus metrics integration and /metrics route.
 """
-import pytest
 from unittest.mock import MagicMock
-from fastapi import FastAPI
-from httpx import AsyncClient, ASGITransport
+import pytest
 
-from src.infrastructure.observability.noop_metrics import NoOpMetricsService
 from src.infrastructure.observability.prometheus_metrics import PrometheusMetricsService
 from src.presentation.api.config import Settings
 from src.presentation.api.dependencies.metrics import get_metrics_service
@@ -14,7 +11,6 @@ from src.presentation.api.dependencies.metrics import get_metrics_service
 
 @pytest.mark.anyio
 async def test_metrics_service_dependency_fallback():
-    app = FastAPI()
     # When not set in state, fallback is NoOp
     mock_request = MagicMock()
     mock_request.app.state.metrics_service = None
@@ -26,10 +22,7 @@ async def test_metrics_service_dependency_fallback():
 
 @pytest.mark.anyio
 async def test_metrics_service_state_retrieval():
-    app = FastAPI()
     metrics_svc = PrometheusMetricsService()
-    app.state.metrics_service = metrics_svc
-
     mock_request = MagicMock()
     mock_request.app.state.metrics_service = metrics_svc
     service = get_metrics_service(mock_request)

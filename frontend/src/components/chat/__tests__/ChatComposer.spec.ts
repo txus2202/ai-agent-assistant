@@ -120,3 +120,4 @@ describe('ChatComposer keyboard input behavior', () => {
     expect(wrapper.emitted('submit')).toBeUndefined()
   })
 })
+

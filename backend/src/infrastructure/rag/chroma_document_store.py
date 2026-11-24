@@ -15,12 +15,14 @@ Configuration:
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 import chromadb
 from chromadb.utils import embedding_functions
 
 from src.domain.ports.document_store import IDocumentStore
+from src.domain.ports.metrics_service import IMetricsService
 from src.domain.value_objects.document_chunk import DocumentChunk, SearchFilter
 
 _DEFAULT_CHROMA_PATH = os.path.expanduser("~/.ai-agent-assistant/chroma")
@@ -50,7 +52,10 @@ class ChromaDBDocumentStore(IDocumentStore):
         collection_name: str = _COLLECTION_NAME,
         host: str | None = None,
         port: int | None = None,
+        metrics_service: IMetricsService | None = None,
     ) -> None:
+        self._collection_name = collection_name
+        self.metrics_service = metrics_service
         if ephemeral:
             self._client: chromadb.ClientAPI = chromadb.EphemeralClient()
         elif host or os.getenv("CHROMA_HOST"):
@@ -116,7 +121,13 @@ class ChromaDBDocumentStore(IDocumentStore):
         if where:
             kwargs["where"] = where
 
+        start_time = time.perf_counter()
         results = self._collection.query(**kwargs)
+        if self.metrics_service:
+            self.metrics_service.record_rag_query_duration(
+                time.perf_counter() - start_time,
+                collection=self._collection_name,
+            )
         ids_batch = results.get("ids") or [[]]
         metadatas_batch = results.get("metadatas") or [[]]
         distances_batch = results.get("distances") or [[]]

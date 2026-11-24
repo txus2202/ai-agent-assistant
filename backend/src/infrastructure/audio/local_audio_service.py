@@ -3,6 +3,7 @@ import io
 import logging
 import os
 import threading
+import time
 from pathlib import Path
 from typing import BinaryIO, Optional
 
@@ -13,6 +14,7 @@ import av
 from kokoro_onnx import Kokoro
 from src.domain.ports.agent_catalog_repository import IAgentCatalogRepository
 from src.domain.ports.audio_service import IAudioService
+from src.domain.ports.metrics_service import IMetricsService
 from src.infrastructure.audio.phonetic_normalizer import SpanishTechPhoneticNormalizer
 
 logger = logging.getLogger(__name__)
@@ -55,6 +57,7 @@ class LocalAudioService(IAudioService):
         whisper_threads: int = 4,
         kokoro_omp_num_threads: int | None = None,
         agent_catalog: Optional[IAgentCatalogRepository] = None,
+        metrics_service: Optional[IMetricsService] = None,
     ):
         self.whisper_model_size = whisper_model_size
         self.kokoro_model_path = kokoro_model_path
@@ -65,6 +68,7 @@ class LocalAudioService(IAudioService):
         self.whisper_threads = whisper_threads
         self.kokoro_omp_num_threads = kokoro_omp_num_threads
         self._agent_catalog = agent_catalog
+        self.metrics_service = metrics_service
         self.whisper_initial_prompt = whisper_initial_prompt or (
             "Conversación técnica en castellano sobre desarrollo de software, arquitectura de sistemas e infraestructura. "
             "Uso frecuente de términos técnicos, herramientas, patrones y nombres en inglés: "
@@ -176,7 +180,14 @@ class LocalAudioService(IAudioService):
             return text.strip()
         
         # Run in thread to not block event loop
-        return await asyncio.to_thread(_transcribe)
+        start_time = time.perf_counter()
+        result = await asyncio.to_thread(_transcribe)
+        if self.metrics_service:
+            self.metrics_service.record_stt_duration(
+                time.perf_counter() - start_time,
+                model=self.whisper_model_size,
+            )
+        return result
 
     async def synthesize_speech(self, text: str, add_silence: bool = False) -> bytes:
         """
@@ -210,4 +221,11 @@ class LocalAudioService(IAudioService):
             return buf.getvalue()
 
         # Run in thread to not block event loop
-        return await asyncio.to_thread(_synthesize)
+        start_time = time.perf_counter()
+        result = await asyncio.to_thread(_synthesize)
+        if self.metrics_service:
+            self.metrics_service.record_tts_duration(
+                time.perf_counter() - start_time,
+                voice=self.kokoro_voice_name,
+            )
+        return result

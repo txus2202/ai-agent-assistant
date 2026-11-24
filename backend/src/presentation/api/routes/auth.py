@@ -315,6 +315,9 @@ async def login(
             message="Authenticated successfully",
         )
     except InvalidCredentialsError as exc:
+        metrics = getattr(request.app.state, "metrics_service", None)
+        if metrics:
+            metrics.inc_auth_failed_login(reason="invalid_credentials")
         fire_and_forget(
             notifier.notify_login_attempt(
                 username=body.username,
@@ -330,6 +333,9 @@ async def login(
             detail=str(exc),
         ) from exc
     except UserInactiveError as exc:
+        metrics = getattr(request.app.state, "metrics_service", None)
+        if metrics:
+            metrics.inc_auth_failed_login(reason="user_inactive")
         fire_and_forget(
             notifier.notify_login_attempt(
                 username=body.username,

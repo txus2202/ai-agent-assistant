@@ -192,7 +192,35 @@ A diferencia de los asistentes conversacionales estándar que devuelven bloques 
 
 ---
 
-## 🧪 7. Arnés de Pruebas y Aseguramiento de la Calidad
+## 📊 7. Observabilidad y Métricas en Tiempo Real (Prometheus & Langfuse)
+
+El sistema implementa una arquitectura dual de observabilidad desacoplada para garantizar visibilidad operacional y trazabilidad técnica:
+
+1. **Trazabilidad Dialéctica con Langfuse**:
+   - Captura árboles de ejecución, razonamiento de agentes, rondas de consenso y auditoría de tokens/costes por modelo LLM.
+2. **Telemetría Operacional con Prometheus (OpenMetrics)**:
+   - Expone métricas en formato estándar en el endpoint `GET /metrics` de FastAPI.
+   - Diseñado bajo arquitectura hexagonal (`IMetricsService` y `PrometheusMetricsService`) con garantías **fail-safe** (el reporte de telemetría nunca interrumpe el flujo de negocio).
+   - Compatible para **auto-descubrimiento en Netdata**, Grafana o cualquier recolector compatible con OpenMetrics.
+   - **Activación configurable**: Gobernado por la variable de entorno `METRICS_ENABLED` (activada por defecto, `true`; si se establece en `false`, conmuta a `NoOpMetricsService` sin coste de CPU ni exposición del endpoint).
+
+### Catálogo de Métricas Clave
+
+| Métrica | Tipo | Etiquetas (Labels) | Propósito y Valor Operacional |
+| :--- | :--- | :--- | :--- |
+| `http_requests_total` | Counter | `method`, `handler`, `status` | Volumen de peticiones y códigos de estado HTTP (2xx, 4xx, 5xx). |
+| `http_request_duration_seconds` | Histogram | `handler`, `method` | Latencias percentiles (p50, p90, p99) de endpoints REST. |
+| `atenea_websocket_active_connections` | Gauge | `channel` (`debate`, `voice`) | Conexiones WebSocket concurrentes abiertas (previene fugas de sockets). |
+| `atenea_stt_transcription_seconds` | Histogram | `model` | Tiempo de transcripción de Faster-Whisper en CPU (Intel N100). |
+| `atenea_tts_synthesis_seconds` | Histogram | `voice` | Tiempo de síntesis de voz con Kokoro-ONNX. |
+| `atenea_wake_word_detections_total` | Counter | `model` | Activaciones de la palabra clave por voz (Vosk). |
+| `atenea_rag_query_duration_seconds` | Histogram | `collection` | Latencia de búsqueda vectorial por similitud en ChromaDB. |
+| `atenea_learning_notes_saved_total` | Counter | `status` (`success`, `error`) | Notas consolidadas persistidas en el Obsidian Vault. |
+| `atenea_auth_failed_logins_total` | Counter | `reason` | Detección temprana de intentos fallidos de autenticación y fuerza bruta. |
+
+---
+
+## 🧪 8. Arnés de Pruebas y Aseguramiento de la Calidad
 
 El sistema cuenta con un arnés de pruebas automatizado (_Test Harness_) integral de **733 pruebas automatizadas pasando con éxito (100% pass rate)** que garantiza la estabilidad del software con **coste cero en consumo de tokens**:
 
@@ -210,7 +238,7 @@ El sistema cuenta con un arnés de pruebas automatizado (_Test Harness_) integra
 
 ---
 
-## 🚀 8. Guía de Instalación y Despliegue
+## 🚀 9. Guía de Instalación y Despliegue
 
 ### Requisitos Previos
 
@@ -295,11 +323,12 @@ pytest tests/ -v
 
 - **Interfaz de Usuario (ATENEA)**: [http://localhost:5173](http://localhost:5173)
 - **API Backend y Swagger OpenAPI**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Métricas Prometheus / OpenMetrics**: [http://localhost:8000/metrics](http://localhost:8000/metrics)
 - **Panel de Observabilidad Langfuse** (opcional): [http://localhost:3000](http://localhost:3000)
 
 ---
 
-## 🏛️ 9. Licencia y Créditos Académicos
+## 🏛️ 10. Licencia y Créditos Académicos
 
 Este proyecto ha sido desarrollado como **Trabajo Fin de Máster (TFM)** en el **Máster en Desarrollo con Inteligencia Artificial**.
 

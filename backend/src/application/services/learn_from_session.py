@@ -18,6 +18,7 @@ from src.domain.exceptions import LLMProviderError
 from src.domain.ports.document_parser import IDocumentParser
 from src.domain.ports.document_store import IDocumentStore
 from src.domain.ports.llm_provider import ILLMProvider
+from src.domain.ports.metrics_service import IMetricsService
 
 _SESSION_SYNTHESIS_PROMPT = """\
 You are an expert technical knowledge synthesizer for multi-agent systems.
@@ -66,6 +67,7 @@ class LearnFromSession:
         solution_content: str | None = None,
         target_domain: str = DEFAULT_TARGET_DOMAIN,
         document_parser: IDocumentParser | None = None,
+        metrics_service: IMetricsService | None = None,
     ) -> LearnResult:
         if document_parser is None:
             raise ValueError("document_parser must be provided to LearnFromSession.run()")
@@ -122,6 +124,8 @@ class LearnFromSession:
             file_path.parent.mkdir(parents=True, exist_ok=True)
 
         file_path.write_text(md_content, encoding="utf-8")
+        if metrics_service:
+            metrics_service.inc_learning_notes_saved(status="success")
 
         ingest_result = IngestVault.run(
             vault_root=vault_root,

@@ -72,6 +72,9 @@ async def _process_incoming_message(websocket: WebSocket, message: Mapping[str, 
     if data_bytes:
         detected = await asyncio.to_thread(wake_word_service.process_chunk, data_bytes)
         if detected:
+            metrics_svc = getattr(websocket.app.state, "metrics_service", None)
+            if metrics_svc:
+                metrics_svc.inc_wake_word_detection(model="vosk")
             await _send_detection_event(websocket, detected)
         return
 
@@ -115,6 +118,9 @@ async def wake_word_endpoint(websocket: WebSocket):
 
     await websocket.accept()
     logger.info("Client connected to Wake-Word stream (user: %s)", authenticated_user.username)
+    metrics_svc = getattr(websocket.app.state, "metrics_service", None)
+    if metrics_svc:
+        metrics_svc.inc_websocket_connection("voice")
     await asyncio.to_thread(wake_word_service.reset)
     
     try:
@@ -129,3 +135,6 @@ async def wake_word_endpoint(websocket: WebSocket):
             await websocket.close(code=1011)
         except Exception:
             logger.debug("Failed to close wake-word websocket after unhandled error", exc_info=True)
+    finally:
+        if metrics_svc:
+            metrics_svc.dec_websocket_connection("voice")

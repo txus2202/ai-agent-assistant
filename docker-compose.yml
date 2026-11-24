@@ -76,6 +76,7 @@ services:
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
       - LANGFUSE_METRICS_ENABLED=${LANGFUSE_METRICS_ENABLED:-false}
       - LANGFUSE_DEFAULT_USER_ID=${LANGFUSE_DEFAULT_USER_ID:-local_user}
+      - METRICS_ENABLED=${METRICS_ENABLED:-true}
       # --- Phase 7: Authentication & Security ---
       - AUTH_SECRET_KEY=${AUTH_SECRET_KEY:?Set AUTH_SECRET_KEY in .env (e.g. openssl rand -base64 48)}
       - AUTH_TOKEN_EXPIRY_SECONDS=${AUTH_TOKEN_EXPIRY_SECONDS:-28800}

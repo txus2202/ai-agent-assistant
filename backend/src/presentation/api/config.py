@@ -101,7 +101,8 @@ class Settings(BaseSettings):
     kokoro_voice_name: str = "ef_dora"
     kokoro_omp_num_threads: int | None = None
 
-    # Observability (Phase 6 / Langfuse)
+    # Observability (Phase 6 / Langfuse & Prometheus)
+    metrics_enabled: bool = True
     langfuse_metrics_enabled: bool = False
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""

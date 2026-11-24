@@ -632,6 +632,10 @@ async def debate_ws(websocket: WebSocket) -> None:
         return
 
     await websocket.accept()
+    metrics_service = getattr(websocket.app.state, "metrics_service", None)
+    if metrics_service:
+        metrics_service.inc_websocket_connection("debate")
+
     document_store = await get_document_store(websocket)
     handler = DebateWebSocketHandler(
         websocket,
@@ -641,16 +645,20 @@ async def debate_ws(websocket: WebSocket) -> None:
     )
 
     try:
-        await handler.process_messages()
-    except WebSocketDisconnect:
-        logger.info("WebSocket client disconnected")
-        await handler.abort_async()
-    except Exception as exc:
-        logger.exception("Error during debate WebSocket execution")
-        await asyncio.to_thread(handler._end_trace_sync, "ERROR", str(exc))
-        await handler.abort_async()
         try:
-            await websocket.send_json({"type": "error", "content": str(exc)})
-            await websocket.close(code=1011)
-        except Exception:
-            logger.debug("Failed to send error notification or close websocket after failure", exc_info=True)
+            await handler.process_messages()
+        except WebSocketDisconnect:
+            logger.info("WebSocket client disconnected")
+            await handler.abort_async()
+        except Exception as exc:
+            logger.exception("Error during debate WebSocket execution")
+            await asyncio.to_thread(handler._end_trace_sync, "ERROR", str(exc))
+            await handler.abort_async()
+            try:
+                await websocket.send_json({"type": "error", "content": str(exc)})
+                await websocket.close(code=1011)
+            except Exception:
+                logger.debug("Failed to send error notification or close websocket after failure", exc_info=True)
+    finally:
+        if metrics_service:
+            metrics_service.dec_websocket_connection("debate")

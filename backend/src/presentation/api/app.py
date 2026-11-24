@@ -208,6 +208,28 @@ def create_app(
         throttle_seconds=cfg.telegram_alert_throttle_seconds,
     )
 
+    # ── Observability & Prometheus Metrics ────────────────────────────────
+    if cfg.metrics_enabled:
+        from src.infrastructure.observability.prometheus_metrics import PrometheusMetricsService
+
+        app.state.metrics_service = PrometheusMetricsService()
+
+        try:
+            from prometheus_fastapi_instrumentator import Instrumentator
+
+            Instrumentator(
+                should_group_status_codes=False,
+                should_ignore_untemplated=True,
+                excluded_handlers=["/metrics", "/health", "/api/health"],
+            ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+        except ImportError:
+            logger.debug("prometheus-fastapi-instrumentator not available; skipping /metrics exposition")
+    else:
+        from src.infrastructure.observability.noop_metrics import NoOpMetricsService
+
+        app.state.metrics_service = NoOpMetricsService()
+        logger.info("Prometheus metrics disabled via METRICS_ENABLED=false")
+
     # ── CORS ─────────────────────────────────────────────────────────────
     app.add_middleware(
         CORSMiddleware,

@@ -1,7 +1,10 @@
 import type { ComputedRef, Ref } from 'vue'
 import { debateApiService } from '../services/debateApiService'
 import { createDebateWsClient } from '../services/debateWsClient'
-import { createDebateEventProcessor } from '../utils/debateEventProcessor'
+import {
+  createDebateEventProcessor,
+  type DebateEventProcessorDeps,
+} from '../utils/debateEventProcessor'
 import {
   normalizeAgentRole,
   resolveHitlUserMessage,
@@ -12,36 +15,9 @@ import {
   type SupervisorEvent,
 } from '../utils/debateHelpers'
 
-export interface UseDebateStreamDeps {
+export interface UseDebateStreamDeps extends DebateEventProcessorDeps {
   isConnected: Ref<boolean>
-  isDebating: Ref<boolean>
-  isHitlRequired: Ref<boolean>
-  hitlCheckpoint: Ref<string | null>
-  hitlTargetAgents: Ref<string[]>
-  currentSessionId: Ref<string | null>
-  messages: Ref<ChatMessage[]>
-  rawEvents: Ref<SupervisorEvent[]>
-  agents: Ref<Agent[]>
-  executionTrail: Ref<string[]>
   projectName: ComputedRef<string>
-  sessionTotalTokens: Ref<number>
-  sessionCachedTokens: Ref<number>
-  streamingMessageId: Ref<string | null>
-  findAgent: (role?: string | null) => Agent | undefined
-  resolveAgentDisplay: (role?: string | null) => {
-    agentRole: string
-    agentName: string
-    colorHex: string
-  }
-  getKnownAgentNames: () => string[]
-  recordExecutionTrail: (name?: string | null) => void
-  isAgentReading: (role?: string | null) => boolean
-  stopTts: () => void
-  feedTtsStreamingChunk: (chunk: string, role?: string) => void
-  flushTtsStreamingBuffer: (role?: string) => void
-  resetTtsStreamState: () => void
-  clearTtsStreamBuffer: () => void
-  resetWakeWordSession: () => void
 }
 
 const MAX_RECONNECT_ATTEMPTS = 8

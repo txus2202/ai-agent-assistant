@@ -266,6 +266,23 @@ class TestGeminiAdapter:
 
 
 # ===========================================================================
+# BaseOpenAIAdapter
+# ===========================================================================
+
+class TestBaseOpenAIAdapter:
+    def test_implements_protocol_and_delegates(self):
+        from src.domain.ports.llm_provider import ILLMProvider
+        from src.infrastructure.llm.base_openai_adapter import BaseOpenAIAdapter
+
+        class DummyOpenAIAdapter(BaseOpenAIAdapter):
+            def __init__(self):
+                self._client = MagicMock()
+
+        adapter = DummyOpenAIAdapter()
+        assert isinstance(adapter, ILLMProvider)
+
+
+# ===========================================================================
 # OpenAIAdapter
 # ===========================================================================
 

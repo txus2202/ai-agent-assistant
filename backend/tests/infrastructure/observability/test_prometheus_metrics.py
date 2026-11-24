@@ -3,7 +3,6 @@ Unit tests for PrometheusMetricsService.
 Verifies metric recording, labels, gauge tracking, and fail-safe behavior.
 """
 from unittest.mock import MagicMock
-import pytest
 
 from src.domain.ports.metrics_service import IMetricsService
 from src.infrastructure.observability.prometheus_metrics import PrometheusMetricsService
@@ -95,9 +94,6 @@ def test_fail_safe_guarantee_catches_all_exceptions():
     service = PrometheusMetricsService()
     service._ws_active_connections = mock_gauge
 
-    # Must NOT raise exception: fail-safe
-    try:
-        service.inc_websocket_connection(channel="debate")
-    except Exception as exc:
-        pytest.fail(f"PrometheusMetricsService violated fail-safe guarantee: {exc}")
+    # Must NOT raise exception: fail-safe guarantee catches all internal errors
+    service.inc_websocket_connection(channel="debate")
 

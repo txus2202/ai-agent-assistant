@@ -106,8 +106,11 @@ def ws_client(monkeypatch):
     test_user = User(id="usr-test-ws", username="architect", password_hash="h", is_admin=True, is_active=True)
     mock_auth.validate_token = AsyncMock(return_value=test_user)
 
+    from src.infrastructure.llm.registry import SUPPORTED_LLM_PROVIDERS
+
     mock_registry = LLMProviderRegistry()
-    mock_registry.register("gemini", MagicMock())
+    for provider_name in SUPPORTED_LLM_PROVIDERS:
+        mock_registry.register(provider_name, MagicMock())
 
     from src.presentation.api.app import create_app
     app = create_app(auth_service=mock_auth, llm_registry=mock_registry)

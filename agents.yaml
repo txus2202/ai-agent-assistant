@@ -31,7 +31,7 @@ agents:
     description: Orquestadora estratégica y deidad de la sabiduría técnica que gobierna el consejo de agentes, equilibra la innovación con la prudencia, gestiona el flujo HITL y emite veredictos vinculantes.
     color_hex: "#f59e0b"
     default_provider: gemini
-    default_model: gemini-3.1-pro-preview
+    default_model: gemini-4-carbon
     uses_rag: false
     phonetic_aliases:
       - atenea
@@ -119,8 +119,8 @@ agents:
     display_name: Ícaro
     description: Arquitecto innovador y audaz que desafía los límites proponiendo soluciones cloud-native, reactivas y de vanguardia tecnológica inexplorada.
     color_hex: "#22c55e"
-    default_provider: gemini
-    default_model: gemini-3.7-flash
+    default_provider: anthropic
+    default_model: claude-sonnet-5-5
     uses_rag: true
     rag_filter:
       category:
@@ -173,7 +173,7 @@ agents:
     description: Arquitecta de la empresa, guardiana del fuego corporativo que asegura la estabilidad empresarial respetando estrictamente los estándares y patrones inmutables de la casa.
     color_hex: "#00ff9d"
     default_provider: gemini
-    default_model: gemini-3.6-flash
+    default_model: gemini-3.1-pro-preview
     uses_rag: true
     rag_filter:
       category: enterprise
@@ -222,8 +222,8 @@ agents:
     display_name: Sphinx
     description: Auditora implacable que plantea enigmas críticos para devorar vulnerabilidades, cuellos de botella y fallos estructurales.
     color_hex: "#ef4444"
-    default_provider: gemini
-    default_model: gemini-3.1-pro-preview
+    default_provider: anthropic
+    default_model: claude-opus-5-5
     uses_rag: true
     rag_filter:
       type:
@@ -295,8 +295,8 @@ agents:
     display_name: Hefesto
     description: DevSecOps, el herrero de la infraestructura que forja pipelines seguros, despliegues robustos y políticas operativas en CI/CD.
     color_hex: "#ff8800"
-    default_provider: gemini
-    default_model: gemini-3.8-flash
+    default_provider: anthropic
+    default_model: claude-sonnet-5-5
     uses_rag: true
     phonetic_aliases:
       - hefesto
@@ -344,8 +344,8 @@ agents:
     display_name: Aracne
     description: Creadora de diagramas, tejedora maestra que traza la complejidad del sistema hilando precisos diagramas técnicos interactivos en Mermaid.js.
     color_hex: "#b347ff"
-    default_provider: gemini
-    default_model: gemini-3.8-flash
+    default_provider: anthropic
+    default_model: claude-sonnet-5-5
     uses_rag: true
     phonetic_aliases:
       - aracne
@@ -460,8 +460,8 @@ agents:
     display_name: Fídias
     description: Diseñador UX/UI, maestro escultor que idea, estructura y genera recursos visuales, mockups, landing pages y maquetaciones HTML5/CSS/JS estéticas y funcionales.
     color_hex: "#ffe600"
-    default_provider: gemini
-    default_model: gemini-3.8-flash
+    default_provider: anthropic
+    default_model: claude-sonnet-5-5
     uses_rag: false
     phonetic_aliases:
       - fidias
@@ -509,8 +509,8 @@ agents:
     display_name: Dédalo
     description: Desarrollador full-stack y maestro artesano del software, genera código funcional, pruebas de concepto (POCs), scripts y arquitecturas web frontend/backend con Clean Code.
     color_hex: "#cc7800"
-    default_provider: gemini
-    default_model: gemini-3.7-flash
+    default_provider: anthropic
+    default_model: claude-sonnet-5-5
     uses_rag: false
     phonetic_aliases:
       - dedalo

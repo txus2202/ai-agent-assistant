@@ -103,4 +103,75 @@ test.describe('Authentication and Initial Setup', () => {
     // guestOnly guard automatically redirects back to /
     await expect(page).toHaveURL('http://127.0.0.1:5173/')
   })
+
+  test('exposes PWA manifest, icons, service worker, and progressive in-app install action', async ({
+    page,
+    request,
+  }) => {
+    await setupMockBackend(page, {
+      initialized: true,
+      authenticated: true,
+      username: 'operador_pwa',
+    })
+
+    await page.addInitScript(() => {
+      delete (Navigator.prototype as { install?: unknown }).install
+      ;(window as unknown as { __suppressNativeBip?: boolean }).__suppressNativeBip = true
+      window.addEventListener(
+        'beforeinstallprompt',
+        (e) => {
+          if ((window as unknown as { __suppressNativeBip?: boolean }).__suppressNativeBip) {
+            e.preventDefault()
+            e.stopImmediatePropagation()
+          }
+        },
+        true,
+      )
+    })
+
+    await page.goto('/')
+
+    const manifestHref = await page.locator('link[rel="manifest"]').getAttribute('href')
+    expect(manifestHref).toBe('/manifest.webmanifest')
+
+    const manifestRes = await request.get('/manifest.webmanifest')
+    expect(manifestRes.ok()).toBe(true)
+    const manifestJson = (await manifestRes.json()) as {
+      id: string
+      display: string
+      icons: Array<{ src: string }>
+    }
+    expect(manifestJson.id).toBe('/')
+    expect(manifestJson.display).toBe('standalone')
+
+    for (const icon of manifestJson.icons) {
+      const iconRes = await request.get(icon.src)
+      expect(iconRes.ok()).toBe(true)
+      expect(iconRes.headers()['content-type']).toContain('image/png')
+    }
+
+    const swRes = await request.get('/sw.js')
+    expect(swRes.ok()).toBe(true)
+
+    // Progressive install action stays hidden until beforeinstallprompt fires
+    await page.click('[data-test="user-menu-btn"]')
+    await expect(page.locator('[data-test="install-pwa-btn"]')).toBeHidden()
+
+    await page.evaluate(() => {
+      ;(window as unknown as { __suppressNativeBip?: boolean }).__suppressNativeBip = false
+      const evt = new Event('beforeinstallprompt', { cancelable: true }) as Event & {
+        prompt: () => Promise<void>
+        userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
+      }
+      evt.prompt = async () => undefined
+      evt.userChoice = Promise.resolve({ outcome: 'accepted' })
+      window.dispatchEvent(evt)
+    })
+
+    const installBtn = page.locator('[data-test="install-pwa-btn"]')
+    await expect(installBtn).toBeVisible()
+    await installBtn.click()
+    await expect(page.locator('[data-test="install-pwa-status"]')).toContainText('instalada')
+    await expect(installBtn).toBeHidden()
+  })
 })

@@ -3,8 +3,9 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useDebateStore } from '../stores/debate'
 import { useAuthStore } from '../stores/auth'
-import { Volume2, VolumeX, History, Network, Ear, EarOff, Sun, Moon, LogOut, Users, User as UserIcon, KeyRound, X, ChevronDown } from '@lucide/vue'
+import { Volume2, VolumeX, History, Network, Ear, EarOff, Sun, Moon, LogOut, Users, User as UserIcon, KeyRound, Download, X, ChevronDown } from '@lucide/vue'
 import { useTheme } from '../composables/useTheme'
+import { usePwaInstall } from '../composables/usePwaInstall'
 import UserManagementModal from './UserManagementModal.vue'
 
 const router = useRouter()
@@ -12,6 +13,7 @@ const route = useRoute()
 const debateStore = useDebateStore()
 const authStore = useAuthStore()
 const { isDarkMode, toggleTheme } = useTheme()
+const { canInstall, isInstalling, installStatus, installApp } = usePwaInstall()
 const isUserModalOpen = ref(false)
 const isChangePasswordOpen = ref(false)
 const currentPassword = ref('')
@@ -210,6 +212,28 @@ onUnmounted(() => {
               <KeyRound class="w-4 h-4 text-slate-400 shrink-0" />
               <span>Cambiar mi contraseña</span>
             </button>
+
+            <!-- Instalar Aplicación (PWA Progressive Enhancement) -->
+            <button
+              type="button"
+              :hidden="!canInstall"
+              :aria-disabled="isInstalling ? 'true' : undefined"
+              data-test="install-pwa-btn"
+              class="w-full px-3.5 py-2 text-left text-slate-300 hover:text-cyan-200 hover:bg-space-800/80 items-center gap-2.5 transition-colors cursor-pointer text-xs"
+              :class="canInstall ? 'flex' : ''"
+              @click="installApp"
+            >
+              <Download aria-hidden="true" class="w-4 h-4 text-cyan-400 shrink-0" />
+              <span>Instalar aplicación</span>
+            </button>
+
+            <output
+              v-if="installStatus"
+              data-test="install-pwa-status"
+              class="block px-3.5 py-1.5 text-[10px] font-mono text-cyan-300/90"
+            >
+              {{ installStatus }}
+            </output>
           </div>
 
           <!-- Divider -->

@@ -6,8 +6,8 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.142+-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Vue 3](https://img.shields.io/badge/Vue.js-3.5+-4FC08D?style=for-the-badge&logo=vuedotjs&logoColor=white)](https://vuejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9+-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Playwright](<https://img.shields.io/badge/Playwright-E2E%20Tests%20(40%2F40)-2EAD33?style=for-the-badge&logo=playwright&logoColor=white>)](https://playwright.dev/)
-[![Vitest](<https://img.shields.io/badge/Vitest-Unit%20Tests%20(459%2F459)-FCC72B?style=for-the-badge&logo=vitest&logoColor=black>)](https://vitest.dev/)
+[![Playwright](<https://img.shields.io/badge/Playwright-E2E%20Tests%20(42%2F42)-2EAD33?style=for-the-badge&logo=playwright&logoColor=white>)](https://playwright.dev/)
+[![Vitest](<https://img.shields.io/badge/Vitest-Unit%20Tests%20(469%2F469)-FCC72B?style=for-the-badge&logo=vitest&logoColor=black>)](https://vitest.dev/)
 [![Pytest](<https://img.shields.io/badge/Pytest-Backend%20Tests%20(631%2F631)-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white>)](https://pytest.org/)
 [![Docker](https://img.shields.io/badge/Docker-Isolated%20Deployment-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
 [![Clean Architecture](https://img.shields.io/badge/Architecture-Clean%20%2F%20Hexagonal-blueviolet?style=for-the-badge)](https://blog.cleancoder.com/)
@@ -178,6 +178,7 @@ Además de la deliberación base definida por el administrador del sistema, cada
 - **Selección Individual de Modelos LLM y Sonda Dinámica**: Cada agente puede asignarse en caliente a un proveedor y modelo distinto (Gemini, OpenAI, Anthropic u Ollama local). Una sonda verificadora consulta los modelos realmente soportados por cada API key y los almacena en una caché SQLite compartida para minimizar latencias y llamadas redundantes.
 - **Ajuste de Hiperparámetros RAG en Tiempo Real**: Control directo mediante deslizadores en cada tarjeta de agente sobre el volumen de fragmentos recuperados (`Chunks` / `RAG_TOP_K`) y el umbral mínimo de similitud coseno (`Proximidad` / `RAG_MIN_SCORE`), sin reiniciar el backend.
 - **Aprendizaje Continuo Multimodal y Memoria Persistente**: Ingesta bajo demanda de documentos PDF, páginas web (URLs) y notas Markdown hacia ChromaDB y `obsidian_vault/learned/`, sumada a un **Historial Reactivo de Debates (`/history`)** aislado por cuenta que permite retomar, inspeccionar o auditar deliberaciones previas y sus artefactos generados.
+- **Aplicación Web Progresiva (PWA) Instalable Multi-Plataforma**: Instalable como aplicación nativa independiente (`display: standalone`) en macOS, Windows, Linux, Android e iOS mediante [`manifest.webmanifest`](frontend/public/manifest.webmanifest), iconos adaptativos (`maskable`) y Service Worker ([`sw.js`](frontend/public/sw.js)) con frontera estricta `Network-Only` para `/api/*` y `/ws/*` (cero fugas de caché multi-tenant) y botón progresivo de instalación en el menú de operador.
 
 ---
 
@@ -218,10 +219,10 @@ El sistema combina tecnologías modernas de alto rendimiento priorizando tipado 
 | **IA & Multi-LLM** | Motor _Supervisor Pattern_ propio (`asyncio`), `google-genai` (Gemini / Vertex AI), `openai`, `anthropic`, Ollama / OpenAI-compatible, Google Imagen | Orquestación dialéctica paralela sin acoplamiento a frameworks pesados, abstracción multi-proveedor en caliente y generación visual. |
 | **Memoria Vectorial & RAG** | ChromaDB (embebido o servidor), `sentence-transformers` (`all-MiniLM-L6-v2`), PyMuPDF, BeautifulSoup4, Obsidian Vault | Embeddings locales en CPU (coste cero de API), búsqueda semántica filtrada por metadatos e ingesta multimodal (Markdown, PDF, Web). |
 | **Audio Multimodal Local** | `faster-whisper` (STT), `kokoro-onnx` (TTS neural), `vosk` (_Wake-Word_) | Transcripción de voz, síntesis neural de baja latencia y escucha continua de comandos HITL 100% en local. |
-| **Frontend & Visualización** | Vue 3.5 (Composition API), TypeScript, Vite 8, Pinia 4, Vue Router 5, Tailwind CSS 4, Mermaid 12, PptxGenJS, DOMPurify | SPA reactiva en tiempo real, gestión centralizada de estado, renderizado de diagramas SVG interactivos, exportación nativa a `.pptx` y sanitización XSS. |
+| **Frontend & Visualización** | Vue 3.5 (Composition API), TypeScript, Vite 8, PWA (`manifest.webmanifest` + Service Worker), Pinia 4, Vue Router 5, Tailwind CSS 4, Mermaid 12, PptxGenJS, DOMPurify | SPA/PWA instalable multi-plataforma con _App Shell_ offline, gestión centralizada de estado, diagramas SVG interactivos, exportación nativa a `.pptx` y sanitización XSS. |
 | **Persistencia & Seguridad** | SQLite (modo WAL) / PostgreSQL, `argon2-cffi` (Argon2id), `PyJWT` (`HMAC-SHA256`), Telegram Bot API | Almacenamiento relacional multi-tenant aislado por `user_id`, sesiones seguras en cookies `HttpOnly` y alertas de auditoría en tiempo real. |
 | **Observabilidad & DevOps** | Langfuse v3 (ClickHouse, MinIO, Redis, Postgres), Prometheus (`prometheus-client`), Netdata, Docker Compose, GitHub Actions | Trazabilidad completa de árboles de debate/costes LLM, telemetría operacional OpenMetrics, despliegue aislado por perfiles y CI/CD. |
-| **Calidad & Testing** | Pytest (`pytest-asyncio`), Vitest, Playwright, Ruff, Mypy, Oxlint, ESLint | Arnés hermético de 1.130 pruebas automatizadas (unitarias, integración y E2E multi-dispositivo) y análisis estático estricto. |
+| **Calidad & Testing** | Pytest (`pytest-asyncio`), Vitest, Playwright, Ruff, Mypy, Oxlint, ESLint | Arnés hermético de 1.142 pruebas automatizadas (unitarias, integración y E2E multi-dispositivo) y análisis estático estricto. |
 
 ---
 
@@ -264,20 +265,22 @@ ai-agent-assistant/
 │   │       └── api/             # App factory, rutas REST (/api/*), dependencias DI y WS (/ws/*)
 │   └── tests/                   # Suite Pytest espejando domain/, application/, infrastructure/ y api/
 │
-├── frontend/                    # Aplicación Web Reactiva (Vue 3 + TypeScript + Vite)
+├── frontend/                    # Aplicación Web Reactiva / PWA (Vue 3 + TypeScript + Vite)
+│   ├── public/                  # Activos estáticos, manifest.webmanifest, sw.js e iconos PWA
 │   ├── src/
 │   │   ├── views/               # Vistas de página (HomeView, TopologyView, HistoryView, Auth)
 │   │   ├── components/          # UI reactiva, tarjetas de agente, panel HITL, gestión de usuarios
 │   │   │   └── tools/           # Modales modulares (Code, Diagram, Document, Presentation, Image)
 │   │   ├── stores/              # Estado reactivo Pinia (debate, auth, voice, history)
 │   │   ├── services/            # Clientes tipados REST y WebSocket
-│   │   ├── composables/         # Lógica reutilizable (captura de audio PCM, TTS, atajos)
+│   │   ├── composables/         # Lógica reutilizable (audio PCM, TTS, instalación PWA, atajos)
+│   │   ├── pwa/                 # Registro seguro de Service Worker en producción
 │   │   └── router/              # Rutas y guardias de navegación (setup, auth, roles)
 │   └── e2e/                     # Suite End-to-End con Playwright (Desktop Chromium + Mobile)
 │
 ├── obsidian_vault/              # Segundo Cerebro (Base de Conocimiento RAG + SDD)
 │   ├── ARCHITECTURE.md          # Diseño arquitectónico detallado del sistema
-│   ├── DECISIONS.md             # Registro histórico de Decisiones de Arquitectura (ADRs 001–026)
+│   ├── DECISIONS.md             # Registro histórico de Decisiones de Arquitectura (ADRs 001–027)
 │   ├── docs/features/           # Especificaciones técnicas Spec-Driven Development (SDD)
 │   ├── deliberations/           # Actas consolidadas generadas por el consejo
 │   └── learned/                 # Conocimiento ingerido dinámicamente por Metis
@@ -335,12 +338,12 @@ El sistema implementa una arquitectura dual de observabilidad desacoplada para g
 
 ## 🧪 10. Arnés de Pruebas y Aseguramiento de la Calidad
 
-El sistema cuenta con un arnés de pruebas automatizado (_Test Harness_) integral de **1.130 pruebas automatizadas pasando con éxito (100% pass rate)** que garantiza la estabilidad del software con **coste cero en consumo de tokens**:
+El sistema cuenta con un arnés de pruebas automatizado (_Test Harness_) integral de **1.142 pruebas automatizadas pasando con éxito (100% pass rate)** que garantiza la estabilidad del software con **coste cero en consumo de tokens**:
 
-1. **Suite End-to-End con Playwright (40/40 tests pasando)**:
+1. **Suite End-to-End con Playwright (42/42 tests pasando)**:
    - Ejecutados en navegadores reales: Chromium (Escritorio `1280x720`) y Mobile Chrome (Pixel 7).
-   - Valida el flujo dialéctico completo: autenticación y setup inicial, gestión RBAC de usuarios, streaming por WebSockets, personalización de modelos/RAG y topología por usuario (`/topology`), checkpoints HITL con todas sus variantes, modales de presentaciones PPTX, diagramas interactivos Mermaid con zoom/pan, visor de código e historial reactivo de debates.
-2. **Suite Unitaria y de Componentes Frontend (459/459 tests en Vitest)**:
+   - Valida el flujo dialéctico completo: autenticación y setup inicial, instalabilidad PWA (`manifest.webmanifest`, iconos y acción progresiva), gestión RBAC de usuarios, streaming por WebSockets, personalización de modelos/RAG y topología por usuario (`/topology`), checkpoints HITL con todas sus variantes, modales de presentaciones PPTX, diagramas interactivos Mermaid con zoom/pan, visor de código e historial reactivo de debates.
+2. **Suite Unitaria y de Componentes Frontend (469/469 tests en Vitest)**:
    - Cobertura exhaustiva de vistas y componentes Vue 3, composables reactivos, utilidades de parsing y stores centralizados Pinia con mocks deterministas de WebSocket y APIs REST.
 3. **Suite de Backend e Integración (631/631 tests en Pytest)**:
    - Pruebas asíncronas con `ASGITransport` cubriendo entidades y servicios de dominio, orquestación del Supervisor, repositorios SQLite/PostgreSQL, aislamiento por usuario, embeddings de ChromaDB, validación Pydantic, seguridad JWT/Argon2id y adaptadores LLM.
@@ -444,10 +447,10 @@ uv run --no-sync pytest tests/ -v
 Desde la carpeta `frontend/`:
 
 ```bash
-# Ejecutar las 459 pruebas unitarias y de componentes (Vitest)
+# Ejecutar las 469 pruebas unitarias y de componentes (Vitest)
 npm run test:unit
 
-# Ejecutar las 40 pruebas End-to-End multi-navegador (Playwright: Desktop + Mobile)
+# Ejecutar las 42 pruebas End-to-End multi-navegador (Playwright: Desktop + Mobile)
 npm run test:e2e
 
 # Verificar tipado estricto y linters (0 errores / 0 warnings)

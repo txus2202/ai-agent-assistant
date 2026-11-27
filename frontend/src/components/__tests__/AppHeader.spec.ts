@@ -30,6 +30,7 @@ vi.mock('@lucide/vue', () => ({
   Users: { template: '<svg data-test="users-icon"></svg>' },
   LogOut: { template: '<svg data-test="logout-icon"></svg>' },
   KeyRound: { template: '<svg data-test="key-icon"></svg>' },
+  Download: { template: '<svg data-test="download-icon"></svg>' },
   X: { template: '<svg data-test="close-icon"></svg>' },
   ChevronDown: { template: '<svg data-test="chevron-down-icon"></svg>' },
 }))
@@ -371,5 +372,43 @@ describe('AppHeader.vue', () => {
     expect(centerBanner.classes()).toContain('sm:order-2')
     const store = useDebateStore()
     expect(centerBanner.text()).toContain(store.projectName)
+  })
+
+  it('keeps install PWA action hidden by default and reveals it when beforeinstallprompt fires', async () => {
+    const { useAuthStore } = await import('../../stores/auth')
+    const authStore = useAuthStore()
+    authStore.user = {
+      id: 'usr-pwa',
+      username: 'architect',
+      is_admin: false,
+      is_active: true,
+      created_at: '2026-11-09T00:00:00',
+    }
+
+    const wrapper = mount(AppHeader)
+    await wrapper.find('[data-test="user-menu-btn"]').trigger('click')
+
+    const hiddenBtn = wrapper.find('[data-test="install-pwa-btn"]')
+    expect(hiddenBtn.exists()).toBe(true)
+    expect(hiddenBtn.attributes('hidden')).toBeDefined()
+
+    const promptSpy = vi.fn().mockResolvedValue(undefined)
+    const promptEvent = new Event('beforeinstallprompt', { cancelable: true }) as Event & {
+      prompt: () => Promise<void>
+      userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
+    }
+    promptEvent.prompt = promptSpy
+    promptEvent.userChoice = Promise.resolve({ outcome: 'accepted' })
+
+    window.dispatchEvent(promptEvent)
+    await wrapper.vm.$nextTick()
+
+    const visibleBtn = wrapper.find('[data-test="install-pwa-btn"]')
+    expect(visibleBtn.attributes('hidden')).toBeUndefined()
+
+    await visibleBtn.trigger('click')
+    await flushPromises()
+    expect(promptSpy).toHaveBeenCalledOnce()
+    wrapper.unmount()
   })
 })

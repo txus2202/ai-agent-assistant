@@ -4,6 +4,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 
 import App from './App.vue'
+import { registerAteneaServiceWorker } from './pwa/registerServiceWorker'
 import router, { forceLogoutToLogin } from './router'
 import { httpClient } from './services/httpClient'
 import { useAuthStore } from './stores/auth'
@@ -36,3 +37,13 @@ httpClient.configure({
 })
 
 app.mount('#app')
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(
+    'load',
+    () => {
+      void registerAteneaServiceWorker()
+    },
+    { once: true },
+  )
+}

@@ -291,5 +291,38 @@ describe('AgentCard.vue', () => {
     expect(mockUpdateAgentConfig).toHaveBeenCalledTimes(2)
     expect(mockUpdateAgentConfig).toHaveBeenLastCalledWith('the_judge', 'gemini', 'gemini-1.5-flash', 14, 0.75)
   })
+
+  it('supports variant="topology" displaying full description, badges, and custom action slots without runtime model/RAG controls', () => {
+    const wrapper = mount(AgentCard, {
+      props: {
+        role: 'devops_secops',
+        roleName: 'Hefesto',
+        description: 'DevSecOps, el herrero de la infraestructura que forja pipelines seguros y despliegues robustos.',
+        colorHex: '#ff8800',
+        state: 'STANDBY',
+        usesRag: true,
+        supportsHitl: true,
+        topologyRoles: ['implementer'],
+        variant: 'topology',
+      },
+      slots: {
+        'header-action': '<button data-test="custom-remove-btn">Quitar</button>',
+        footer: '<button data-test="custom-pick-btn">Añadir</button>',
+      },
+    })
+
+    expect(wrapper.text()).toContain('Hefesto')
+    expect(wrapper.text()).toContain('forja pipelines seguros y despliegues robustos')
+    expect(wrapper.text()).toContain('RAG')
+    expect(wrapper.text()).toContain('HITL')
+    expect(wrapper.text().toLowerCase()).toContain('implementer')
+    expect(wrapper.find('[data-test="custom-remove-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="custom-pick-btn"]').exists()).toBe(true)
+
+    // Runtime controls must be omitted in topology variant
+    expect(wrapper.find('[data-test="provider-select"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="model-select"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="rag-config-controls"]').exists()).toBe(false)
+  })
 })
 

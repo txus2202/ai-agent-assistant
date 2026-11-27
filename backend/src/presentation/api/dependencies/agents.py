@@ -17,6 +17,8 @@ from src.domain.ports.agent_catalog_repository import (
     IAgentCatalogRepository,
     ITopologyProvider,
 )
+from src.domain.ports.user_topology_repository import IUserTopologyRepository
+from src.application.services.user_topology_service import UserTopologyService
 from src.infrastructure.config.yaml_agent_catalog import (
     InMemoryAgentCatalogRepository,
     default_agents_file,
@@ -25,6 +27,9 @@ from src.infrastructure.config.yaml_agent_catalog import (
 from src.infrastructure.config.yaml_topology_provider import (
     YamlTopologyProvider,
     resolve_topology_path,
+)
+from src.infrastructure.persistence.sqlite_user_topology_repository import (
+    SqliteUserTopologyRepository,
 )
 from src.presentation.api.config import Settings, get_settings
 
@@ -106,4 +111,45 @@ def get_topology_provider(
 def clear_agent_config_caches() -> None:
     """Clear cached YAML profile definitions (used in tests after rewriting fixtures)."""
     _load_cached_yaml_profiles.cache_clear()
+
+
+def resolve_effective_settings(
+    connection: HTTPConnection | None = None,
+    fallback: Settings | None = None,
+) -> Settings:
+    """Resolve app.state.settings when injected into create_app(), falling back to get_settings()."""
+    app_state = getattr(getattr(connection, "app", None), "state", None) if connection is not None else None
+    state_settings = getattr(app_state, "settings", None) if app_state is not None else None
+    return state_settings or fallback or get_settings()
+
+
+def resolve_fallback_review_rounds(settings: Settings) -> int | None:
+    """Return explicit REVIEW_ROUNDS override from Settings only when explicitly set."""
+    if "review_rounds" in settings.model_fields_set:
+        return settings.review_rounds
+    return None
+
+
+def get_user_topology_repository(
+    connection: HTTPConnection,
+    settings: Settings = Depends(get_settings),
+) -> IUserTopologyRepository:
+    """FastAPI dependency providing SqliteUserTopologyRepository bound to active app settings."""
+    cfg = resolve_effective_settings(connection, settings)
+    return SqliteUserTopologyRepository(db_path=str(cfg.sqlite_db_path))
+
+
+def get_user_topology_service(
+    connection: HTTPConnection,
+    settings: Settings = Depends(get_settings),
+) -> UserTopologyService:
+    """FastAPI dependency providing UserTopologyService wired with catalog, YAML base, and SQLite overrides."""
+    catalog = get_agent_catalog(connection, settings)
+    provider = get_topology_provider(connection, settings)
+    repo = get_user_topology_repository(connection, settings)
+    return UserTopologyService(
+        agent_catalog=catalog,
+        topology_provider=provider,
+        user_topology_repo=repo,
+    )
 

@@ -121,8 +121,15 @@ class SupervisorAgent:
         )
 
 
-def _determine_review_rounds(review_rounds: int | None) -> int:
-    return review_rounds if review_rounds is not None else 1
+def _determine_review_rounds(
+    review_rounds: int | None,
+    active_topology: DebateTopology | None = None,
+) -> int:
+    if review_rounds is not None:
+        return review_rounds
+    if active_topology is not None and active_topology.review_rounds is not None:
+        return active_topology.review_rounds
+    return 1
 
 
 def _resolve_supervisor_config(
@@ -698,7 +705,7 @@ async def _debate_generator(
         hitl_callback,
         triage,
         active_topology,
-        _determine_review_rounds(review_rounds),
+        _determine_review_rounds(review_rounds, active_topology),
         supervisor_provider,
         sup_model_name,
         sup_agent_name,

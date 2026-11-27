@@ -1010,6 +1010,89 @@ def test_debate_ws_forwards_injected_settings_and_image_generator_to_supervisor(
     assert opts.image_generator.get_provider_name() == "imagen"
 
 
+def test_debate_ws_uses_per_user_custom_topology_and_review_rounds(monkeypatch, tmp_path):
+    """WebSocket debate injects the authenticated user's custom topology and review_rounds without affecting other users."""
+    from unittest.mock import AsyncMock, MagicMock
+    from src.application.services.auth_service import AuthService
+    from src.application.services.llm_provider_registry import LLMProviderRegistry
+    from src.domain.entities.user import User
+    from src.domain.value_objects.user_topology_config import UserTopologyConfig
+    from src.infrastructure.llm.registry import SUPPORTED_LLM_PROVIDERS
+    from src.infrastructure.persistence.sqlite_user_topology_repository import (
+        SqliteUserTopologyRepository,
+    )
+    from src.presentation.api.app import create_app
+    from src.presentation.api.config import Settings
+    from src.presentation.api.ws import debate
+
+    captured_calls: list[dict] = []
+
+    async def _capturing_supervisor_run(**kwargs):
+        captured_calls.append(kwargs)
+        yield SupervisorEvent(type=EventType.DONE, role="Supervisor", content="ok")
+
+    monkeypatch.setattr(debate.SupervisorAgent, "run", _capturing_supervisor_run)
+
+    db_path = tmp_path / "ws_user_topo.db"
+    topo_repo = SqliteUserTopologyRepository(str(db_path))
+    topo_repo.save(
+        UserTopologyConfig(
+            user_id="usr-custom",
+            interpreters=(),
+            proposers=("Hestia", "Hefesto"),
+            reviewers=("Sphinx",),
+            evaluators=("Sphinx",),
+            implementers=("Dédalo",),
+            review_rounds=4,
+        )
+    )
+
+    mock_registry = LLMProviderRegistry()
+    for p_name in SUPPORTED_LLM_PROVIDERS:
+        mock_registry.register(p_name, MagicMock())
+
+    active_user_holder = [
+        User(id="usr-custom", username="alice", password_hash="h", is_admin=False, is_active=True)
+    ]
+    mock_auth = MagicMock(spec=AuthService)
+    mock_auth.is_initialized = AsyncMock(return_value=True)
+    mock_auth.validate_token = AsyncMock(side_effect=lambda _tok: active_user_holder[0])
+
+    settings = Settings(
+        sqlite_db_path=db_path,
+        auth_secret_key="test_secret_key_32_bytes_minimum_length",
+        review_rounds=1,
+    )
+    app = create_app(
+        settings=settings,
+        auth_service=mock_auth,
+        document_store=MagicMock(),
+        llm_registry=mock_registry,
+    )
+    client = TestClient(app, cookies={"atenea_session": "tok"})
+
+    # 1. Custom user gets their custom topology and review_rounds=4
+    with client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({"type": "start", "user_request": "Diseña un pipeline"})
+        assert websocket.receive_json()["type"] == EventType.DONE.value
+
+    assert captured_calls[0]["review_rounds"] == 4
+    assert captured_calls[0]["topology"].proposers == ("Hestia", "Hefesto")
+    assert captured_calls[0]["topology"].implementers == ("Dédalo",)
+    assert captured_calls[0]["topology"].supervisor == "Atenea"
+
+    # 2. Default user gets canonical topology.yaml and review_rounds=1
+    active_user_holder[0] = User(
+        id="usr-default", username="bob", password_hash="h", is_admin=False, is_active=True
+    )
+    with client.websocket_connect("/ws/debate") as websocket:
+        websocket.send_json({"type": "start", "user_request": "Diseña un monolito"})
+        assert websocket.receive_json()["type"] == EventType.DONE.value
+
+    assert captured_calls[1]["review_rounds"] == 1
+    assert "Hefesto" not in captured_calls[1]["topology"].proposers
+
+
 
 
 

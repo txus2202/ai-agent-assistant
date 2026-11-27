@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useDebateStore } from '../stores/debate'
 import { useAuthStore } from '../stores/auth'
-import { Volume2, VolumeX, History, Ear, EarOff, Sun, Moon, LogOut, Users, User as UserIcon, KeyRound, X, ChevronDown } from '@lucide/vue'
+import { Volume2, VolumeX, History, Network, Ear, EarOff, Sun, Moon, LogOut, Users, User as UserIcon, KeyRound, X, ChevronDown } from '@lucide/vue'
 import { useTheme } from '../composables/useTheme'
 import UserManagementModal from './UserManagementModal.vue'
 
@@ -326,8 +326,28 @@ onUnmounted(() => {
         aria-label="Debate History"
       >
         <History 
+          aria-hidden="true"
           class="w-[18px] h-[18px] transition-colors" 
           :class="route?.path === '/history' ? 'text-cyan-300' : 'text-slate-400 group-hover:text-cyan-300'"
+        />
+      </button>
+
+      <!-- Debate Topology Configuration Button -->
+      <button 
+        type="button"
+        @click="router.push('/topology')"
+        data-test="topology-btn"
+        class="h-[34px] min-h-[34px] w-[34px] min-w-[34px] rounded-lg border transition-all flex items-center justify-center cursor-pointer select-none group"
+        :class="route?.path === '/topology' 
+          ? 'border-cyan-400 bg-space-800 text-cyan-200 shadow-[0_0_12px_rgba(0,229,255,0.18)]' 
+          : 'border-cyan-800/40 bg-space-850 hover:bg-space-800 hover:text-cyan-200 hover:border-cyan-500/50 text-slate-400'"
+        title="Configuración de Topología"
+        aria-label="Configuración de Topología"
+      >
+        <Network 
+          aria-hidden="true"
+          class="w-[18px] h-[18px] transition-colors" 
+          :class="route?.path === '/topology' ? 'text-cyan-300' : 'text-slate-400 group-hover:text-cyan-300'"
         />
       </button>
     </div>

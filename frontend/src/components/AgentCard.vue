@@ -2,7 +2,7 @@
 import { computed, ref, useId } from 'vue'
 import { useConfigStore, type AgentConfig } from '../stores/config'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   role: string
   roleName?: string
   description?: string
@@ -19,7 +19,10 @@ const props = defineProps<{
   supportsHitl?: boolean
   canIngestDocuments?: boolean
   topologyRoles?: string[]
-}>()
+  variant?: 'default' | 'topology'
+}>(), {
+  variant: 'default'
+})
 
 const store = useConfigStore()
 
@@ -148,6 +151,7 @@ const cardStyle = computed(() => {
 const statusDotClass = computed(() => {
   if (props.state === 'ACTIVE') return 'animate-pulse'
   if (props.state === 'ERROR') return 'bg-rose-500 border border-rose-400'
+  if (props.variant === 'topology') return 'border border-white/20'
   return 'bg-slate-300 dark:bg-slate-700/80 border border-slate-400 dark:border-slate-600/50'
 })
 
@@ -157,6 +161,9 @@ const statusDotStyle = computed(() => {
   }
   if (props.state === 'ERROR') {
     return { backgroundColor: '#ef4444', boxShadow: '0 0 8px #ef4444' }
+  }
+  if (props.variant === 'topology') {
+    return { backgroundColor: agentColor.value }
   }
   return {}
 })
@@ -181,8 +188,9 @@ const statusTagText = computed(() => {
 <template>
   <div 
     data-test="card-container"
-    class="relative h-[230px] min-h-[230px] flex flex-col justify-between overflow-hidden rounded-xl bg-space-850/80 border border-space-700/80 p-3.5 transition-all duration-300"
+    class="relative flex flex-col justify-between overflow-hidden rounded-xl bg-space-850/80 border border-space-700/80 p-3.5 transition-all duration-300"
     :class="[
+      variant === 'topology' ? 'min-h-[132px]' : 'h-[230px] min-h-[230px]',
       isGlowActive ? (glowClass || '') : '',
       state === 'ERROR' ? 'border-rose-500/60 bg-rose-950/20' : ''
     ]"
@@ -208,8 +216,10 @@ const statusTagText = computed(() => {
           </h3>
         </div>
 
-        <!-- Status Tag -->
+        <!-- Custom Header Action (topology variant) or Status Tag -->
+        <slot v-if="variant === 'topology' && $slots['header-action']" name="header-action" />
         <span 
+          v-else
           class="shrink-0 text-[9px] font-mono px-2 py-0.5 rounded uppercase tracking-wider font-semibold border"
           :class="statusTagClass"
         >
@@ -246,18 +256,24 @@ const statusTagText = computed(() => {
         </span>
       </div>
 
-      <!-- Agent Mission Description (Clamped to max 3 lines for all agents) -->
+      <!-- Agent Mission Description (Full in topology variant; clamped to max 3 lines in compact sidebar) -->
       <p 
         data-test="agent-description" 
-        class="text-[11px] text-slate-400 font-sans leading-snug line-clamp-3 mt-1"
+        class="font-sans mt-1.5"
+        :class="variant === 'topology' ? 'text-xs text-slate-300 leading-relaxed' : 'text-[11px] text-slate-400 leading-snug line-clamp-3'"
         :title="agentDescription"
       >
         {{ agentDescription }}
       </p>
     </div>
 
-    <!-- Middle / Bottom Controls & Metrics -->
-    <div>
+    <!-- Topology Variant Custom Footer -->
+    <div v-if="variant === 'topology' && $slots.footer" class="pt-3 mt-3 border-t border-space-700/40">
+      <slot name="footer" />
+    </div>
+
+    <!-- Default Runtime Middle / Bottom Controls & Metrics -->
+    <div v-else-if="variant !== 'topology'">
       <!-- Progress Bar (Visible only when ACTIVE) -->
       <div v-if="state === 'ACTIVE'" data-test="progress-bar" class="h-1 w-full bg-space-800 rounded-full overflow-hidden mb-1">
         <div 

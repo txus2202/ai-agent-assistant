@@ -175,22 +175,58 @@ export async function setupMockBackend(
     })
   })
 
-  // Topology API
+  // Topology API (supports GET, PUT per-user override, DELETE reset to defaults)
+  const defaultTopology = {
+    version: '2.0',
+    project_name: 'A.T.E.N.E.A.',
+    project_description: 'Asistente Técnica y Evaluadora de Nuevas Estructuras y Arquitecturas',
+    supervisor: 'Atenea',
+    interpreters: ['Hermes'],
+    proposers: ['Ícaro', 'Hestia'],
+    reviewers: ['Sphinx'],
+    evaluators: ['Sphinx'],
+    implementers: ['Aracne', 'Hefesto'],
+    review_rounds: 1,
+    is_customized: false,
+    supervisor_agent: {
+      id: 'supervisor',
+      name: 'Atenea',
+      description: 'Orquestadora estratégica del consejo técnico.',
+      color_hex: '#f59e0b',
+    },
+    eligible_agents: [
+      { id: 'nl_interpreter', name: 'Hermes', description: 'Traduce peticiones en especificaciones técnicas.', color_hex: '#06b6d4', uses_rag: false, supports_hitl: true },
+      { id: 'innovator', name: 'Ícaro', description: 'Arquitecto innovador con soluciones cloud-native.', color_hex: '#22c55e', uses_rag: true, supports_hitl: true },
+      { id: 'senior_architect', name: 'Hestia', description: 'Arquitecta senior de estabilidad empresarial.', color_hex: '#00ff9d', uses_rag: true, supports_hitl: true },
+      { id: 'the_judge', name: 'Sphinx', description: 'Auditora implacable de vulnerabilidades y riesgos.', color_hex: '#ef4444', uses_rag: true, supports_hitl: true },
+      { id: 'devops_secops', name: 'Hefesto', description: 'DevSecOps que forja pipelines seguros y despliegues.', color_hex: '#ff8800', uses_rag: true, supports_hitl: true },
+      { id: 'diagrammer', name: 'Aracne', description: 'Tejedora maestra de diagramas Mermaid.', color_hex: '#b347ff', uses_rag: true, supports_hitl: true },
+      { id: 'dedalo', name: 'Dédalo', description: 'Desarrollador full-stack con Clean Code.', color_hex: '#cc7800', uses_rag: false, supports_hitl: true },
+    ],
+  }
+  let currentTopologyState = { ...defaultTopology }
+
   await page.route('*/**/api/config/topology*', async (route) => {
+    const method = route.request().method()
+    if (method === 'PUT') {
+      const body = route.request().postDataJSON() ?? {}
+      currentTopologyState = {
+        ...defaultTopology,
+        interpreters: body.interpreters ?? [],
+        proposers: body.proposers ?? [],
+        reviewers: body.reviewers ?? [],
+        evaluators: body.evaluators ?? [],
+        implementers: body.implementers ?? [],
+        review_rounds: typeof body.review_rounds === 'number' ? body.review_rounds : 1,
+        is_customized: true,
+      }
+    } else if (method === 'DELETE') {
+      currentTopologyState = { ...defaultTopology }
+    }
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        version: '2.0',
-        project_name: 'A.T.E.N.E.A.',
-        project_description: 'Asistente Técnica y Evaluadora de Nuevas Estructuras y Arquitecturas',
-        supervisor: 'Atenea',
-        interpreters: ['Hermes'],
-        proposers: ['Ícaro', 'Hestia'],
-        reviewers: ['Sphinx'],
-        evaluators: ['Sphinx'],
-        implementers: ['Aracne', 'Hefesto'],
-      }),
+      body: JSON.stringify(currentTopologyState),
     })
   })
 

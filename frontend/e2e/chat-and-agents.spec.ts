@@ -130,4 +130,48 @@ test.describe('Chat, Agents and HITL Interaction', () => {
     const scrollBtn = page.locator('[data-test="chat-scroll-toggle-btn"]')
     await expect(scrollBtn).toBeAttached()
   })
+
+  test('should navigate to /topology from header, customize per-user slots and review_rounds, and reset to defaults', async ({
+    page,
+  }) => {
+    await setupMockBackend(page)
+    await page.goto('/')
+
+    const topologyBtn = page.locator('[data-test="topology-btn"]')
+    await expect(topologyBtn).toBeVisible()
+    await topologyBtn.click()
+
+    await expect(page).toHaveURL(/\/topology$/)
+    await expect(page.locator('[data-test="topology-supervisor-card"]')).toContainText('Atenea')
+    await expect(page.locator('[data-test="topology-status-badge"]')).toContainText('Por Defecto')
+
+    // Remove Ícaro from proposers, then open specialist picker modal to add Hefesto
+    const proposersSection = page.locator('[data-test="phase-section-proposers"]')
+    await expect(proposersSection).toContainText('Ícaro')
+    await page.locator('[data-test="remove-proposers-innovator"]').click()
+    await expect(proposersSection).not.toContainText('Ícaro')
+
+    await page.locator('[data-test="open-picker-proposers"]').click()
+    const pickerDialog = page.locator('[data-test="specialist-picker-dialog"]')
+    await expect(pickerDialog).toBeVisible()
+    await expect(pickerDialog).toContainText('forja pipelines seguros')
+
+    await page.locator('[data-test="picker-toggle-devops_secops"]').click()
+    await page.locator('[data-test="picker-close-btn"]').click()
+    await expect(proposersSection).toContainText('Hefesto')
+
+    await page.locator('#topology-review-rounds').fill('3')
+
+    await page.locator('[data-test="topology-save-btn"]').click()
+    await expect(page.locator('[data-test="topology-status-badge"]')).toContainText('Personalizada')
+    await expect(page.locator('[data-test="topology-status-message"]')).toBeVisible()
+
+    // Reset back to canonical topology.yaml defaults
+    await page.locator('[data-test="topology-reset-btn"]').click()
+    await expect(page.locator('[data-test="topology-status-badge"]')).toContainText('Por Defecto')
+
+    // Navigate back to workspace
+    await page.locator('[data-test="topology-back-btn"]').click()
+    await expect(page).toHaveURL(/\/$/)
+  })
 })

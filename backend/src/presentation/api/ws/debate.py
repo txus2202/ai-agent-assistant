@@ -19,6 +19,7 @@ from src.application.agents.sub_agent_runner import SubAgentRunner
 from src.application.agents.supervisor_agent import DebateRunOptions, SupervisorAgent
 from src.application.services.learn_from_source import SourceType
 from src.application.services.llm_provider_registry import LLMProviderRegistry
+from src.application.services.user_topology_service import ResolvedUserTopology, UserTopologyService
 from src.domain.agents.sub_agent_profiles import SubAgentProfile
 from src.domain.agents.supervisor_events import EventType, HITLDecision, HITLResponse, SupervisorEvent
 from src.domain.ports.agent_catalog_repository import IAgentCatalogRepository, ITopologyProvider
@@ -34,8 +35,13 @@ from src.infrastructure.persistence.sqlite_agent_config_repository import (
     UserScopedAgentConfigRepository,
 )
 from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
+from src.infrastructure.persistence.sqlite_user_topology_repository import SqliteUserTopologyRepository
 from src.presentation.api.config import get_settings
-from src.presentation.api.dependencies.agents import get_agent_catalog, get_topology_provider
+from src.presentation.api.dependencies.agents import (
+    get_agent_catalog,
+    get_topology_provider,
+    resolve_fallback_review_rounds,
+)
 from src.presentation.api.dependencies.learning import get_source_extractors
 from src.presentation.api.dependencies.llm import get_image_generator, get_llm_registry
 from src.presentation.api.dependencies.rag import get_document_parser, get_document_store
@@ -98,6 +104,12 @@ class DebateWebSocketHandler:
         base_agent_repo = SqliteAgentConfigRepository(db_path, agent_catalog=self.agent_catalog)
         user_id_scope = self.authenticated_user.id if self.authenticated_user else None
         self.agent_config_repo = UserScopedAgentConfigRepository(base_agent_repo, user_id=user_id_scope)
+        self.user_topology_repo = SqliteUserTopologyRepository(db_path)
+        self.user_topology_service = UserTopologyService(
+            agent_catalog=self.agent_catalog,
+            topology_provider=self.topology_provider,
+            user_topology_repo=self.user_topology_repo,
+        )
         self.debate_repo = SqliteDebateRepository(db_path)
         self._document_store = document_store
         self.debate_record: DebateRecord | None = None
@@ -211,6 +223,13 @@ class DebateWebSocketHandler:
         await asyncio.to_thread(self._finalize_hitl_response_sync, hitl_resp)
         return hitl_resp
 
+    def _resolve_effective_topology_sync(self) -> ResolvedUserTopology:
+        user_id = self.authenticated_user.id if self.authenticated_user else None
+        return self.user_topology_service.resolve_for_user(
+            user_id,
+            fallback_review_rounds=resolve_fallback_review_rounds(self.settings),
+        )
+
     async def _handle_supervisor(
         self,
         user_request: str,
@@ -218,6 +237,7 @@ class DebateWebSocketHandler:
     ) -> None:
         try:
             doc_store = await self._get_doc_store()
+            resolved_topo = await asyncio.to_thread(self._resolve_effective_topology_sync)
             async for event in SupervisorAgent.run(
                 user_request=user_request,
                 document_store=doc_store,
@@ -225,7 +245,8 @@ class DebateWebSocketHandler:
                 llm_factory=self.llm_registry.get,
                 hitl_callback=self.hitl_callback,
                 chat_history=chat_history,
-                review_rounds=self.settings.review_rounds,
+                review_rounds=resolved_topo.review_rounds,
+                topology=resolved_topo.topology,
                 cancel_event=self._cancel_event,
                 agent_catalog=self.agent_catalog,
                 topology_provider=self.topology_provider,

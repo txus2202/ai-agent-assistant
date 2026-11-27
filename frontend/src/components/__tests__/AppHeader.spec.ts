@@ -21,6 +21,7 @@ vi.mock('@lucide/vue', () => ({
   Volume2: { template: '<svg data-test="volume-on"></svg>' },
   VolumeX: { template: '<svg data-test="volume-off"></svg>' },
   History: { template: '<svg data-test="history-icon"></svg>' },
+  Network: { template: '<svg data-test="network-icon"></svg>' },
   Ear: { template: '<svg data-test="ear-on"></svg>' },
   EarOff: { template: '<svg data-test="ear-off"></svg>' },
   Sun: { template: '<svg data-test="sun-icon"></svg>' },
@@ -104,6 +105,19 @@ describe('AppHeader.vue', () => {
     const historyButton = wrapper.find('button[title="Debate History"]')
     await historyButton.trigger('click')
     expect(pushMock).toHaveBeenCalledWith('/history')
+  })
+
+  it('renders topology button immediately to the right of history button and navigates to /topology', async () => {
+    const wrapper = mount(AppHeader)
+    const rightButtons = wrapper.find('[data-test="header-right-section"]').findAll('button')
+    const historyIdx = rightButtons.findIndex((b) => b.attributes('data-test') === 'history-btn')
+    const topologyIdx = rightButtons.findIndex((b) => b.attributes('data-test') === 'topology-btn')
+
+    expect(historyIdx).toBeGreaterThanOrEqual(0)
+    expect(topologyIdx).toBe(historyIdx + 1)
+
+    await rightButtons[topologyIdx]!.trigger('click')
+    expect(pushMock).toHaveBeenCalledWith('/topology')
   })
 
   it('toggles audio on button click', async () => {

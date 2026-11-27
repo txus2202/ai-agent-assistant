@@ -10,6 +10,7 @@ from src.domain.ports.user_repository import IUserRepository
 from src.infrastructure.persistence.sqlite_agent_config_repository import SqliteAgentConfigRepository
 from src.infrastructure.persistence.sqlite_debate_repository import SqliteDebateRepository
 from src.infrastructure.persistence.sqlite_user_repository import SQLiteUserRepository
+from src.infrastructure.persistence.sqlite_user_topology_repository import SqliteUserTopologyRepository
 from src.infrastructure.persistence.postgres_user_repository import PostgreSQLUserRepository
 from src.infrastructure.security.argon2_hasher import Argon2idPasswordHasher
 from src.infrastructure.security.jwt_token_service import JwtTokenService
@@ -73,6 +74,7 @@ def get_auth_service(connection: HTTPConnection) -> AuthService:
             delete_strategy=settings.auth_delete_strategy,
             debate_repo=get_debate_repository(settings),
             agent_config_repo=get_agent_config_repository(settings),
+            user_topology_repo=SqliteUserTopologyRepository(db_path=str(settings.sqlite_db_path)),
         )
     return _auth_service_instance
 

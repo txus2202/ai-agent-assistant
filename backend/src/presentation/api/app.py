@@ -91,6 +91,8 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
     db_path = str(settings.sqlite_db_path)
     SqliteAgentConfigRepository(db_path)
     SqliteDebateRepository(db_path)
+    from src.infrastructure.persistence.sqlite_user_topology_repository import SqliteUserTopologyRepository
+    SqliteUserTopologyRepository(db_path)
     from src.infrastructure.persistence.sqlite_user_repository import SQLiteUserRepository
     SQLiteUserRepository(db_path)
     from src.infrastructure.persistence.sqlite_model_cache_repository import SqliteModelCacheRepository

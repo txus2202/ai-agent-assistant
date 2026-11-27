@@ -8,7 +8,8 @@
 # - The agent assigned to 'supervisor' MUST have is_supervisor=True in its profile.
 # - All agent names must match a registered SubAgentProfile display_name.
 # - All other slots accept 0 to N agents (empty lists skip that phase).
-# - Review rounds are configured via the REVIEW_ROUNDS environment variable in .env.
+# - Default Phase 2 peer-review rounds are set via 'review_rounds' below (0..5),
+#   and may be overridden globally via REVIEW_ROUNDS in .env or per operator in the UI.
 # =============================================================================
 
 version: "2.0"
@@ -17,6 +18,9 @@ project_description: "Asistente Técnica y Evaluadora de Nuevas Estructuras y Ar
 
 # Main strategic orchestrator (strictly 1:1, must be an agent with is_supervisor=True)
 supervisor: "Atenea"
+
+# Default number of Phase 2 peer-review critique iterations (0..5)
+review_rounds: 1
 
 # Phase 1: Natural Language Requirement Formalization (0..N)
 interpreters:

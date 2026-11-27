@@ -27,6 +27,22 @@ export interface ProviderConfig {
   models: ModelConfig[]
 }
 
+export interface EligibleTopologyAgent {
+  id: string
+  name: string
+  description: string
+  color_hex: string
+  uses_rag?: boolean
+  supports_hitl?: boolean
+}
+
+export interface TopologySupervisorInfo {
+  id: string
+  name: string
+  description: string
+  color_hex: string
+}
+
 export interface DebateTopology {
   project_name?: string
   project_description?: string
@@ -36,6 +52,19 @@ export interface DebateTopology {
   reviewers: string[]
   evaluators: string[]
   implementers: string[]
+  review_rounds?: number
+  is_customized?: boolean
+  supervisor_agent?: TopologySupervisorInfo
+  eligible_agents?: EligibleTopologyAgent[]
+}
+
+export interface UpdateTopologyPayload {
+  interpreters: string[]
+  proposers: string[]
+  reviewers: string[]
+  evaluators: string[]
+  implementers: string[]
+  review_rounds: number
 }
 
 export interface ProvidersCatalogResult {
@@ -71,5 +100,12 @@ export const configService = {
   getTopology(): Promise<DebateTopology> {
     return httpClient.get<DebateTopology>('/api/config/topology')
   },
-}
 
+  updateTopology(payload: UpdateTopologyPayload): Promise<DebateTopology> {
+    return httpClient.put<DebateTopology>('/api/config/topology', payload)
+  },
+
+  resetTopology(): Promise<DebateTopology> {
+    return httpClient.delete<DebateTopology>('/api/config/topology')
+  },
+}

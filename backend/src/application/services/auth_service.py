@@ -20,6 +20,7 @@ from src.domain.ports.password_hasher import IPasswordHasher
 from src.domain.ports.token_service import ITokenService
 from src.domain.ports.debate_repository import IDebateRepository
 from src.domain.ports.agent_config_repository import IAgentConfigRepository
+from src.domain.ports.user_topology_repository import IUserTopologyRepository
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ class AuthService:
         delete_strategy: str = "soft",
         debate_repo: Optional[IDebateRepository] = None,
         agent_config_repo: Optional[IAgentConfigRepository] = None,
+        user_topology_repo: Optional[IUserTopologyRepository] = None,
     ) -> None:
         self._user_repo = user_repo
         self._hasher = hasher
@@ -49,6 +51,7 @@ class AuthService:
         self._delete_strategy = delete_strategy
         self._debate_repo = debate_repo
         self._agent_config_repo = agent_config_repo
+        self._user_topology_repo = user_topology_repo
         self._setup_lock = asyncio.Lock()
 
     async def is_initialized(self) -> bool:
@@ -322,7 +325,7 @@ class AuthService:
 
     def _purge_user_resources(self, user_id: str) -> None:
         safe_user_id = self._sanitize_for_log(user_id)
-        for repo in (self._debate_repo, self._agent_config_repo):
+        for repo in (self._debate_repo, self._agent_config_repo, self._user_topology_repo):
             if repo:
                 try:
                     repo.delete_by_user_id(user_id)

@@ -259,3 +259,15 @@
 3. **Atomic Distributed Probe Lock:** When the cache is missing or stale, pods attempt `acquire_probe_lock(provider)`. Only the single winning pod runs the background probe against OpenAI, eliminating duplicate billing tokens and the thundering herd problem. Replicas serve the shared catalog immediately.
 4. **Automated Invalidation on Deployments:** Cached entries store `app_version`. When a new release is rolled out with a version bump or when `GET /api/models?refresh=true` is requested, the shared table is invalidated cluster-wide.
 **Consequences:** Zero extra infrastructure dependencies (no Redis container required for single-node homelabs), guaranteed cluster consistency, and 100% protection against redundant OpenAI billing tokens in multi-pod environments.
+
+## ADR 026: Per-User Dynamic Debate Topology & Declarative Review Rounds
+
+**Date:** 2026-11-26
+**Context:** While ADR-022 and ADR-023 enabled per-operator customization of LLM providers, models, and RAG parameters (`rag_top_k`, `rag_min_score`), the multi-agent debate graph (`topology.yaml`) and Phase 2 peer-review iteration count (`REVIEW_ROUNDS`) remained static server-wide settings. Because `topology.yaml` is mounted read-only (`:ro`) in Docker deployments, operators needed a way to customize specialist phase assignments (`interpreters`, `proposers`, `reviewers`, `evaluators`, `implementers`) and `review_rounds` from the UI without mutating shared YAML files or impacting concurrent users.
+**Decision:**
+1. **Declarative `review_rounds`:** Add `review_rounds` to `topology.yaml` and `DebateTopology` (`0..5`), keeping `REVIEW_ROUNDS` in `.env` as an optional environment-level override when no user preference exists.
+2. **Immutable Supervisor Slot:** Keep the `supervisor` slot strictly governed by `topology.yaml` (`is_supervisor: true`), omitting it from `UserTopologyConfig` and rejecting modification attempts at the application boundary.
+3. **Hexagonal Persistence (`IUserTopologyRepository` & `SqliteUserTopologyRepository`):** Persist per-user phase sets and `review_rounds` in a `user_topologies` table keyed by `user_id`, integrated into `AuthService` hard-deletion cleanup.
+4. **Hierarchical Resolution & Silent Auto-Sanitization (`UserTopologyService`):** Resolve topology in priority order (`1. User DB Preference -> 2. topology.yaml / REVIEW_ROUNDS`), automatically stripping any agent identifier no longer present in `IAgentCatalogRepository` so catalog updates never break existing user profiles.
+5. **Dedicated Frontend Configuration View (`/topology`):** Expose a route and `TopologyView.vue` screen accessible from the top-right action bar in `AppHeader.vue` (immediately to the right of History), featuring concurrent set-based specialist toggles, a `0..5` review rounds control, and one-click reset (`DELETE /api/config/topology`).
+**Consequences:** Operators gain full runtime control over debate depth, token budget, and specialist participation with strict multi-tenant isolation, while `topology.yaml` remains the immutable single source of truth for system defaults.

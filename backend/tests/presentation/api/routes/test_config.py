@@ -207,4 +207,121 @@ def test_get_topology_unauthenticated():
     assert response.status_code == 200
     data = response.json()
     assert "project_name" in data
+    assert data["is_customized"] is False
+    assert isinstance(data["review_rounds"], int)
+
+
+def test_put_and_delete_topology_require_authentication():
+    raw_app = create_app()
+    raw_client = TestClient(raw_app)
+    assert raw_client.put("/config/topology", json={"proposers": ["Hestia"], "review_rounds": 1}).status_code == 401
+    assert raw_client.delete("/config/topology").status_code == 401
+
+
+def test_per_user_topology_crud_isolation_and_reset(tmp_path):
+    from src.presentation.api.config import Settings
+
+    settings = Settings(
+        sqlite_db_path=tmp_path / "topology_api.db",
+        auth_secret_key="test_secret_key_32_bytes_minimum_length",
+        review_rounds=2,
+    )
+    app = create_app(settings=settings)
+    user1 = User(id="topo-u1", username="alice", password_hash="h", is_admin=False, is_active=True)
+    user2 = User(id="topo-u2", username="bob", password_hash="h", is_admin=False, is_active=True)
+
+    app.dependency_overrides[get_current_user] = lambda: user1
+    client = TestClient(app)
+
+    # 1. First-time access shows canonical topology.yaml + REVIEW_ROUNDS (2)
+    initial = client.get("/config/topology").json()
+    assert initial["is_customized"] is False
+    assert initial["review_rounds"] == 2
+    assert initial["supervisor"] == "Atenea"
+    assert len(initial["eligible_agents"]) >= 5
+    eligible_ids = {a["id"] for a in initial["eligible_agents"]}
+    assert "supervisor" not in eligible_ids
+    assert "learning" not in eligible_ids
+
+    # 2. User 1 moves Hefesto into proposers and sets review_rounds = 4
+    put_res = client.put(
+        "/config/topology",
+        json={
+            "interpreters": [],
+            "proposers": ["Hestia", "devops_secops"],
+            "reviewers": ["Sphinx"],
+            "evaluators": ["Sphinx"],
+            "implementers": ["Aracne"],
+            "review_rounds": 4,
+        },
+    )
+    assert put_res.status_code == 200
+    updated = put_res.json()
+    assert updated["is_customized"] is True
+    assert updated["review_rounds"] == 4
+    assert updated["supervisor"] == "Atenea"
+    assert updated["interpreters"] == []
+    assert updated["proposers"] == ["Hestia", "Hefesto"]
+    assert updated["implementers"] == ["Aracne"]
+
+    # Verify /config/agents reflects User 1's new topology_roles for Hefesto
+    agents_u1 = client.get("/config/agents").json()
+    hefesto_u1 = next(a for a in agents_u1 if a["id"] == "devops_secops")
+    assert "proposer" in hefesto_u1["topology_roles"]
+    assert "implementer" not in hefesto_u1["topology_roles"]
+
+    # 3. Switch to User 2: completely isolated, still sees defaults
+    app.dependency_overrides[get_current_user] = lambda: user2
+    u2_top = client.get("/config/topology").json()
+    assert u2_top["is_customized"] is False
+    assert u2_top["review_rounds"] == 2
+    assert "Hefesto" not in u2_top["proposers"]
+
+    # 4. User 1 resets to defaults -> returns to topology.yaml + REVIEW_ROUNDS
+    app.dependency_overrides[get_current_user] = lambda: user1
+    del_res = client.delete("/config/topology")
+    assert del_res.status_code == 200
+    restored = del_res.json()
+    assert restored["is_customized"] is False
+    assert restored["review_rounds"] == 2
+    assert restored["proposers"] == initial["proposers"]
+
+
+def test_put_topology_rejects_supervisor_modification_or_empty_phases(tmp_path):
+    from src.presentation.api.config import Settings
+
+    settings = Settings(
+        sqlite_db_path=tmp_path / "topology_invalid.db",
+        auth_secret_key="test_secret_key_32_bytes_minimum_length",
+    )
+    app = create_app(settings=settings)
+    user1 = User(id="topo-u1", username="alice", password_hash="h", is_admin=False, is_active=True)
+    app.dependency_overrides[get_current_user] = lambda: user1
+    client = TestClient(app)
+
+    # Attempt to customize supervisor
+    res_sup = client.put(
+        "/config/topology",
+        json={
+            "supervisor": "Hestia",
+            "proposers": ["Hestia"],
+            "review_rounds": 1,
+        },
+    )
+    assert res_sup.status_code == 422
+
+    # Attempt to save all execution phases empty
+    res_empty = client.put(
+        "/config/topology",
+        json={
+            "interpreters": [],
+            "proposers": [],
+            "reviewers": ["Sphinx"],
+            "evaluators": [],
+            "implementers": [],
+            "review_rounds": 1,
+        },
+    )
+    assert res_empty.status_code == 422
+
 

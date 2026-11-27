@@ -34,17 +34,26 @@ class DebateTopology:
     implementers: tuple[str, ...] = ()
     project_name: str = "A.T.E.N.E.A."
     project_description: str = "Asistente Técnica y Evaluadora de Nuevas Estructuras y Arquitecturas"
+    review_rounds: int | None = None
 
     def validate(
         self,
         catalog: IAgentCatalogRepository | Sequence[SubAgentProfile],
     ) -> None:
         """
-        Validate that all agents exist in the provided catalog and supervisor has is_supervisor=True.
+        Validate that all agents exist in the provided catalog, supervisor has is_supervisor=True,
+        and review_rounds (when set) stays within [0, 5].
 
         Raises KeyError if an agent cannot be resolved.
         Raises ValueError if rules are violated (e.g. non-supervisor in supervisor slot).
         """
+        if self.review_rounds is not None and (
+            isinstance(self.review_rounds, bool) or not (0 <= self.review_rounds <= 5)
+        ):
+            raise ValueError(
+                f"Invalid review_rounds={self.review_rounds!r}; must be an integer between 0 and 5."
+            )
+
         resolve: Callable[[str], SubAgentProfile]
         if isinstance(catalog, Sequence):
             seq_catalog = catalog

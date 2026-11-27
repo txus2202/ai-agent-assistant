@@ -72,6 +72,19 @@ def load_topology(
     if "supervisor" not in data or data["supervisor"] is None:
         raise ValueError("Missing required topology slot in topology.yaml: 'supervisor'")
 
+    raw_rounds = data.get("review_rounds")
+    parsed_rounds: int | None = None
+    if raw_rounds is not None:
+        if isinstance(raw_rounds, bool) or not isinstance(raw_rounds, int):
+            try:
+                parsed_rounds = int(raw_rounds)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Invalid review_rounds in topology.yaml: {raw_rounds!r}") from exc
+            if isinstance(raw_rounds, bool):
+                raise ValueError(f"Invalid boolean review_rounds in topology.yaml: {raw_rounds!r}")
+        else:
+            parsed_rounds = raw_rounds
+
     top = DebateTopology(
         supervisor=str(data["supervisor"]),
         interpreters=tuple(_to_string_list(data.get("interpreters"))),
@@ -86,6 +99,7 @@ def load_topology(
                 "Asistente Técnica y Evaluadora de Nuevas Estructuras y Arquitecturas",
             )
         ),
+        review_rounds=parsed_rounds,
     )
     catalog_for_validation = agent_catalog if agent_catalog is not None else YamlAgentCatalogRepository()
     top.validate(catalog_for_validation)

@@ -74,4 +74,28 @@ describe('usePwaInstall composable', () => {
     expect(wrapper.vm.canInstall).toBe(false)
     wrapper.unmount()
   })
+
+  it('handles dismissed beforeinstallprompt outcome and appinstalled browser event', async () => {
+    const wrapper = mount(createHarness())
+
+    const dismissedEvent = new Event('beforeinstallprompt', { cancelable: true }) as Event & {
+      prompt: () => Promise<void>
+      userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
+    }
+    dismissedEvent.prompt = vi.fn().mockResolvedValue(undefined)
+    dismissedEvent.userChoice = Promise.resolve({ outcome: 'dismissed' })
+
+    window.dispatchEvent(dismissedEvent)
+    await wrapper.vm.installApp()
+    expect(wrapper.vm.installStatus).toBe('Instalación cancelada.')
+    expect(wrapper.vm.canInstall).toBe(false)
+
+    // Re-offer and complete via native appinstalled event
+    window.dispatchEvent(dismissedEvent)
+    expect(wrapper.vm.canInstall).toBe(true)
+    window.dispatchEvent(new Event('appinstalled'))
+    expect(wrapper.vm.canInstall).toBe(false)
+    expect(wrapper.vm.installStatus).toContain('instalada')
+    wrapper.unmount()
+  })
 })

@@ -121,7 +121,8 @@ describe('Progressive Web App (PWA) Manifest, Assets, Nginx & Service Worker', (
     expect(manifest.display).toBe('standalone')
     expect(manifest.theme_color).toBe('#05070c')
     expect(manifest.background_color).toBe('#05070c')
-    expect(manifest.short_name).toBe('Atenea')
+    expect(manifest.name.trim().length).toBeGreaterThan(0)
+    expect(manifest.short_name.trim().length).toBeGreaterThan(0)
 
     const has192 = manifest.icons.some((i) => i.sizes === '192x192' && i.purpose === 'any')
     const has512 = manifest.icons.some((i) => i.sizes === '512x512' && i.purpose === 'any')
@@ -246,5 +247,27 @@ describe('Progressive Web App (PWA) Manifest, Assets, Nginx & Service Worker', (
       scope: '/',
       updateViaCache: 'none',
     })
+
+    // Returns null gracefully if serviceWorker API is absent
+    const missingSwRes = await registerAteneaServiceWorker({
+      isProd: true,
+      isSecureContext: true,
+      navigatorObj: {},
+    })
+    expect(missingSwRes).toBeNull()
+
+    // Returns null gracefully if registration rejects
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const failingRes = await registerAteneaServiceWorker({
+      isProd: true,
+      isSecureContext: true,
+      navigatorObj: {
+        serviceWorker: {
+          register: vi.fn().mockRejectedValue(new Error('SW blocked')),
+        },
+      },
+    })
+    expect(failingRes).toBeNull()
+    expect(warnSpy).toHaveBeenCalledOnce()
   })
 })

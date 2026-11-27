@@ -300,7 +300,12 @@ def get_topology(
     return _serialize_topology_response(resolved, agent_catalog, user_topology_service)
 
 
-@router.put("/topology")
+@router.put(
+    "/topology",
+    responses={
+        422: {"description": "Invalid debate topology or review_rounds configuration"},
+    },
+)
 def update_topology(
     payload: TopologyUpdatePayload,
     current_user: Annotated[User, Depends(get_current_user)],

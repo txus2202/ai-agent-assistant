@@ -133,6 +133,14 @@ const filteredPickerAgents = computed<EligibleTopologyAgent[]>(() => {
 
 const rangeProgressPercent = computed(() => `${Math.round((reviewRounds.value / 5) * 100)}%`)
 
+const reviewRoundsLabel = computed(() => {
+  if (reviewRounds.value === 0) {
+    return '0 (Sin revisión cruzada)'
+  }
+  const unit = reviewRounds.value === 1 ? 'ronda' : 'rondas'
+  return `${reviewRounds.value} ${unit}`
+})
+
 const activeExecutionCount = computed(() => {
   return (
     selectedBySlot.value.interpreters.length +
@@ -172,13 +180,18 @@ function buildFallbackCatalog(): EligibleTopologyAgent[] {
     }))
 }
 
+function resolveEffectiveCatalog(snapshot: DebateTopology): EligibleTopologyAgent[] {
+  if (snapshot.eligible_agents && snapshot.eligible_agents.length > 0) {
+    return snapshot.eligible_agents
+  }
+  if (eligibleAgents.value.length > 0) {
+    return eligibleAgents.value
+  }
+  return buildFallbackCatalog()
+}
+
 function applyTopologySnapshot(snapshot: DebateTopology) {
-  const catalog =
-    snapshot.eligible_agents && snapshot.eligible_agents.length > 0
-      ? snapshot.eligible_agents
-      : eligibleAgents.value.length > 0
-        ? eligibleAgents.value
-        : buildFallbackCatalog()
+  const catalog = resolveEffectiveCatalog(snapshot)
 
   eligibleAgents.value = catalog
   supervisorName.value = snapshot.supervisor_agent?.name || snapshot.supervisor || 'Atenea'
@@ -294,6 +307,12 @@ function handleDialogBackdropClick(event: MouseEvent) {
     rect.left <= event.clientX &&
     event.clientX <= rect.left + rect.width
   if (!isDialogContent) {
+    closePicker()
+  }
+}
+
+function handleDialogKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
     closePicker()
   }
 }
@@ -471,16 +490,14 @@ onMounted(() => {
           </div>
 
           <!-- Accessible Polite Status Confirmation -->
-          <div
+          <output
             v-if="statusMessage"
-            role="status"
-            aria-live="polite"
             data-test="topology-status-message"
-            class="p-3.5 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-200 text-xs font-mono flex items-start gap-2.5"
+            class="w-full p-3.5 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-200 text-xs font-mono flex items-start gap-2.5"
           >
             <CheckCircle2 aria-hidden="true" class="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
             <span>{{ statusMessage }}</span>
-          </div>
+          </output>
 
           <!-- Top Row: Immutable Supervisor + Review Rounds -->
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -536,7 +553,7 @@ onMounted(() => {
                   data-test="review-rounds-value"
                   class="px-2.5 py-1 rounded-md bg-cyan-950/70 border border-cyan-500/40 text-cyan-200 text-xs font-mono font-bold"
                 >
-                  {{ reviewRounds === 0 ? '0 (Sin revisión cruzada)' : `${reviewRounds} ${reviewRounds === 1 ? 'ronda' : 'rondas'}` }}
+                  {{ reviewRoundsLabel }}
                 </span>
               </div>
 
@@ -719,6 +736,7 @@ onMounted(() => {
       class="picker-dialog p-0 rounded-2xl bg-space-900 border border-cyan-500/40 text-slate-200 shadow-[0_0_50px_rgba(0,229,255,0.2)] w-[min(94vw,64rem)] max-h-[88dvh] m-auto overflow-hidden"
       @close="handleDialogNativeClose"
       @click="handleDialogBackdropClick"
+      @keydown="handleDialogKeydown"
     >
       <div v-if="activePickerMeta" class="flex flex-col max-h-[88dvh]">
         <!-- Dialog Header -->

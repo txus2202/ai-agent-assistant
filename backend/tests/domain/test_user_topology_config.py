@@ -59,11 +59,13 @@ def test_debate_topology_validates_review_rounds_bounds():
     valid_five = DebateTopology(supervisor="Boss", proposers=("MakerA",), review_rounds=5)
     valid_five.validate(catalog)
 
+    invalid_negative = DebateTopology(supervisor="Boss", proposers=("MakerA",), review_rounds=-1)
     with pytest.raises(ValueError, match="review_rounds"):
-        DebateTopology(supervisor="Boss", proposers=("MakerA",), review_rounds=-1).validate(catalog)
+        invalid_negative.validate(catalog)
 
+    invalid_above_max = DebateTopology(supervisor="Boss", proposers=("MakerA",), review_rounds=6)
     with pytest.raises(ValueError, match="review_rounds"):
-        DebateTopology(supervisor="Boss", proposers=("MakerA",), review_rounds=6).validate(catalog)
+        invalid_above_max.validate(catalog)
 
 
 def test_user_topology_repository_protocol_is_runtime_checkable():

@@ -2,13 +2,13 @@
 
 <div align="center">
 
-[![Python 3.14](https://img.shields.io/badge/Python-3.14-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B%20%7C%203.14-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.142+-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Vue 3](https://img.shields.io/badge/Vue.js-3.5+-4FC08D?style=for-the-badge&logo=vuedotjs&logoColor=white)](https://vuejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9+-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Playwright](<https://img.shields.io/badge/Playwright-E2E%20Tests%20(38%2F38)-2EAD33?style=for-the-badge&logo=playwright&logoColor=white>)](https://playwright.dev/)
-[![Vitest](<https://img.shields.io/badge/Vitest-Unit%20Tests%20(380%2F380)-FCC72B?style=for-the-badge&logo=vitest&logoColor=black>)](https://vitest.dev/)
-[![Pytest](<https://img.shields.io/badge/Pytest-Backend%20Tests%20(315%2F315)-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white>)](https://pytest.org/)
+[![Playwright](<https://img.shields.io/badge/Playwright-E2E%20Tests%20(40%2F40)-2EAD33?style=for-the-badge&logo=playwright&logoColor=white>)](https://playwright.dev/)
+[![Vitest](<https://img.shields.io/badge/Vitest-Unit%20Tests%20(459%2F459)-FCC72B?style=for-the-badge&logo=vitest&logoColor=black>)](https://vitest.dev/)
+[![Pytest](<https://img.shields.io/badge/Pytest-Backend%20Tests%20(631%2F631)-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white>)](https://pytest.org/)
 [![Docker](https://img.shields.io/badge/Docker-Isolated%20Deployment-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
 [![Clean Architecture](https://img.shields.io/badge/Architecture-Clean%20%2F%20Hexagonal-blueviolet?style=for-the-badge)](https://blog.cleancoder.com/)
 
@@ -17,6 +17,23 @@ _Proyecto de Trabajo Fin de Máster (TFM) — Máster en Desarrollo con Intelige
 **Autor:** Jesús Jiménez Vaquero ([@txus2202](https://github.com/txus2202))
 
 </div>
+
+---
+
+## 📑 Índice de Contenidos
+
+1. [Visión General: La Dualidad del Sistema](#-1-visión-general-la-dualidad-del-sistema)
+2. [ATENEA: El Consejo Virtual de Arquitectura de Software](#️-2-atenea-el-consejo-virtual-de-arquitectura-de-software)
+3. [Topología de Deliberación Colegiada (`topology.yaml`)](#-3-topología-de-deliberación-colegiada-topologyyaml)
+4. [Funcionalidades Principales: Gobernanza HITL, Voz y Personalización](#-4-funcionalidades-principales-gobernanza-hitl-voz-y-personalización)
+5. [Extensibilidad Declarativa y Modularidad de Herramientas](#-5-extensibilidad-declarativa-y-modularidad-de-herramientas)
+6. [Stack Tecnológico](#️-6-stack-tecnológico)
+7. [Estructura del Proyecto y Arquitectura Limpia](#-7-estructura-del-proyecto-y-arquitectura-limpia)
+8. [Seguridad, Gobernanza RBAC y Enfoque Local-First](#️-8-seguridad-gobernanza-rbac-y-enfoque-local-first)
+9. [Observabilidad y Métricas en Tiempo Real (Prometheus & Langfuse)](#-9-observabilidad-y-métricas-en-tiempo-real-prometheus--langfuse)
+10. [Arnés de Pruebas y Aseguramiento de la Calidad](#-10-arnés-de-pruebas-y-aseguramiento-de-la-calidad)
+11. [Guía de Instalación, Configuración y Ejecución](#-11-guía-de-instalación-configuración-y-ejecución)
+12. [Licencia y Créditos Académicos](#️-12-licencia-y-créditos-académicos)
 
 ---
 
@@ -66,12 +83,12 @@ Para resolver este problema, la solución se estructura en dos niveles conceptua
 ```
 
 1. **`ai-agent-assistant` (El Framework)**:  
-   Es el **motor meta-agéntico agnóstico al dominio**. Proporciona el ciclo de vida de los agentes, la gestión asíncrona de tareas, la ingesta vectorial RAG, el bus de eventos en streaming por WebSocket, los controles interactivos de supervisión humana (HITL), la pila de modelos de voz locales y el arnés de pruebas automatizado. El motor está completamente desacoplado del dominio mediante el test estático `test_decoupling_guard.py` (garantizando cero nombres de agentes acoplados en el código).
+   Es el **motor meta-agéntico agnóstico al dominio**. Proporciona el ciclo de vida de los agentes, la gestión asíncrona de tareas, la ingesta vectorial RAG, el bus de eventos en streaming por WebSocket, los controles interactivos de supervisión humana (HITL), la personalización multi-usuario en caliente, la pila de modelos de voz locales y el arnés de pruebas automatizado. El motor está completamente desacoplado del dominio mediante el test estático [`test_decoupling_guard.py`](backend/tests/application/agents/test_decoupling_guard.py) (garantizando cero nombres de agentes acoplados en el código).
 
 2. **`ATENEA` (La Aplicación Especializada)**:  
    Es la **instanciación y caso de estudio tecnológico de referencia**. Mediante los archivos declarativos [`agents.yaml`](agents.yaml) y [`topology.yaml`](topology.yaml), configura un equipo virtual completo de ingeniería y arquitectura de software que colabora en deliberación colegiada para diseñar, auditar y documentar sistemas de información de alta complejidad.
 
-> [NOTA]
+> [!NOTE]
 > Para profundizar en el marco teórico de la separación entre el Framework y la Aplicación, consulta el documento de arquitectura:  
 > 📄 [obsidian_vault/docs/architecture/ai_agent_assistant_vs_atenea_concept.md](obsidian_vault/docs/architecture/ai_agent_assistant_vs_atenea_concept.md)
 
@@ -133,7 +150,9 @@ flowchart TD
 
 ---
 
-## 🎯 4. Gobernanza Human-In-The-Loop (HITL) y Control por Voz
+## 🎯 4. Funcionalidades Principales: Gobernanza HITL, Voz y Personalización
+
+### 4.1 Gobernanza Human-In-The-Loop (HITL) y Control por Voz
 
 El operador humano mantiene la gobernanza total del proceso deliberativo en cada punto de control, tanto desde la interfaz gráfica reactiva como mediante comandos de voz contextuales en tiempo real:
 
@@ -151,6 +170,15 @@ El operador humano mantiene la gobernanza total del proceso deliberativo en cada
 - **Comando Universal de Silencio**: Disponible en todo momento diciendo _"silencio"_, _"silenciar"_, _"calla"_ o _"cállate"_.
 - **Selección Contextual de Agentes**: Al pronunciar el nombre de un especialista durante un checkpoint HITL (p. ej. _"Hestia"_), el sistema lo conmuta en la lista de destinatarios para la acción de desvío.
 
+### 4.2 Personalización Multi-Usuario, Memoria RAG en Caliente e Historial
+
+Además de la deliberación base definida por el administrador del sistema, cada operador autenticado dispone de capacidades avanzadas de personalización aisladas por usuario (`user_id`):
+
+- **Topología de Debate Personalizable por Usuario (`/topology`)**: Permite a cada usuario adaptar desde la interfaz gráfica ([`TopologyView.vue`](frontend/src/views/TopologyView.vue)) qué especialistas intervienen en cada fase (`interpreters`, `proposers`, `reviewers`, `evaluators`, `implementers`) y cuántas rondas iterativas de crítica cruzada (`review_rounds` de `0` a `5`) se ejecutan antes del checkpoint humano. Mantiene el rol de **Supervisor inmutable**, aplica auto-saneado automático si un agente se retira de `agents.yaml` y ofrece restablecimiento inmediato a los valores globales de `topology.yaml`.
+- **Selección Individual de Modelos LLM y Sonda Dinámica**: Cada agente puede asignarse en caliente a un proveedor y modelo distinto (Gemini, OpenAI, Anthropic u Ollama local). Una sonda verificadora consulta los modelos realmente soportados por cada API key y los almacena en una caché SQLite compartida para minimizar latencias y llamadas redundantes.
+- **Ajuste de Hiperparámetros RAG en Tiempo Real**: Control directo mediante deslizadores en cada tarjeta de agente sobre el volumen de fragmentos recuperados (`Chunks` / `RAG_TOP_K`) y el umbral mínimo de similitud coseno (`Proximidad` / `RAG_MIN_SCORE`), sin reiniciar el backend.
+- **Aprendizaje Continuo Multimodal y Memoria Persistente**: Ingesta bajo demanda de documentos PDF, páginas web (URLs) y notas Markdown hacia ChromaDB y `obsidian_vault/learned/`, sumada a un **Historial Reactivo de Debates (`/history`)** aislado por cuenta que permite retomar, inspeccionar o auditar deliberaciones previas y sus artefactos generados.
+
 ---
 
 ## 🧩 5. Extensibilidad Declarativa y Modularidad de Herramientas
@@ -159,10 +187,10 @@ La arquitectura del motor **`ai-agent-assistant`** está diseñada bajo el princ
 
 ### 5.1 Definición Declarativa de Asistentes y Topologías
 
-Para crear un nuevo asistente o modificar el comportamiento de Atenea, solo es necesario parametrizar dos archivos en la raíz:
+Para crear un nuevo asistente o modificar el comportamiento base de Atenea, solo es necesario parametrizar dos archivos en la raíz:
 
-1. **[`agents.yaml`](agents.yaml)**: Catálogo de especialistas, sus system prompts, herramientas asignadas, flags RAG y alias fonéticos para el motor de voz.
-2. **[`topology.yaml`](topology.yaml)**: Grafo de deliberación que asigna qué agentes asumen los roles de `supervisor`, `interpreters`, `proposers`, `reviewers`, `evaluators` e `implementers`, así como las rondas de revisión previas a cada checkpoint humano.
+1. **[`agents.yaml`](agents.yaml)**: Catálogo de especialistas, sus system prompts, herramientas asignadas, proveedores/modelos por defecto, flags RAG y alias fonéticos para el motor de voz.
+2. **[`topology.yaml`](topology.yaml)**: Grafo de deliberación por defecto que asigna qué agentes asumen los roles de `supervisor`, `interpreters`, `proposers`, `reviewers`, `evaluators` e `implementers`, así como el número declarativo de `review_rounds`.
 
 El test automatizado estático [`test_decoupling_guard.py`](backend/tests/application/agents/test_decoupling_guard.py) audita continuamente el repositorio para asegurar que ningún nombre de agente de Atenea se filtre o quede acoplado en las capas internas del framework.
 
@@ -180,19 +208,104 @@ A diferencia de los asistentes conversacionales estándar que devuelven bloques 
 
 ---
 
-## 🛡️ 6. Seguridad y Enfoque Local-First
+## 🛠️ 6. Stack Tecnológico
 
-- 🔒 **Soberanía y Privacidad Total**: El conocimiento empresarial almacenado en el Obsidian Vault se indexa exclusivamente en local mediante **ChromaDB**. Ningún fragmento de documentación interna se comparte entre usuarios no autorizados.
-- 🗣️ **Modelos de Audio Locales**:
-  - **Faster-Whisper**: Transcripción de voz (STT) ejecutada en local.
-  - **Kokoro ONNX**: Síntesis de voz neural (TTS) de baja latencia sin consumo de APIs externas.
-  - **Vosk**: Reconocimiento continuo de palabras de activación (_wake words_) en segundo plano.
-- 🛡️ **Aislamiento Multi-Tenant y RBAC**: Sistema de autenticación con tokens de sesión seguros, roles diferenciados (`admin` y `user`), contraseñas hasheadas con `Argon2id` / `bcrypt` y repositorios SQLite aislados por `user_id`.
-- 🌐 **Protección Anti-Indexación**: Triple barrera (`noindex, nofollow` en HTML, denegación universal en `robots.txt` y cabecera HTTP `X-Robots-Tag` en Nginx) para evitar cualquier rastreo en internet al publicarlo en VPS o entornos remotos.
+El sistema combina tecnologías modernas de alto rendimiento priorizando tipado estricto, ejecución asíncrona no bloqueante y soberanía de datos en local:
+
+| Capa Arquitectónica | Tecnologías y Librerías Clave | Rol en el Sistema |
+| :--- | :--- | :--- |
+| **Backend & Core** | Python 3.12+ (compatible hasta 3.14), FastAPI, Uvicorn, Pydantic v2, `uv` | API REST asíncrona, canales WebSocket full-duplex, validación estricta de esquemas y gestión determinista de dependencias (`uv.lock`). |
+| **IA & Multi-LLM** | Motor _Supervisor Pattern_ propio (`asyncio`), `google-genai` (Gemini / Vertex AI), `openai`, `anthropic`, Ollama / OpenAI-compatible, Google Imagen | Orquestación dialéctica paralela sin acoplamiento a frameworks pesados, abstracción multi-proveedor en caliente y generación visual. |
+| **Memoria Vectorial & RAG** | ChromaDB (embebido o servidor), `sentence-transformers` (`all-MiniLM-L6-v2`), PyMuPDF, BeautifulSoup4, Obsidian Vault | Embeddings locales en CPU (coste cero de API), búsqueda semántica filtrada por metadatos e ingesta multimodal (Markdown, PDF, Web). |
+| **Audio Multimodal Local** | `faster-whisper` (STT), `kokoro-onnx` (TTS neural), `vosk` (_Wake-Word_) | Transcripción de voz, síntesis neural de baja latencia y escucha continua de comandos HITL 100% en local. |
+| **Frontend & Visualización** | Vue 3.5 (Composition API), TypeScript, Vite 8, Pinia 4, Vue Router 5, Tailwind CSS 4, Mermaid 12, PptxGenJS, DOMPurify | SPA reactiva en tiempo real, gestión centralizada de estado, renderizado de diagramas SVG interactivos, exportación nativa a `.pptx` y sanitización XSS. |
+| **Persistencia & Seguridad** | SQLite (modo WAL) / PostgreSQL, `argon2-cffi` (Argon2id), `PyJWT` (`HMAC-SHA256`), Telegram Bot API | Almacenamiento relacional multi-tenant aislado por `user_id`, sesiones seguras en cookies `HttpOnly` y alertas de auditoría en tiempo real. |
+| **Observabilidad & DevOps** | Langfuse v3 (ClickHouse, MinIO, Redis, Postgres), Prometheus (`prometheus-client`), Netdata, Docker Compose, GitHub Actions | Trazabilidad completa de árboles de debate/costes LLM, telemetría operacional OpenMetrics, despliegue aislado por perfiles y CI/CD. |
+| **Calidad & Testing** | Pytest (`pytest-asyncio`), Vitest, Playwright, Ruff, Mypy, Oxlint, ESLint | Arnés hermético de 1.130 pruebas automatizadas (unitarias, integración y E2E multi-dispositivo) y análisis estático estricto. |
 
 ---
 
-## 📊 7. Observabilidad y Métricas en Tiempo Real (Prometheus & Langfuse)
+## 📂 7. Estructura del Proyecto y Arquitectura Limpia
+
+El monorepo sigue de forma estricta los principios de **Clean / Hexagonal Architecture (Ports & Adapters)**. La regla de dependencia apunta siempre hacia el interior (`Presentation / Infrastructure ──▶ Application ──▶ Domain`), auditada automáticamente mediante análisis AST en cada ejecución de pruebas:
+
+```text
+ai-agent-assistant/
+├── agents.yaml                  # Catálogo declarativo de agentes (prompts, modelos, RAG, fonética)
+├── topology.yaml                # Topología dialéctica por defecto y rondas de revisión (DAG)
+├── docker-compose.yml           # Orquestación multi-perfil (local, scale, observability, full)
+├── .env.example                 # Plantilla documentada de variables de entorno
+│
+├── backend/                     # Motor Meta-Agéntico en Python (Clean Architecture)
+│   ├── pyproject.toml           # Definición del proyecto, linters (Ruff/Mypy) y dependencias
+│   ├── uv.lock                  # Lockfile determinista de dependencias Python
+│   ├── voices/                  # Pesos locales de síntesis neural Kokoro ONNX (descargados)
+│   ├── src/
+│   │   ├── domain/              # Capa de Dominio Puro (0 dependencias externas)
+│   │   │   ├── entities/        # Entidades de negocio (Agent, Task, User, DebateSession)
+│   │   │   ├── value_objects/   # Objetos de valor inmutables (SearchFilter, UserTopologyConfig)
+│   │   │   ├── agents/          # Contratos de perfiles y grafo DebateTopology
+│   │   │   └── ports/           # Interfaces abstractas (LLM, RAG, Audio, Auth, Métricas, Repos)
+│   │   ├── application/         # Capa de Aplicación y Orquestación
+│   │   │   ├── agents/          # SupervisorAgent, SubAgentRunner y fases dialécticas
+│   │   │   ├── services/        # Servicios de dominio/aplicación (Auth, UserTopology, Vault)
+│   │   │   └── use_cases/       # Casos de uso (IngestVault, QueryVault, LearnFromSource)
+│   │   ├── infrastructure/      # Adaptadores Técnicos Concretos
+│   │   │   ├── llm/             # Clientes Gemini, OpenAI, Anthropic y Local/Ollama
+│   │   │   ├── rag/             # ChromaDocumentStore y embeddings Sentence-Transformers
+│   │   │   ├── persistence/     # Repositorios SQLite y PostgreSQL (usuarios, debates, topología)
+│   │   │   ├── audio/           # Servicios locales Faster-Whisper, Kokoro-ONNX y Vosk
+│   │   │   ├── security/        # Hasher Argon2id, JWT Token Service y alertas Telegram
+│   │   │   ├── observability/   # Adaptadores Langfuse, Prometheus/OpenMetrics y DockerManager
+│   │   │   ├── learning/        # Extractores documentales (PDF con PyMuPDF, Web/HTML, Texto)
+│   │   │   ├── image_generation/# Proveedores de generación visual (Google Imagen)
+│   │   │   └── config/          # Cargadores declarativos YAML (agents.yaml y topology.yaml)
+│   │   └── presentation/        # Capa de Entrada HTTP / WebSocket (FastAPI)
+│   │       └── api/             # App factory, rutas REST (/api/*), dependencias DI y WS (/ws/*)
+│   └── tests/                   # Suite Pytest espejando domain/, application/, infrastructure/ y api/
+│
+├── frontend/                    # Aplicación Web Reactiva (Vue 3 + TypeScript + Vite)
+│   ├── src/
+│   │   ├── views/               # Vistas de página (HomeView, TopologyView, HistoryView, Auth)
+│   │   ├── components/          # UI reactiva, tarjetas de agente, panel HITL, gestión de usuarios
+│   │   │   └── tools/           # Modales modulares (Code, Diagram, Document, Presentation, Image)
+│   │   ├── stores/              # Estado reactivo Pinia (debate, auth, voice, history)
+│   │   ├── services/            # Clientes tipados REST y WebSocket
+│   │   ├── composables/         # Lógica reutilizable (captura de audio PCM, TTS, atajos)
+│   │   └── router/              # Rutas y guardias de navegación (setup, auth, roles)
+│   └── e2e/                     # Suite End-to-End con Playwright (Desktop Chromium + Mobile)
+│
+├── obsidian_vault/              # Segundo Cerebro (Base de Conocimiento RAG + SDD)
+│   ├── ARCHITECTURE.md          # Diseño arquitectónico detallado del sistema
+│   ├── DECISIONS.md             # Registro histórico de Decisiones de Arquitectura (ADRs 001–026)
+│   ├── docs/features/           # Especificaciones técnicas Spec-Driven Development (SDD)
+│   ├── deliberations/           # Actas consolidadas generadas por el consejo
+│   └── learned/                 # Conocimiento ingerido dinámicamente por Metis
+│
+└── scripts/                     # Utilidades operativas y automatización
+    ├── download_models.sh       # Descarga y verificación SHA-256 de modelos Kokoro y Vosk
+    ├── ingest_vault.py          # Script CLI de indexación inicial del Obsidian Vault
+    └── start.sh                 # Arranque unificado de desarrollo (Backend + Frontend + Langfuse)
+```
+
+---
+
+## 🛡️ 8. Seguridad, Gobernanza RBAC y Enfoque Local-First
+
+- 🔒 **Soberanía y Privacidad Total**: El conocimiento empresarial almacenado en el Obsidian Vault se indexa exclusivamente en local mediante **ChromaDB** y embeddings en CPU. Ningún fragmento de documentación interna se envía a terceros para su vectorización ni se cruza entre cuentas no autorizadas.
+- 🗣️ **Modelos de Audio Locales Verificados**:
+  - **Faster-Whisper**: Transcripción de voz (STT) ejecutada íntegramente en local.
+  - **Kokoro ONNX**: Síntesis de voz neural (TTS) de baja latencia sin consumo de APIs externas.
+  - **Vosk**: Reconocimiento continuo de palabras de activación (_wake words_) en segundo plano, con verificación criptográfica de integridad (`SHA-256`) en la descarga de modelos.
+- 🛡️ **Aislamiento Multi-Tenant, RBAC y Alertas Activas**:
+  - Autenticación sin credenciales por defecto mediante asistente de registro inicial (`/setup`), contraseñas hasheadas con **`Argon2id`** (`argon2-cffi`) y sesiones **`JWT` (`HMAC-SHA256`)** transportadas en cookies `HttpOnly` / `SameSite`.
+  - Control de acceso basado en roles (`admin` y `user`) con panel integrado de administración de cuentas ([`UserManagementModal.vue`](frontend/src/components/UserManagementModal.vue)), aislamiento por `user_id` en SQLite/PostgreSQL y limitación de tasa (_rate limiting_) contra fuerza bruta.
+  - **Alertas de Seguridad en Telegram**: Notificación asíncrona opcional en tiempo real ante inicios de sesión, fallos repetidos o bloqueos por _rate limit_.
+- 🌐 **Endurecimiento de Red y Protección Anti-Indexación**: Contenedores sin privilegios (`cap_drop: ALL`, `no-new-privileges`), red de datos interna aislada (`internal: true`) y triple barrera anti-rastreo (`noindex, nofollow` en HTML, denegación en `robots.txt` y cabecera `X-Robots-Tag` en Nginx).
+
+---
+
+## 📊 9. Observabilidad y Métricas en Tiempo Real (Prometheus & Langfuse)
 
 El sistema implementa una arquitectura dual de observabilidad desacoplada para garantizar visibilidad operacional y trazabilidad técnica:
 
@@ -220,115 +333,138 @@ El sistema implementa una arquitectura dual de observabilidad desacoplada para g
 
 ---
 
-## 🧪 8. Arnés de Pruebas y Aseguramiento de la Calidad
+## 🧪 10. Arnés de Pruebas y Aseguramiento de la Calidad
 
-El sistema cuenta con un arnés de pruebas automatizado (_Test Harness_) integral de **733 pruebas automatizadas pasando con éxito (100% pass rate)** que garantiza la estabilidad del software con **coste cero en consumo de tokens**:
+El sistema cuenta con un arnés de pruebas automatizado (_Test Harness_) integral de **1.130 pruebas automatizadas pasando con éxito (100% pass rate)** que garantiza la estabilidad del software con **coste cero en consumo de tokens**:
 
-1. **Suite End-to-End con Playwright (38/38 tests pasando)**:
-   - Ejecutados en navegadores reales: Chromium (Escritorio 1280x720) y Mobile Chrome (Pixel 7).
-   - Valida el flujo dialéctico completo: autenticación y setup inicial, guardias de navegación, streaming por WebSockets, selector multi-dominio, checkpoints HITL con todas sus variantes de control, modales de presentaciones PPTX, diagramas interactivos Mermaid con zoom/pan, visor de código e historial reactivo de debates.
-2. **Suite Unitaria y de Componentes Frontend (380/380 tests en Vitest)**:
-   - Cobertura exhaustiva de componentes Vue 3, composables reactivos, utilidades de parsing y stores centralizados Pinia con mocks de WebSocket y APIs.
-3. **Suite de Backend e Integración (315/315 tests en Pytest)**:
-   - Pruebas asíncronas con `ASGITransport` cubriendo casos de uso, repositorios SQLite, embeddings de ChromaDB, validación de schemas Pydantic, seguridad JWT/Argon2id y adaptadores LLM.
+1. **Suite End-to-End con Playwright (40/40 tests pasando)**:
+   - Ejecutados en navegadores reales: Chromium (Escritorio `1280x720`) y Mobile Chrome (Pixel 7).
+   - Valida el flujo dialéctico completo: autenticación y setup inicial, gestión RBAC de usuarios, streaming por WebSockets, personalización de modelos/RAG y topología por usuario (`/topology`), checkpoints HITL con todas sus variantes, modales de presentaciones PPTX, diagramas interactivos Mermaid con zoom/pan, visor de código e historial reactivo de debates.
+2. **Suite Unitaria y de Componentes Frontend (459/459 tests en Vitest)**:
+   - Cobertura exhaustiva de vistas y componentes Vue 3, composables reactivos, utilidades de parsing y stores centralizados Pinia con mocks deterministas de WebSocket y APIs REST.
+3. **Suite de Backend e Integración (631/631 tests en Pytest)**:
+   - Pruebas asíncronas con `ASGITransport` cubriendo entidades y servicios de dominio, orquestación del Supervisor, repositorios SQLite/PostgreSQL, aislamiento por usuario, embeddings de ChromaDB, validación Pydantic, seguridad JWT/Argon2id y adaptadores LLM.
 4. **Calidad de Código, Tipado Estricto y Desacoplamiento Arquitectónico**:
-   - `vue-tsc --build`: 0 errores de tipado estricto TypeScript.
-   - `oxlint` + `eslint`: 0 errores y 0 advertencias de linter.
-   - [`test_decoupling_guard.py`](backend/tests/application/agents/test_decoupling_guard.py): Auditoría estática que verifica que el código del motor no contenga referencias codificadas a los nombres de agentes de la aplicación.
+   - `vue-tsc --build` + `mypy`: 0 errores de tipado estricto en TypeScript y Python.
+   - `oxlint` + `eslint` + `ruff`: 0 errores y 0 advertencias de linter.
+   - [`test_decoupling_guard.py`](backend/tests/application/agents/test_decoupling_guard.py): Auditoría estática (21 reglas AST) que verifica que el código del motor no contenga referencias codificadas a los nombres de agentes de la aplicación ni violaciones de capas de Clean Architecture.
 
 ---
 
-## 🚀 9. Guía de Instalación y Despliegue
+## 🚀 11. Guía de Instalación, Configuración y Ejecución
 
 ### Requisitos Previos
 
-- Python 3.14+
-- Node.js 24+ y npm
-- Docker y Docker Compose (opcional para telemetría Langfuse)
+- **Python 3.12+** (probado en Python 3.12 y 3.14) y gestor **[`uv`](https://docs.astral.sh/uv/)** (recomendado para reproducibilidad exacta mediante `uv.lock`).
+- **Node.js 22.18+ o 24+** y `npm`.
+- **Docker y Docker Compose** (necesario para la Opción A o para levantar la pila local de observabilidad Langfuse).
 
-### 1. Descarga de Modelos de Inteligencia Artificial Locales
+### 1. Descarga de Modelos de Voz Locales
 
-Para garantizar la privacidad, los modelos de voz operan en tu propia máquina. Descárgalos ejecutando:
+Para garantizar la privacidad, los motores de síntesis y activación por voz operan en tu propia máquina. Descárgalos y verifica sus sumas criptográficas `SHA-256` ejecutando:
 
 ```bash
 chmod +x scripts/download_models.sh
 ./scripts/download_models.sh
 ```
 
-_(Descarga los pesos de Kokoro ONNX TTS y el modelo pequeño de Vosk en la carpeta `backend/models`)_.
+_(Descarga los pesos de Kokoro ONNX TTS en `backend/voices/` y el modelo `vosk-model-small-es-0.42` en `backend/src/infrastructure/models/vosk/`)_.
 
-### 2. Configuración de Entorno (`.env`)
+### 2. Configuración de Variables de Entorno (`.env`)
+
+Crea tu archivo `.env` en la raíz del proyecto a partir de la plantilla:
 
 ```bash
 cp .env.example .env
 ```
 
-Configura tus claves de API para los proveedores de LLM que desees utilizar (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`).
+Edita `.env` según el modo de ejecución elegido:
+
+1. **Proveedores LLM**: Descomenta y añade al menos una clave de API (`GEMINI_API_KEY`, `OPENAI_API_KEY` o `ANTHROPIC_API_KEY`), o configura `LOCAL_LLM_BASE_URL=http://localhost:11434` para usar modelos locales con Ollama.
+2. **Despliegue en local sin Docker (Opciones B y C)**: No requiere secretos adicionales; si `AUTH_SECRET_KEY` está comentada, el backend genera automáticamente una clave efímera para desarrollo local.
+3. **Despliegue con Docker Compose (Opción A)**:
+   - Descomenta `AUTH_SECRET_KEY` y asígnale un secreto persistente (p. ej. `openssl rand -base64 48`).
+   - En `.env.example`, la variable `COMPOSE_PROFILES=observability` viene activa por defecto. Para una **evaluación rápida del núcleo (`backend` + `frontend`)** deja `COMPOSE_PROFILES=` vacío; si deseas levantar también la pila completa autoalojada de Langfuse (`observability`, `scale` o `full`), descomenta y define las credenciales de infraestructura indicadas en la sección _Observability & Infrastructure Stack Credentials_ de `.env`.
 
 ### 3. Arranque del Sistema
 
-#### Opción A: Despliegue con Docker Compose (Recomendado para Evaluación Rápida)
+#### Opción A: Despliegue con Docker Compose (Aislado en Contenedores)
 
-Levanta todos los servicios con aislamiento de red, base de datos y telemetría en un único comando:
+Levanta los servicios configurados con aislamiento de red, volúmenes persistentes y _healthchecks_ automáticos:
 
 ```bash
+# Arranque según el perfil definido en COMPOSE_PROFILES dentro de .env
 docker compose up -d
+
+# O especificando explícitamente un perfil (local | observability | scale | full):
+docker compose --profile observability up -d
 ```
 
-#### Opción B: Script Local Unificado
+#### Opción B: Script Local Unificado (Recomendado para Desarrollo)
 
-Levanta el backend FastAPI, el frontend Vue 3 y gestiona los servicios auxiliares:
+Crea e instala automáticamente `.venv` (si `uv` está disponible) y `node_modules` si aún no existen, y levanta coordinadamente el backend FastAPI y el frontend Vite:
 
 ```bash
 ./scripts/start.sh
+
+# Opcional: arrancar simultáneamente los contenedores de trazabilidad Langfuse
+./scripts/start.sh --with-langfuse
 ```
 
-#### Opción C: Desarrollo en Dos Terminales
+#### Opción C: Ejecución Manual en Dos Terminales
 
-- **Terminal 1 (Backend FastAPI):**
-  ```bash
-  cd backend
-  source .venv/bin/activate
-  uvicorn src.presentation.api.app:app --reload
-  ```
-- **Terminal 2 (Frontend Vue 3 / Vite):**
-  ```bash
-  cd frontend
-  npm run dev
-  ```
+1. **Terminal 1 — Backend (FastAPI):**
+   ```bash
+   cd backend
+   uv sync --frozen --extra dev
+   uv run --no-sync uvicorn src.presentation.api.app:app --reload --host 0.0.0.0 --port 8000
+   ```
+   _(Opcional: para pre-indexar la documentación inicial del Obsidian Vault antes del primer debate, ejecuta desde `backend/`: `uv run --no-sync python ../scripts/ingest_vault.py`)_.
 
-### 4. Ejecución del Arnés de Pruebas
+2. **Terminal 2 — Frontend (Vue 3 / Vite):**
+   ```bash
+   cd frontend
+   npm ci
+   npm run dev
+   ```
 
-Desde la carpeta `frontend/`:
+### 4. Primer Acceso y Registro Inicial (`/setup`)
 
-```bash
-# Lanzar todas las pruebas E2E con Playwright (Desktop + Mobile)
-npm run test:e2e
+Por seguridad (**Zero Default Credentials**), el sistema nace sin usuarios preconfigurados. Al abrir por primera vez [http://localhost:5173](http://localhost:5173), la aplicación redirigirá automáticamente al asistente **`/setup`** para crear la cuenta administradora inicial. Una vez creada, dicho endpoint queda bloqueado permanentemente y los usuarios adicionales se gestionan desde el panel de administración.
 
-# Abrir el inspector visual interactivo de Playwright
-npm run test:e2e:ui
-
-# Ejecutar las pruebas unitarias
-npm run test:unit
-```
+### 5. Ejecución del Arnés de Pruebas y Calidad
 
 Desde la carpeta `backend/`:
 
 ```bash
-# Ejecutar todas las pruebas unitarias y de integración
-pytest tests/ -v
+# Ejecutar las 631 pruebas unitarias, de integración y guarda arquitectónica AST
+uv run --no-sync pytest tests/ -v
 ```
 
-### 5. Servicios Disponibles
+Desde la carpeta `frontend/`:
+
+```bash
+# Ejecutar las 459 pruebas unitarias y de componentes (Vitest)
+npm run test:unit
+
+# Ejecutar las 40 pruebas End-to-End multi-navegador (Playwright: Desktop + Mobile)
+npm run test:e2e
+
+# Verificar tipado estricto y linters (0 errores / 0 warnings)
+npm run type-check && npm run lint
+```
+
+### 6. Servicios y Endpoints Disponibles
 
 - **Interfaz de Usuario (ATENEA)**: [http://localhost:5173](http://localhost:5173)
-- **API Backend y Swagger OpenAPI**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **API Backend y Documentación OpenAPI (Swagger)**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Healthcheck del Backend**: [http://localhost:8000/health](http://localhost:8000/health)
 - **Métricas Prometheus / OpenMetrics**: [http://localhost:8000/metrics](http://localhost:8000/metrics)
-- **Panel de Observabilidad Langfuse** (opcional): [http://localhost:3000](http://localhost:3000)
+- **Panel de Observabilidad Langfuse** _(con perfil `observability` / `full`)_: [http://localhost:3000](http://localhost:3000)
 
 ---
 
-## 🏛️ 10. Licencia y Créditos Académicos
+## 🏛️ 12. Licencia y Créditos Académicos
 
 Este proyecto ha sido desarrollado como **Trabajo Fin de Máster (TFM)** en el **Máster en Desarrollo con Inteligencia Artificial**.
 

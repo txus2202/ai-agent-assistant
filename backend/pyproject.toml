@@ -26,7 +26,7 @@ dependencies = [
     "prometheus-client>=0.20.0",
     "prometheus-fastapi-instrumentator>=7.0.0",
     "pyasn1>=0.6.5",
-    "pydantic-settings==2.15.0",
+    "pydantic-settings==2.16.3",
     "PyJWT>=2.15.1",
     "PyMuPDF==1.28.2",
     "python-multipart==0.0.34",

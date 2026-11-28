@@ -125,7 +125,7 @@ google-genai==2.28.0
     # via ai-agent-assistant-backend
 googleapis-common-protos==1.76.0
     # via opentelemetry-exporter-otlp-proto-grpc
-grpcio==1.85.1
+grpcio==1.85.4
     # via
     #   chromadb
     #   opentelemetry-exporter-otlp-proto-grpc

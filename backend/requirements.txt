@@ -296,7 +296,7 @@ pybase64==1.5.1
     # via chromadb
 pycparser==3.12 ; implementation_name != 'PyPy'
     # via cffi
-pydantic==2.14.3
+pydantic==2.14.4
     # via
     #   anthropic
     #   chromadb

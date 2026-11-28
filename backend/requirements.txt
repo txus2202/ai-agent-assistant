@@ -155,7 +155,7 @@ httpx2==2.16.0
     #   openai
 httpx2-jsfetch==1.0 ; sys_platform == 'emscripten'
     # via httpx2
-huggingface-hub==1.33.0
+huggingface-hub==2.4.0
     # via
     #   faster-whisper
     #   sentence-transformers

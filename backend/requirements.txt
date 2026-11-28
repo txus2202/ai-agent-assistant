@@ -149,7 +149,7 @@ httpx==0.28.1
     #   google-genai
     #   huggingface-hub
     #   langfuse
-httpx2==2.16.0
+httpx2==2.16.2
     # via
     #   anthropic
     #   openai

@@ -191,7 +191,7 @@ jsonschema-specifications==2025.9.1
     # via jsonschema
 kokoro-onnx==0.4.7
     # via ai-agent-assistant-backend
-kubernetes==37.0.2
+kubernetes==37.0.3
     # via chromadb
 langfuse==2.60.10
     # via ai-agent-assistant-backend

@@ -212,7 +212,7 @@ multidict==7.2.1
     #   ai-agent-assistant-backend
     #   aiohttp
     #   yarl
-narwhals==2.28.0
+narwhals==2.29.0
     # via scikit-learn
 networkx==3.7
     # via torch
